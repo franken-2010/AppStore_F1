@@ -16,15 +16,15 @@ const BottomNav: React.FC = () => {
           {isActive('/dashboard') && <span className="text-[10px] font-bold">Inicio</span>}
         </Link>
 
-        <Link to="/cortes" className="flex flex-col items-center justify-center gap-1 text-slate-400 dark:text-slate-500 relative">
+        <Link to="/cortes" className={`flex flex-col items-center justify-center gap-1 ${isActive('/cortes') ? 'text-primary' : 'text-slate-400 dark:text-slate-500 hover:text-primary dark:hover:text-primary'} transition-colors relative`}>
           {isActive('/cortes') ? (
             <div className="absolute -top-10 bg-primary rounded-full p-3 shadow-lg shadow-primary/40 border-[6px] border-background-light dark:border-background-dark">
               <span className="material-symbols-outlined text-white text-2xl">point_of_sale</span>
             </div>
           ) : (
-            <span className="material-symbols-outlined text-2xl hover:text-primary dark:hover:text-primary transition-colors">point_of_sale</span>
+            <span className="material-symbols-outlined text-2xl">point_of_sale</span>
           )}
-          {isActive('/cortes') && <span className="text-[10px] font-bold mt-8 text-primary">Cortes</span>}
+          {isActive('/cortes') && <span className="text-[10px] font-bold mt-8">Cortes</span>}
         </Link>
 
         <Link to="/tools" className={`flex flex-col items-center justify-center gap-1 ${isActive('/tools') ? 'text-primary' : 'text-slate-400 dark:text-slate-500 hover:text-primary dark:hover:text-primary'} transition-colors`}>
@@ -32,9 +32,10 @@ const BottomNav: React.FC = () => {
           {isActive('/tools') && <span className="text-[10px] font-bold">Tools</span>}
         </Link>
 
-        <button onClick={() => navigate('/')} className="flex flex-col items-center justify-center gap-1 text-slate-400 dark:text-slate-500 hover:text-primary dark:hover:text-primary transition-colors">
-          <span className="material-symbols-outlined text-2xl">logout</span>
-        </button>
+        <Link to="/settings" className={`flex flex-col items-center justify-center gap-1 ${isActive('/settings') ? 'text-primary' : 'text-slate-400 dark:text-slate-500 hover:text-primary dark:hover:text-primary'} transition-colors`}>
+          <span className="material-symbols-outlined text-2xl">settings</span>
+          {isActive('/settings') && <span className="text-[10px] font-bold">Ajustes</span>}
+        </Link>
       </div>
     </div>
   );

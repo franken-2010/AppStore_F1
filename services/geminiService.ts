@@ -46,6 +46,80 @@ export class GeminiService {
     }
   }
 
+  static async parseCorteText(rawText: string, fecha: string): Promise<any> {
+    try {
+      const response = await this.ai.models.generateContent({
+        model: 'gemini-3-flash-preview',
+        contents: `Fecha: ${fecha}\nTexto:\n${rawText}`,
+        config: {
+          systemInstruction: `Devuelve SOLO JSON válido. Sin texto extra.
+Vas a leer un "corte del día" pegado en texto y extraer montos por rubro.
+Los rubros SIEMPRE existen aunque sean 0:
+- ventas
+- fiesta
+- recargas
+- totalGeneral
+- estancias
+- pagosCxc
+- subtotalIngresos
+- consumoPersonal
+- gastosGenerales
+- subtotalDespuesEgresos
+- dineroEntregado
+- diferencia
+- clasificacion (sobrante|faltante|cuadrado)
+- ingresosCxc (aparte; NO se suma a totalGeneral)
+
+Reglas de extracción:
+- Para cada rubro, toma el número que aparece como "$X" o "**$X**" o "→ $X".
+- Quita comas de miles.
+- Acepta negativos con "−$326" y normaliza a -326.
+- Si el texto trae "Resultado: ...", úsalo como referencia pero clasificacion se determina por el signo de diferencia.
+
+Reglas de validación matemática (OBLIGATORIAS):
+- totalGeneral = ventas + fiesta + recargas
+- subtotalIngresos = totalGeneral + estancias + pagosCxc
+- subtotalDespuesEgresos = subtotalIngresos - (consumoPersonal + gastosGenerales)
+- diferencia = dineroEntregado - subtotalDespuesEgresos
+
+Devuelve también:
+- status: "ok" si todas las validaciones cuadran, si no "inconsistente"
+- errors: lista de strings con los campos que no cuadran
+- parserVersion: "v1"`,
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              status: { type: Type.STRING },
+              parserVersion: { type: Type.STRING },
+              errors: { type: Type.ARRAY, items: { type: Type.STRING } },
+              ventas: { type: Type.NUMBER },
+              fiesta: { type: Type.NUMBER },
+              recargas: { type: Type.NUMBER },
+              totalGeneral: { type: Type.NUMBER },
+              estancias: { type: Type.NUMBER },
+              pagosCxc: { type: Type.NUMBER },
+              subtotalIngresos: { type: Type.NUMBER },
+              consumoPersonal: { type: Type.NUMBER },
+              gastosGenerales: { type: Type.NUMBER },
+              subtotalDespuesEgresos: { type: Type.NUMBER },
+              dineroEntregado: { type: Type.NUMBER },
+              diferencia: { type: Type.NUMBER },
+              clasificacion: { type: Type.STRING },
+              ingresosCxc: { type: Type.NUMBER }
+            },
+            required: ["status", "parserVersion", "errors", "ventas", "fiesta", "recargas", "totalGeneral", "estancias", "pagosCxc", "subtotalIngresos", "consumoPersonal", "gastosGenerales", "subtotalDespuesEgresos", "dineroEntregado", "diferencia", "clasificacion", "ingresosCxc"]
+          }
+        }
+      });
+
+      return JSON.parse(response.text || '{}');
+    } catch (error) {
+      console.error("Error parsing corte text:", error);
+      throw error;
+    }
+  }
+
   static async getDashboardInsights(data: any): Promise<string> {
     try {
       const response = await this.ai.models.generateContent({
