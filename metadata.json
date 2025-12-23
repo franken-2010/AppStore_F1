@@ -1,0 +1,7 @@
+{
+  "name": "DataFlow Admin Intelligence",
+  "description": "A high-performance administrative dashboard with AI-powered receipt analysis and business insights powered by Gemini.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
