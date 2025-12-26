@@ -32,8 +32,8 @@ const SettingsScreen: React.FC = () => {
   const [isGeneratingIA, setIsGeneratingIA] = useState(false);
   const [copyFeedback, setCopyFeedback] = useState(false);
 
-  // URL del Webhook Interno de Sistema
-  const systemWebhookURL = `https://dataflow-api.io/hooks/v1/notify/${user?.uid || 'loading...'}`;
+  // URL REAL Y FUNCIONAL PARA MAKE
+  const systemWebhookURL = user ? `https://ntfy.sh/dataflow_admin_${user.uid}` : 'Cargando...';
 
   useEffect(() => {
     if (profile) {
@@ -47,9 +47,11 @@ const SettingsScreen: React.FC = () => {
   }, [profile]);
 
   const handleCopyWebhook = () => {
-    navigator.clipboard.writeText(systemWebhookURL);
-    setCopyFeedback(true);
-    setTimeout(() => setCopyFeedback(false), 2000);
+    if (systemWebhookURL.startsWith('http')) {
+      navigator.clipboard.writeText(systemWebhookURL);
+      setCopyFeedback(true);
+      setTimeout(() => setCopyFeedback(false), 2000);
+    }
   };
 
   const generateIAImage = async () => {
@@ -222,18 +224,18 @@ const SettingsScreen: React.FC = () => {
 
         {activeTab === 'webhooks' && (
           <section className="space-y-8 animate-in fade-in slide-in-from-bottom-5">
-            {/* WEBHOOK DE SISTEMA (Solo lectura) */}
+            {/* WEBHOOK DE SISTEMA (Solo lectura - ntfy.sh) */}
             <div className="bg-primary/5 dark:bg-primary/10 border border-primary/20 p-5 rounded-3xl relative overflow-hidden">
                <div className="absolute top-0 right-0 p-3 opacity-10">
-                 <span className="material-symbols-outlined text-5xl">hub</span>
+                 <span className="material-symbols-outlined text-5xl">sensors</span>
                </div>
                <div className="flex items-center gap-2 mb-4">
-                 <span className="text-[10px] font-black bg-primary text-white px-2 py-0.5 rounded-full uppercase tracking-widest">Sistema</span>
-                 <h3 className="text-sm font-black text-slate-900 dark:text-white">Webhook Interno de Notificaciones</h3>
+                 <span className="text-[10px] font-black bg-primary text-white px-2 py-0.5 rounded-full uppercase tracking-widest">Live Push</span>
+                 <h3 className="text-sm font-black text-slate-900 dark:text-white">Webhook de Notificaciones Reales</h3>
                </div>
                <div className="space-y-3">
                  <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
-                   Usa este enlace en Make para enviar notificaciones directas a tu app. Las peticiones deben ser POST con formato JSON.
+                   Este es un endpoint real público a través de <strong>ntfy.sh</strong>. Envíe sus peticiones POST aquí y la app las recibirá al instante.
                  </p>
                  <div className="flex items-center gap-2">
                    <input 
@@ -260,7 +262,7 @@ const SettingsScreen: React.FC = () => {
 
             <div className="h-px bg-slate-100 dark:bg-white/5 mx-2"></div>
 
-            {/* WEBHOOKS DE USUARIO (Modificables) */}
+            {/* WEBHOOKS DE USUARIO */}
             <div className="space-y-6">
               <div className="px-1">
                 <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">Configuración Externa</h3>

@@ -1,7 +1,8 @@
 
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { auth, db } from '../services/firebase';
-import { collection, query, orderBy, limit, onSnapshot, where } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+import { collection, query, orderBy, limit, onSnapshot } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+import { useAuth } from './AuthContext';
 
 export interface AppNotification {
   id: string;
@@ -25,12 +26,16 @@ const NotificationContext = createContext<NotificationContextType | undefined>(u
 
 export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
+  const { user } = useAuth(); // Obtenemos el usuario del AuthContext
 
-  // Efecto para escuchar notificaciones internas de Firestore (Webhook de Sistema)
+  // 1. Escuchar notificaciones persistentes de Firestore
   useEffect(() => {
-    const user = auth.currentUser;
-    if (!user) return;
+    if (!user) {
+      setNotifications([]);
+      return;
+    }
 
+    console.log("🔔 Iniciando listener de Firestore para:", user.uid);
     const q = query(
       collection(db, "users", user.uid, "notifications"),
       orderBy("timestamp", "desc"),
@@ -44,42 +49,94 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
       })) as AppNotification[];
       
       setNotifications(prev => {
-        const external = prev.filter(n => !n.id.startsWith('sys_')); // Mantener externas que no choquen
-        const combined = [...internalNotifs, ...external];
+        // Mantener las notificaciones 'live' y 'local' que no estén en firestore
+        const existingLiveAndLocal = prev.filter(n => n.id.startsWith('live_') || n.id.startsWith('local_'));
+        const internalIds = new Set(internalNotifs.map(n => n.id));
+        const uniqueLive = existingLiveAndLocal.filter(n => !internalIds.has(n.id));
+
+        const combined = [...internalNotifs, ...uniqueLive];
         return combined.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
       });
+    }, (error) => {
+      console.error("Error en Firestore notifications:", error);
     });
 
     return () => unsubscribe();
-  }, []);
+  }, [user]); // Se activa cuando el usuario cambia o inicia sesión
 
-  const fetchNotifications = useCallback(async () => {
-    const pollUrl = localStorage.getItem('webhook_notifications');
-    if (!pollUrl) return;
+  // 2. Escuchar notificaciones EN VIVO vía ntfy.sh
+  useEffect(() => {
+    if (!user) return;
 
-    try {
-      const response = await fetch(pollUrl);
-      if (response.ok) {
-        const data = await response.json();
-        if (Array.isArray(data)) {
+    const topic = `dataflow_admin_${user.uid}`;
+    console.log("⚡ Conectando a stream de notificaciones Live:", topic);
+    
+    const eventSource = new EventSource(`https://ntfy.sh/${topic}/sse`);
+
+    eventSource.onopen = () => {
+      console.log("✅ Conexión establecida con ntfy.sh");
+    };
+
+    eventSource.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        
+        if (data.event === 'message') {
+          console.log("📩 Mensaje recibido de ntfy:", data);
+          let payload: any = {};
+          
+          // Parsing inteligente del campo message (Make suele enviarlo como string JSON)
+          if (typeof data.message === 'string') {
+            const trimmed = data.message.trim();
+            if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+              try {
+                payload = JSON.parse(trimmed);
+              } catch (e) {
+                payload = { message: data.message };
+              }
+            } else {
+              payload = { message: data.message };
+            }
+          }
+
+          const newNotif: AppNotification = {
+            id: 'live_' + (data.id || Math.random().toString(36).substr(2, 9)),
+            title: payload.title || data.title || 'Alerta de Sistema',
+            message: payload.message || 'Nueva actualización recibida.',
+            type: payload.type || 'system',
+            timestamp: payload.timestamp || new Date().toISOString(),
+            isRead: false
+          };
+
           setNotifications(prev => {
-            const newIds = new Set(data.map(n => n.id));
-            const existing = prev.filter(n => !newIds.has(n.id));
-            return [...data, ...existing].sort((a, b) => 
+            if (prev.some(n => n.id === newNotif.id)) return prev;
+            const updated = [newNotif, ...prev];
+            return updated.sort((a, b) => 
               new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
             );
           });
         }
+      } catch (err) {
+        console.error("❌ Error procesando notificación live:", err);
       }
-    } catch (error) {
-      console.error("Error fetching notifications:", error);
-    }
-  }, []);
+    };
+
+    eventSource.onerror = (e) => {
+      console.warn("⚠️ Error en conexión SSE, ntfy intentará reconectar automáticamente.");
+    };
+
+    return () => {
+      console.log("🔌 Cerrando conexión Live");
+      eventSource.close();
+    };
+  }, [user]); // Se activa cuando el usuario cambia o inicia sesión
+
+  const fetchNotifications = useCallback(async () => {}, []);
 
   const addNotification = useCallback((notification: Omit<AppNotification, 'id' | 'timestamp' | 'isRead'>) => {
     const newNotif: AppNotification = {
       ...notification,
-      id: 'sys_' + Math.random().toString(36).substr(2, 9),
+      id: 'local_' + Math.random().toString(36).substr(2, 9),
       timestamp: new Date().toISOString(),
       isRead: false
     };
