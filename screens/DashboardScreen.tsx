@@ -1,28 +1,17 @@
 
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import BottomNav from '../components/BottomNav';
 import Sidebar from '../components/Sidebar';
 import ProfileMenu from '../components/ProfileMenu';
-import { GeminiService } from '../services/geminiService';
-import { RECENT_ACTIVITY } from '../constants';
+import { RECENT_CORTES, QUICK_STATS } from '../constants';
 import NotificationBell from '../components/NotificationBell';
 import { useAuth } from '../context/AuthContext';
 
 const DashboardScreen: React.FC = () => {
+  const navigate = useNavigate();
   const { profile } = useAuth();
-  const [insight, setInsight] = useState<string>("Analizando tendencias recientes...");
-  const [isLoadingInsight, setIsLoadingInsight] = useState(true);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-
-  useEffect(() => {
-    const fetchInsight = async () => {
-      const data = { itemsProcessed: 1240, successRate: 0.98, weeklySales: 124500 };
-      const result = await GeminiService.getDashboardInsights(data);
-      setInsight(result);
-      setIsLoadingInsight(false);
-    };
-    fetchInsight();
-  }, []);
 
   return (
     <div className="bg-background-light dark:bg-background-dark font-display text-slate-900 dark:text-white antialiased pb-32 min-h-screen">
@@ -33,12 +22,12 @@ const DashboardScreen: React.FC = () => {
           <div className="flex items-center gap-3">
             <button 
               onClick={() => setIsSidebarOpen(true)}
-              className="p-2 -ml-2 rounded-full hover:bg-slate-200 dark:hover:bg-white/10 text-slate-700 dark:text-white"
+              className="p-2 -ml-2 rounded-full hover:bg-slate-200 dark:hover:bg-white/10 text-slate-700 dark:text-white transition-colors"
             >
               <span className="material-symbols-outlined">menu</span>
             </button>
             <div className="flex flex-col">
-              <p className="text-[10px] font-bold uppercase tracking-wider text-primary">DataFlow AI</p>
+              <p className="text-[10px] font-black uppercase tracking-[0.2em] text-primary">DataFlow Intelligence</p>
               <h1 className="text-xl font-extrabold tracking-tight">Hola, {profile?.displayName?.split(' ')[0] || 'Admin'}</h1>
             </div>
           </div>
@@ -49,67 +38,91 @@ const DashboardScreen: React.FC = () => {
         </div>
       </header>
       
-      <main className="flex flex-col w-full max-w-md mx-auto">
-        <section className="px-6 mt-4">
-           <div className="p-4 rounded-2xl bg-gradient-to-r from-primary to-purple-600 shadow-lg shadow-primary/20 relative overflow-hidden group">
-              <div className="absolute top-0 right-0 p-2 opacity-20 transform translate-x-2 -translate-y-2 group-hover:scale-110 transition-transform">
-                <span className="material-symbols-outlined text-6xl">auto_awesome</span>
+      <main className="flex flex-col w-full max-w-md mx-auto px-6">
+        {/* QUICK STATS */}
+        <section className="mt-4 grid grid-cols-2 gap-4">
+          {QUICK_STATS.map((stat, idx) => (
+            <div key={idx} className="p-6 rounded-3xl bg-white dark:bg-surface-dark border border-slate-100 dark:border-white/5 shadow-sm hover:shadow-md transition-all">
+              <div className={`size-10 rounded-2xl flex items-center justify-center mb-4 ${stat.color} bg-current/10`}>
+                <span className="material-symbols-outlined">{stat.icon}</span>
               </div>
-              <div className="flex items-center gap-2 mb-2">
-                <span className="material-symbols-outlined text-white text-lg">psychology</span>
-                <span className="text-[10px] font-bold text-white/80 uppercase tracking-widest">IA Insight</span>
-              </div>
-              <p className="text-white text-sm font-medium leading-relaxed">
-                {isLoadingInsight ? (
-                  <span className="animate-pulse">Analizando tus datos...</span>
-                ) : insight}
-              </p>
-           </div>
+              <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">{stat.label}</p>
+              <p className="text-2xl font-black text-slate-900 dark:text-white tracking-tighter">{stat.value}</p>
+            </div>
+          ))}
         </section>
 
-        <section className="mt-6 w-full">
-          <div className="flex items-center justify-between px-6 py-2">
-            <h2 className="text-lg font-bold leading-tight tracking-tight">Resumen del día</h2>
-          </div>
-          <div className="flex w-full overflow-x-auto gap-4 px-6 py-2 no-scrollbar snap-x">
-            <div className="snap-start shrink-0 min-w-[200px] flex-1 p-5 rounded-xl bg-white dark:bg-card-dark shadow-sm ring-1 ring-slate-200 dark:ring-white/5 flex flex-col justify-between h-40">
-              <div className="flex items-start justify-between">
-                <div className="p-2 rounded-full bg-primary/10 text-primary">
-                  <span className="material-symbols-outlined text-xl">dataset</span>
-                </div>
+        {/* ACTION GRID */}
+        <section className="mt-8">
+          <h2 className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-400 mb-5 px-1 flex items-center gap-2">
+            Control de Operación
+            <div className="flex-1 h-px bg-slate-100 dark:bg-white/5"></div>
+          </h2>
+          <div className="grid grid-cols-3 gap-4">
+            <button 
+              onClick={() => navigate('/cortes')}
+              className="flex flex-col items-center gap-3 p-5 rounded-[2rem] bg-white dark:bg-surface-dark border border-slate-100 dark:border-white/5 active:scale-95 transition-all shadow-sm group"
+            >
+              <div className="size-14 rounded-2xl bg-primary/10 text-primary flex items-center justify-center group-hover:bg-primary group-hover:text-white transition-colors duration-300">
+                <span className="material-symbols-outlined text-2xl">point_of_sale</span>
               </div>
-              <div>
-                <p className="text-sm font-medium text-slate-500 dark:text-slate-400">Ítems Procesados</p>
-                <p className="text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight mt-1">1,240</p>
+              <span className="text-[10px] font-black uppercase tracking-tight text-center leading-none text-slate-600 dark:text-slate-400">Corte de Caja</span>
+            </button>
+            <button 
+              onClick={() => navigate('/tools/price-verification')}
+              className="flex flex-col items-center gap-3 p-5 rounded-[2rem] bg-white dark:bg-surface-dark border border-slate-100 dark:border-white/5 active:scale-95 transition-all shadow-sm group"
+            >
+              <div className="size-14 rounded-2xl bg-emerald-500/10 text-emerald-500 flex items-center justify-center group-hover:bg-emerald-500 group-hover:text-white transition-colors duration-300">
+                <span className="material-symbols-outlined text-2xl">search_check</span>
               </div>
-            </div>
-            <div className="snap-start shrink-0 min-w-[200px] flex-1 p-5 rounded-xl bg-white dark:bg-card-dark shadow-sm ring-1 ring-slate-200 dark:ring-white/5 flex flex-col justify-between h-40">
-              <div className="flex items-start justify-between">
-                <div className="p-2 rounded-full bg-blue-500/10 text-blue-500">
-                  <span className="material-symbols-outlined text-xl">check_circle</span>
-                </div>
+              <span className="text-[10px] font-black uppercase tracking-tight text-center leading-none text-slate-600 dark:text-slate-400">Consultar Precio</span>
+            </button>
+            <button 
+              onClick={() => navigate('/settings/bdd')}
+              className="flex flex-col items-center gap-3 p-5 rounded-[2rem] bg-white dark:bg-surface-dark border border-slate-100 dark:border-white/5 active:scale-95 transition-all shadow-sm group"
+            >
+              <div className="size-14 rounded-2xl bg-amber-500/10 text-amber-500 flex items-center justify-center group-hover:bg-amber-500 group-hover:text-white transition-colors duration-300">
+                <span className="material-symbols-outlined text-2xl">database_sync</span>
               </div>
-              <div>
-                <p className="text-sm font-medium text-slate-500 dark:text-slate-400">Tasa de Éxito</p>
-                <p className="text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight mt-1">98%</p>
-              </div>
-            </div>
+              <span className="text-[10px] font-black uppercase tracking-tight text-center leading-none text-slate-600 dark:text-slate-400">Actualizar BDD</span>
+            </button>
           </div>
         </section>
 
-        <section className="mt-8 px-6 w-full mb-10">
-          <h2 className="text-lg font-bold leading-tight tracking-tight mb-4">Actividad Reciente</h2>
-          <div className="flex flex-col gap-3">
-            {RECENT_ACTIVITY.map(item => (
-              <div key={item.id} className="flex items-center gap-4 p-4 rounded-xl bg-white dark:bg-card-dark shadow-sm border border-slate-100 dark:border-none">
-                <div className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-full ${item.type === 'success' ? 'bg-emerald-100 dark:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400' : 'bg-blue-100 dark:bg-blue-500/20 text-blue-600 dark:text-blue-400'}`}>
-                  <span className="material-symbols-outlined">{item.icon}</span>
+        {/* RECENT CORTES LIST */}
+        <section className="mt-10 mb-10">
+          <div className="flex items-center justify-between mb-6 px-1">
+            <h2 className="text-xl font-black tracking-tight">Cortes Recientes</h2>
+            <button 
+              onClick={() => navigate('/cortes')} 
+              className="text-[10px] font-black text-primary uppercase tracking-[0.2em] px-4 py-2 bg-primary/10 rounded-full hover:bg-primary hover:text-white transition-all"
+            >
+              Historial
+            </button>
+          </div>
+          <div className="space-y-4">
+            {RECENT_CORTES.map(corte => (
+              <div key={corte.id} className="flex items-center gap-4 p-5 rounded-3xl bg-white dark:bg-surface-dark border border-slate-100 dark:border-white/5 shadow-sm hover:border-primary/30 transition-all cursor-pointer">
+                <div className={`size-12 rounded-2xl shrink-0 flex items-center justify-center ${corte.status === 'completed' ? 'bg-emerald-500/10 text-emerald-500' : 'bg-red-500/10 text-red-500'}`}>
+                  <span className="material-symbols-outlined text-2xl">
+                    {corte.status === 'completed' ? 'task_alt' : 'error_outline'}
+                  </span>
                 </div>
                 <div className="flex-1">
-                  <p className="text-sm font-bold text-slate-900 dark:text-white">{item.title}</p>
-                  <p className="text-xs font-medium text-slate-500 dark:text-slate-400">{item.description}</p>
+                  <div className="flex items-center gap-2 mb-1">
+                    <p className="text-sm font-black text-slate-900 dark:text-white leading-tight">{corte.description}</p>
+                    <span className="text-[9px] font-black bg-slate-100 dark:bg-white/10 text-slate-500 dark:text-slate-400 px-2 py-0.5 rounded-full uppercase tracking-widest">{corte.date}</span>
+                  </div>
+                  <p className="text-xs font-bold text-slate-400 flex items-center gap-1">
+                    <span className="material-symbols-outlined text-[14px]">payments</span>
+                    Efectivo: ${corte.amount.toLocaleString('es-MX', { minimumFractionDigits: 2 })}
+                  </p>
                 </div>
-                <p className="text-[10px] font-bold text-slate-400">{item.time}</p>
+                <div className="text-right">
+                  <span className={`text-[10px] font-black uppercase tracking-widest px-3 py-1.5 rounded-xl ${corte.status === 'completed' ? 'bg-emerald-500/10 text-emerald-500' : 'bg-red-500/10 text-red-500'}`}>
+                    {corte.status === 'completed' ? 'Cuadrado' : 'Revisar'}
+                  </span>
+                </div>
               </div>
             ))}
           </div>

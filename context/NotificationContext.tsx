@@ -1,5 +1,7 @@
 
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { auth, db } from '../services/firebase';
+import { collection, query, orderBy, limit, onSnapshot, where } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
 export interface AppNotification {
   id: string;
@@ -23,6 +25,33 @@ const NotificationContext = createContext<NotificationContextType | undefined>(u
 
 export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
+
+  // Efecto para escuchar notificaciones internas de Firestore (Webhook de Sistema)
+  useEffect(() => {
+    const user = auth.currentUser;
+    if (!user) return;
+
+    const q = query(
+      collection(db, "users", user.uid, "notifications"),
+      orderBy("timestamp", "desc"),
+      limit(20)
+    );
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const internalNotifs = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })) as AppNotification[];
+      
+      setNotifications(prev => {
+        const external = prev.filter(n => !n.id.startsWith('sys_')); // Mantener externas que no choquen
+        const combined = [...internalNotifs, ...external];
+        return combined.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+      });
+    });
+
+    return () => unsubscribe();
+  }, []);
 
   const fetchNotifications = useCallback(async () => {
     const pollUrl = localStorage.getItem('webhook_notifications');
@@ -50,25 +79,12 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
   const addNotification = useCallback((notification: Omit<AppNotification, 'id' | 'timestamp' | 'isRead'>) => {
     const newNotif: AppNotification = {
       ...notification,
-      id: Math.random().toString(36).substr(2, 9),
+      id: 'sys_' + Math.random().toString(36).substr(2, 9),
       timestamp: new Date().toISOString(),
       isRead: false
     };
     setNotifications(prev => [newNotif, ...prev]);
   }, []);
-
-  useEffect(() => {
-    const saved = localStorage.getItem('app_notifications_list');
-    if (saved) setNotifications(JSON.parse(saved));
-
-    fetchNotifications();
-    const interval = setInterval(fetchNotifications, 30000);
-    return () => clearInterval(interval);
-  }, [fetchNotifications]);
-
-  useEffect(() => {
-    localStorage.setItem('app_notifications_list', JSON.stringify(notifications));
-  }, [notifications]);
 
   const markAsRead = (id: string) => {
     setNotifications(prev => prev.map(n => n.id === id ? { ...n, isRead: true } : n));
