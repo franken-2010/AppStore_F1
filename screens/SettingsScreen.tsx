@@ -26,7 +26,7 @@ const SettingsScreen: React.FC = () => {
   const [webhookNotifications, setWebhookNotifications] = useState('');
   
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
-  const [activeTab, setActiveTab] = useState<'perfil' | 'webhooks'>('perfil');
+  const [activeTab, setActiveTab] = useState<'perfil' | 'webhooks' | 'bdd'>('perfil');
 
   // Tema
   const [isDark, setIsDark] = useState(document.documentElement.classList.contains('dark'));
@@ -62,10 +62,8 @@ const SettingsScreen: React.FC = () => {
     setIsCheckingUpdate(true);
     setUpdateStatus(null);
     
-    // Simular verificación de versión remota
     setTimeout(() => {
-      // Explicitly typing mockRemoteVersion as string to fix: This comparison appears to be unintentional because the types '"1.3.0"' and '"1.2.0"' have no overlap.
-      const mockRemoteVersion: string = '1.3.0'; // Simulamos que hay una versión superior
+      const mockRemoteVersion: string = '1.3.0'; 
       
       if (mockRemoteVersion !== APP_VERSION) {
         setUpdateStatus(`Nueva versión disponible: ${mockRemoteVersion}`);
@@ -135,18 +133,27 @@ const SettingsScreen: React.FC = () => {
         <h1 className="text-lg font-bold flex-1 text-center pr-10">Configuración</h1>
       </header>
 
-      <div className="px-6 py-4 flex gap-2">
+      <div className="px-6 py-4 flex gap-2 overflow-x-auto no-scrollbar">
         <button 
           onClick={() => setActiveTab('perfil')}
-          className={`flex-1 py-3 rounded-2xl text-sm font-bold transition-all ${activeTab === 'perfil' ? 'bg-primary text-white shadow-lg shadow-primary/20' : 'bg-slate-200 dark:bg-surface-dark text-slate-500'}`}
+          className={`shrink-0 px-6 py-3 rounded-2xl text-sm font-bold transition-all ${activeTab === 'perfil' ? 'bg-primary text-white shadow-lg shadow-primary/20' : 'bg-slate-200 dark:bg-surface-dark text-slate-500'}`}
         >
           Mi Perfil
         </button>
         <button 
           onClick={() => setActiveTab('webhooks')}
-          className={`flex-1 py-3 rounded-2xl text-sm font-bold transition-all ${activeTab === 'webhooks' ? 'bg-primary text-white shadow-lg shadow-primary/20' : 'bg-slate-200 dark:bg-surface-dark text-slate-500'}`}
+          className={`shrink-0 px-6 py-3 rounded-2xl text-sm font-bold transition-all ${activeTab === 'webhooks' ? 'bg-primary text-white shadow-lg shadow-primary/20' : 'bg-slate-200 dark:bg-surface-dark text-slate-500'}`}
         >
           Webhooks
+        </button>
+        <button 
+          onClick={() => {
+            setActiveTab('bdd');
+            navigate('/settings/bdd');
+          }}
+          className={`shrink-0 px-6 py-3 rounded-2xl text-sm font-bold transition-all ${activeTab === 'bdd' ? 'bg-primary text-white shadow-lg shadow-primary/20' : 'bg-slate-200 dark:bg-surface-dark text-slate-500'}`}
+        >
+          BDD
         </button>
       </div>
 
@@ -166,7 +173,6 @@ const SettingsScreen: React.FC = () => {
               </div>
             </div>
 
-            {/* Selector de Tema */}
             <div className="p-4 rounded-2xl bg-slate-100 dark:bg-surface-dark flex items-center justify-between border border-slate-200 dark:border-white/5">
               <div className="flex items-center gap-3">
                 <div className={`p-2 rounded-xl ${isDark ? 'bg-amber-400/20 text-amber-400' : 'bg-blue-500/10 text-blue-500'}`}>
@@ -189,7 +195,6 @@ const SettingsScreen: React.FC = () => {
               </button>
             </div>
 
-            {/* Actualización de App */}
             <div className="p-4 rounded-2xl bg-slate-100 dark:bg-surface-dark border border-slate-200 dark:border-white/5 space-y-3">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
@@ -248,7 +253,7 @@ const SettingsScreen: React.FC = () => {
               Cerrar Sesión
             </button>
           </section>
-        ) : (
+        ) : activeTab === 'webhooks' ? (
           <section className="space-y-6">
             <div className="flex flex-col gap-2">
               <label className="text-xs font-bold text-slate-500 uppercase ml-1">Actualización de Precios</label>
@@ -263,19 +268,21 @@ const SettingsScreen: React.FC = () => {
               <input value={webhookNotifications} onChange={(e) => setWebhookNotifications(e.target.value)} className="w-full rounded-xl bg-white dark:bg-surface-dark border border-slate-200 dark:border-border-dark py-4 px-4 text-base" placeholder="https://hook.make.com/..." />
             </div>
           </section>
-        )}
+        ) : null}
       </main>
 
-      <div className="fixed bottom-[88px] left-0 right-0 px-6 max-w-md mx-auto z-40">
-        <button 
-          onClick={activeTab === 'perfil' ? handleSaveProfile : handleSaveWebhooks}
-          disabled={saveStatus === 'saving'}
-          className={`w-full ${saveStatus === 'saved' ? 'bg-emerald-500' : 'bg-primary'} transition-all text-white font-bold py-4 rounded-xl shadow-lg flex items-center justify-center gap-2`}
-        >
-          {saveStatus === 'saving' ? <span className="material-symbols-outlined animate-spin">sync</span> : <span className="material-symbols-outlined">{saveStatus === 'saved' ? 'check' : 'save'}</span>}
-          <span>{saveStatus === 'saved' ? '¡Guardado!' : 'Guardar Cambios'}</span>
-        </button>
-      </div>
+      {activeTab !== 'bdd' && (
+        <div className="fixed bottom-[88px] left-0 right-0 px-6 max-w-md mx-auto z-40">
+          <button 
+            onClick={activeTab === 'perfil' ? handleSaveProfile : handleSaveWebhooks}
+            disabled={saveStatus === 'saving'}
+            className={`w-full ${saveStatus === 'saved' ? 'bg-emerald-500' : 'bg-primary'} transition-all text-white font-bold py-4 rounded-xl shadow-lg flex items-center justify-center gap-2`}
+          >
+            {saveStatus === 'saving' ? <span className="material-symbols-outlined animate-spin">sync</span> : <span className="material-symbols-outlined">{saveStatus === 'saved' ? 'check' : 'save'}</span>}
+            <span>{saveStatus === 'saved' ? '¡Guardado!' : 'Guardar Cambios'}</span>
+          </button>
+        </div>
+      )}
 
       <BottomNav />
     </div>

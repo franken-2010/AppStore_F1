@@ -11,8 +11,9 @@ import ToolsScreen from './screens/ToolsScreen';
 import PriceUpdateScreen from './screens/PriceUpdateScreen';
 import ProductAddScreen from './screens/ProductAddScreen';
 import SettingsScreen from './screens/SettingsScreen';
+import DatabaseUploadScreen from './screens/DatabaseUploadScreen';
+import PriceVerificationScreen from './screens/PriceVerificationScreen';
 
-// Added React.FC type with explicit children to fix the reported property missing error
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user, loading } = useAuth();
   if (loading) return <div className="min-h-screen bg-background-dark flex items-center justify-center"><span className="material-symbols-outlined animate-spin text-primary text-4xl">sync</span></div>;
@@ -32,7 +33,9 @@ const App: React.FC = () => {
             <Route path="/tools" element={<ProtectedRoute><ToolsScreen /></ProtectedRoute>} />
             <Route path="/tools/price-update" element={<ProtectedRoute><PriceUpdateScreen /></ProtectedRoute>} />
             <Route path="/tools/product-add" element={<ProtectedRoute><ProductAddScreen /></ProtectedRoute>} />
+            <Route path="/tools/price-verification" element={<ProtectedRoute><PriceVerificationScreen /></ProtectedRoute>} />
             <Route path="/settings" element={<ProtectedRoute><SettingsScreen /></ProtectedRoute>} />
+            <Route path="/settings/bdd" element={<ProtectedRoute><DatabaseUploadScreen /></ProtectedRoute>} />
           </Routes>
         </Router>
       </NotificationProvider>

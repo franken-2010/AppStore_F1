@@ -3,8 +3,44 @@ import { GoogleGenAI, Type } from "@google/genai";
 import { ReceiptAnalysis } from "../types";
 
 export class GeminiService {
-  // Correctly initializing with the API key from environment variable directly
   private static ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+
+  static async findProductsSemantic(userQuery: string, productsInDb: any[]): Promise<any[]> {
+    try {
+      if (productsInDb.length === 0) return [];
+
+      const productsContext = productsInDb.map(p => ({
+        name: p.nombreCompleto,
+        price: p.precioSugRed,
+        id: p.productoID
+      }));
+
+      const response = await this.ai.models.generateContent({
+        model: 'gemini-3-flash-preview',
+        contents: `Consulta del usuario: "${userQuery}".\nProductos disponibles en la base de datos:\n${JSON.stringify(productsContext)}`,
+        config: {
+          systemInstruction: "Eres un buscador inteligente de inventario. Tu tarea es encontrar los productos que más coincidan con la búsqueda del usuario basándote en el nombre. Devuelve un máximo de 5 resultados en formato JSON. El JSON debe ser un array de objetos con las propiedades: 'name' (que sea el nombreCompleto) y 'price' (que sea el precioSugRed).",
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.ARRAY,
+            items: {
+              type: Type.OBJECT,
+              properties: {
+                name: { type: Type.STRING },
+                price: { type: Type.NUMBER }
+              },
+              required: ["name", "price"]
+            }
+          }
+        }
+      });
+
+      return JSON.parse(response.text || '[]');
+    } catch (error) {
+      console.error("Error in semantic search:", error);
+      return [];
+    }
+  }
 
   static async analyzeReceiptImage(base64Image: string): Promise<ReceiptAnalysis | null> {
     try {

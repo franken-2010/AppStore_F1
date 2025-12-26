@@ -22,3 +22,16 @@ export interface HistoryItem {
   amount: number;
   status: 'completed' | 'revision';
 }
+
+export interface StoreProduct {
+  productoID: number;
+  nombreCompleto: string;
+  costoBasePrincipal: number;
+  uniPorCaja: number;
+  costoUnidad: number;
+  utilidadPorcentaje: number;
+  precioSugerido: number;
+  precioSugRed: number;
+  margenPesos: number;
+  lastUpdated: string;
+}
