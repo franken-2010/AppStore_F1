@@ -26,15 +26,14 @@ const RegisterScreen: React.FC = () => {
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
       const user = userCredential.user;
 
-      // Actualizar perfil básico
       await updateProfile(user, { displayName: name });
 
-      // Guardar en Firestore
+      // Guardar en Firestore con el nuevo azul primario en el avatar
       await setDoc(doc(db, "users", user.uid), {
         uid: user.uid,
         displayName: name,
         email: email,
-        photoURL: `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=8253d5&color=fff`,
+        photoURL: `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=2563eb&color=fff`,
         role: 'admin',
         createdAt: new Date().toISOString()
       });

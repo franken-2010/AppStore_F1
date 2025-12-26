@@ -11,22 +11,34 @@
     <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
     <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
     <script>
+      // Inicialización rápida del tema
+      const savedTheme = localStorage.getItem('theme');
+      if (savedTheme === 'light') {
+        document.documentElement.classList.remove('dark');
+      } else if (savedTheme === 'dark') {
+        document.documentElement.classList.add('dark');
+      } else if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
+        document.documentElement.classList.add('dark');
+      } else {
+        document.documentElement.classList.remove('dark');
+      }
+
       tailwind.config = {
         darkMode: "class",
         theme: {
           extend: {
             colors: {
-              "primary": "#8253d5",
-              "primary-dark": "#6b42b0",
-              "primary-light": "#9d74e0",
-              "background-light": "#f7f6f8",
-              "background-dark": "#17131f",
-              "surface-dark": "#252031",
+              "primary": "#2563eb",
+              "primary-dark": "#1d4ed8",
+              "primary-light": "#60a5fa",
+              "background-light": "#f8fafc",
+              "background-dark": "#0f172a",
+              "surface-dark": "#1e293b",
               "surface-light": "#ffffff",
-              "card-dark": "#231e2c",
-              "border-dark": "#483a5f",
-              "accent-green": "#27ae60",
-              "accent-blue": "#2980b9",
+              "card-dark": "#1e293b",
+              "border-dark": "#334155",
+              "accent-green": "#10b981",
+              "accent-blue": "#3b82f6",
             },
             fontFamily: {
               "display": ["Manrope", "sans-serif"]
@@ -47,7 +59,10 @@
         .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
         body {
             min-height: 100vh;
-            background-color: #17131f;
+            background-color: #f8fafc;
+        }
+        .dark body {
+            background-color: #0f172a;
         }
     </style>
 <script type="importmap">

@@ -3,7 +3,8 @@ import { GoogleGenAI, Type } from "@google/genai";
 import { ReceiptAnalysis } from "../types";
 
 export class GeminiService {
-  private static ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
+  // Correctly initializing with the API key from environment variable directly
+  private static ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
   static async analyzeReceiptImage(base64Image: string): Promise<ReceiptAnalysis | null> {
     try {

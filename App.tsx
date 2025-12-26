@@ -12,7 +12,8 @@ import PriceUpdateScreen from './screens/PriceUpdateScreen';
 import ProductAddScreen from './screens/ProductAddScreen';
 import SettingsScreen from './screens/SettingsScreen';
 
-const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
+// Added React.FC type with explicit children to fix the reported property missing error
+const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user, loading } = useAuth();
   if (loading) return <div className="min-h-screen bg-background-dark flex items-center justify-center"><span className="material-symbols-outlined animate-spin text-primary text-4xl">sync</span></div>;
   return user ? <>{children}</> : <Navigate to="/" />;

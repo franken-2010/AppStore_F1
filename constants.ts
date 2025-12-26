@@ -1,6 +1,8 @@
 
 import { ActivityItem, HistoryItem } from './types';
 
+export const APP_VERSION: string = '1.2.0';
+
 export const RECENT_ACTIVITY: ActivityItem[] = [
   { id: '1', title: 'Bot Alpha Iniciado', description: 'Módulo de datos • #4292', time: '2m', type: 'info', icon: 'smart_toy' },
   { id: '2', title: 'Validación Requerida', description: 'Entrada #8821 necesita revisión', time: '15m', type: 'warning', icon: 'warning' },

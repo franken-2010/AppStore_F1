@@ -16,6 +16,7 @@ interface NotificationContextType {
   markAsRead: (id: string) => void;
   markAllAsRead: () => void;
   fetchNotifications: () => Promise<void>;
+  addNotification: (notification: Omit<AppNotification, 'id' | 'timestamp' | 'isRead'>) => void;
 }
 
 const NotificationContext = createContext<NotificationContextType | undefined>(undefined);
@@ -31,10 +32,8 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
       const response = await fetch(pollUrl);
       if (response.ok) {
         const data = await response.json();
-        // Asumimos que Make devuelve un array de notificaciones
         if (Array.isArray(data)) {
           setNotifications(prev => {
-            // Combinar y evitar duplicados por ID
             const newIds = new Set(data.map(n => n.id));
             const existing = prev.filter(n => !newIds.has(n.id));
             return [...data, ...existing].sort((a, b) => 
@@ -48,12 +47,20 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
     }
   }, []);
 
+  const addNotification = useCallback((notification: Omit<AppNotification, 'id' | 'timestamp' | 'isRead'>) => {
+    const newNotif: AppNotification = {
+      ...notification,
+      id: Math.random().toString(36).substr(2, 9),
+      timestamp: new Date().toISOString(),
+      isRead: false
+    };
+    setNotifications(prev => [newNotif, ...prev]);
+  }, []);
+
   useEffect(() => {
-    // Cargar iniciales de localStorage para persistencia offline
     const saved = localStorage.getItem('app_notifications_list');
     if (saved) setNotifications(JSON.parse(saved));
 
-    // Polling cada 30 segundos si hay URL configurada
     fetchNotifications();
     const interval = setInterval(fetchNotifications, 30000);
     return () => clearInterval(interval);
@@ -74,7 +81,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
   const unreadCount = notifications.filter(n => !n.isRead).length;
 
   return (
-    <NotificationContext.Provider value={{ notifications, unreadCount, markAsRead, markAllAsRead, fetchNotifications }}>
+    <NotificationContext.Provider value={{ notifications, unreadCount, markAsRead, markAllAsRead, fetchNotifications, addNotification }}>
       {children}
     </NotificationContext.Provider>
   );
