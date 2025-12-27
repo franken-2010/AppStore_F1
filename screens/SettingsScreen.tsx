@@ -31,9 +31,11 @@ const SettingsScreen: React.FC = () => {
   const [isDark, setIsDark] = useState(document.documentElement.classList.contains('dark'));
   const [isGeneratingIA, setIsGeneratingIA] = useState(false);
   const [copyFeedback, setCopyFeedback] = useState(false);
+  const [showManualHelp, setShowManualHelp] = useState(false);
+  const [isBiometricLinked, setIsBiometricLinked] = useState(!!localStorage.getItem('biometric_credential'));
 
-  // URL REAL Y FUNCIONAL PARA MAKE
-  const systemWebhookURL = user ? `https://ntfy.sh/dataflow_admin_${user.uid}` : 'Cargando...';
+  const [showInstallBtn, setShowInstallBtn] = useState(!!(window as any).deferredPrompt);
+  const isPWA = (window as any).isPWA;
 
   useEffect(() => {
     if (profile) {
@@ -44,7 +46,83 @@ const SettingsScreen: React.FC = () => {
     setWebhookAddProduct(localStorage.getItem('webhook_add_product') || '');
     setWebhookCortes(localStorage.getItem('webhook_cortes') || '');
     setWebhookNotifications(localStorage.getItem('webhook_notifications') || '');
-  }, [profile]);
+
+    const handlePwaInstallable = () => setShowInstallBtn(true);
+    window.addEventListener('pwa-installable', handlePwaInstallable);
+    
+    // Version check logic
+    const checkForUpdates = async () => {
+      // Simulate fetching latest version from remote config or server
+      // In a real-world scenario, you would fetch a JSON file like /version.json
+      const LATEST_VERSION_FROM_SERVER = '1.2.6'; 
+      
+      const lastNotifiedVersion = localStorage.getItem('last_notified_version');
+      
+      // Basic semantic version comparison (only notify once per new version)
+      if (LATEST_VERSION_FROM_SERVER !== APP_VERSION && lastNotifiedVersion !== LATEST_VERSION_FROM_SERVER) {
+        addNotification({
+          title: 'Actualización Disponible',
+          message: `Una nueva versión (v${LATEST_VERSION_FROM_SERVER}) está lista. Por favor, reinicia la aplicación para obtener las últimas funciones y correcciones.`,
+          type: 'system'
+        });
+        localStorage.setItem('last_notified_version', LATEST_VERSION_FROM_SERVER);
+      }
+    };
+
+    checkForUpdates();
+
+    return () => window.removeEventListener('pwa-installable', handlePwaInstallable);
+  }, [profile, addNotification]);
+
+  const handleLinkBiometrics = async () => {
+    if (!user || !user.email) return;
+    try {
+      const challenge = new Uint8Array(32);
+      window.crypto.getRandomValues(challenge);
+
+      const credential = await navigator.credentials.create({
+        publicKey: {
+          challenge,
+          rp: { name: "DataFlow Admin", id: window.location.hostname },
+          user: {
+            id: new TextEncoder().encode(user.uid),
+            name: user.email,
+            displayName: user.displayName || user.email
+          },
+          pubKeyCredParams: [{ alg: -7, type: "public-key" }, { alg: -257, type: "public-key" }],
+          timeout: 60000,
+          authenticatorSelection: { userVerification: "required" }
+        }
+      });
+
+      if (credential) {
+        const credId = btoa(String.fromCharCode(...new Uint8Array((credential as any).rawId)));
+        localStorage.setItem('biometric_credential', credId);
+        localStorage.setItem('biometric_email', user.email);
+        setIsBiometricLinked(true);
+        addNotification({ title: 'Biometría Vinculada', message: 'Ahora puedes entrar con tu huella.', type: 'system' });
+      }
+    } catch (err) {
+      console.error("Link biometric error:", err);
+      alert("No se pudo vincular la biometría. Asegúrate de estar en un sitio seguro (HTTPS) y tener habilitada la seguridad del dispositivo.");
+    }
+  };
+
+  const handleInstallApp = async () => {
+    const prompt = (window as any).deferredPrompt;
+    if (!prompt) {
+      setShowManualHelp(true);
+      return;
+    }
+    prompt.prompt();
+    const { outcome } = await prompt.userChoice;
+    if (outcome === 'accepted') {
+      (window as any).deferredPrompt = null;
+      setShowInstallBtn(false);
+    }
+  };
+
+  const systemWebhookURL = user ? `https://ntfy.sh/dataflow_admin_${user.uid}` : 'Cargando...';
 
   const handleCopyWebhook = () => {
     if (systemWebhookURL.startsWith('http')) {
@@ -150,7 +228,7 @@ const SettingsScreen: React.FC = () => {
 
       <main className="flex-1 overflow-y-auto p-6 space-y-8 no-scrollbar">
         {activeTab === 'perfil' && (
-          <section className="space-y-6">
+          <section className="space-y-6 pb-12">
             <div className="flex flex-col items-center gap-6 mb-4">
               <div className="relative group">
                 <div className="size-28 rounded-[2rem] border-4 border-primary bg-cover bg-center overflow-hidden shadow-2xl transition-transform group-hover:scale-105" style={{backgroundImage: `url('${photoURL}')`}}>
@@ -184,6 +262,33 @@ const SettingsScreen: React.FC = () => {
               </div>
             </div>
 
+            {/* SECCIÓN BIOMÉTRICA */}
+            <div className="p-5 rounded-3xl bg-white dark:bg-surface-dark border border-slate-100 dark:border-white/5 shadow-sm space-y-4">
+              <div className="flex items-center gap-3">
+                <div className="size-10 bg-primary/10 text-primary rounded-xl flex items-center justify-center">
+                  <span className="material-symbols-outlined">fingerprint</span>
+                </div>
+                <div className="flex-1">
+                  <p className="text-sm font-black">Acceso Biométrico</p>
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Inicia sesión con tu huella</p>
+                </div>
+              </div>
+              
+              {isBiometricLinked ? (
+                <div className="flex items-center gap-2 p-3 bg-emerald-500/5 text-emerald-500 rounded-2xl border border-emerald-500/10">
+                  <span className="material-symbols-outlined text-lg">verified</span>
+                  <p className="text-xs font-bold">Tu dispositivo ya está vinculado.</p>
+                </div>
+              ) : (
+                <button 
+                  onClick={handleLinkBiometrics}
+                  className="w-full py-3.5 bg-slate-50 dark:bg-white/5 text-primary font-black rounded-2xl border-2 border-dashed border-primary/30 hover:bg-primary hover:text-white transition-all text-sm"
+                >
+                  Vincular Huella Digital
+                </button>
+              )}
+            </div>
+
             <div className="p-4 rounded-2xl bg-slate-100 dark:bg-surface-dark flex items-center justify-between border border-slate-200 dark:border-white/5">
               <div className="flex items-center gap-3">
                 <div className={`p-2 rounded-xl ${isDark ? 'bg-amber-400/20 text-amber-400' : 'bg-blue-500/10 text-blue-500'}`}>
@@ -202,17 +307,44 @@ const SettingsScreen: React.FC = () => {
               <div className="flex flex-col gap-2">
                 <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Nombre Completo</label>
                 <div className="relative">
-                  <input value={name} onChange={(e) => setName(e.target.value)} className="w-full rounded-xl bg-white dark:bg-surface-dark border border-slate-200 dark:border-border-dark py-4 px-4 pr-12 text-base font-bold outline-none focus:ring-2 focus:ring-primary" />
+                  <input value={name} onChange={(e) => setName(e.target.value)} className="w-full rounded-xl bg-white dark:bg-surface-dark border border-slate-200 dark:border-border-dark py-4 px-4 pr-12 text-base font-bold outline-none focus:ring-2 focus:ring-primary shadow-sm" />
                   <VoiceInputButton onResult={setName} className="absolute right-2 top-1/2 -translate-y-1/2" />
                 </div>
               </div>
               <div className="flex flex-col gap-2">
-                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">URL de Foto (Opcional)</label>
-                <input value={photoURL} onChange={(e) => setPhotoURL(e.target.value)} className="w-full rounded-xl bg-white dark:bg-surface-dark border border-slate-200 dark:border-border-dark py-4 px-4 text-base font-bold outline-none" placeholder="https://..." />
-              </div>
-              <div className="flex flex-col gap-2">
                 <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Nueva Contraseña</label>
-                <input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} className="w-full rounded-xl bg-white dark:bg-surface-dark border border-slate-200 dark:border-border-dark py-4 px-4 text-base font-bold outline-none" placeholder="Dejar en blanco para no cambiar" />
+                <input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} className="w-full rounded-xl bg-white dark:bg-surface-dark border border-slate-200 dark:border-border-dark py-4 px-4 text-base font-bold outline-none shadow-sm" placeholder="Dejar en blanco para no cambiar" />
+              </div>
+            </div>
+
+            <div className="mt-8 pt-8 border-t border-slate-100 dark:border-white/5">
+              <div className="flex items-center gap-2 mb-4">
+                <span className="material-symbols-outlined text-primary">smartphone</span>
+                <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">App Local (Nativa)</h3>
+              </div>
+              
+              <div className="p-6 bg-white dark:bg-surface-dark rounded-3xl border border-slate-100 dark:border-white/5 shadow-sm space-y-4">
+                <div className="flex justify-between items-center pb-2 border-b border-slate-50 dark:border-white/5">
+                  <p className="text-sm font-bold">Versión</p>
+                  <span className="text-xs font-black bg-slate-100 dark:bg-white/10 px-3 py-1 rounded-full text-slate-500">v{APP_VERSION}</span>
+                </div>
+                
+                {isPWA ? (
+                  <div className="flex items-center gap-3 text-emerald-500 justify-center py-4 bg-emerald-500/5 rounded-2xl">
+                    <span className="material-symbols-outlined text-2xl">check_circle</span>
+                    <span className="text-xs font-black uppercase tracking-widest">Estás usando la versión instalada</span>
+                  </div>
+                ) : (
+                  <div className="pt-2">
+                    <button 
+                      onClick={handleInstallApp}
+                      className={`w-full py-4 font-black rounded-2xl flex items-center justify-center gap-3 transition-all active:scale-95 shadow-lg ${showInstallBtn ? 'bg-primary text-white' : 'bg-slate-200 dark:bg-white/5 text-slate-500'}`}
+                    >
+                      <span className="material-symbols-outlined">{showInstallBtn ? 'install_mobile' : 'help'}</span>
+                      {showInstallBtn ? 'Instalar ahora' : '¿Cómo instalar?'}
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -224,7 +356,6 @@ const SettingsScreen: React.FC = () => {
 
         {activeTab === 'webhooks' && (
           <section className="space-y-8 animate-in fade-in slide-in-from-bottom-5">
-            {/* WEBHOOK DE SISTEMA (Solo lectura - ntfy.sh) */}
             <div className="bg-primary/5 dark:bg-primary/10 border border-primary/20 p-5 rounded-3xl relative overflow-hidden">
                <div className="absolute top-0 right-0 p-3 opacity-10">
                  <span className="material-symbols-outlined text-5xl">sensors</span>
@@ -252,9 +383,6 @@ const SettingsScreen: React.FC = () => {
                      ) : (
                        <span className="material-symbols-outlined text-lg">content_copy</span>
                      )}
-                     {copyFeedback && (
-                        <span className="absolute -top-10 left-1/2 -translate-x-1/2 bg-black text-white text-[10px] py-1 px-2 rounded-lg whitespace-nowrap animate-in fade-in slide-in-from-bottom-2">¡Copiado!</span>
-                     )}
                    </button>
                  </div>
                </div>
@@ -262,7 +390,6 @@ const SettingsScreen: React.FC = () => {
 
             <div className="h-px bg-slate-100 dark:bg-white/5 mx-2"></div>
 
-            {/* WEBHOOKS DE USUARIO */}
             <div className="space-y-6">
               <div className="px-1">
                 <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">Configuración Externa</h3>
@@ -270,7 +397,7 @@ const SettingsScreen: React.FC = () => {
               {[['Price Update', webhookPriceUpdate, setWebhookPriceUpdate], ['Add Product', webhookAddProduct, setWebhookAddProduct], ['Cortes', webhookCortes, setWebhookCortes], ['Notifications Poll', webhookNotifications, setWebhookNotifications]].map(([label, val, set]: any) => (
                 <div key={label} className="flex flex-col gap-2">
                   <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">{label}</label>
-                  <input value={val} onChange={(e) => set(e.target.value)} className="w-full rounded-xl bg-white dark:bg-surface-dark border border-slate-200 dark:border-border-dark py-4 px-4 text-xs font-mono focus:ring-2 focus:ring-primary outline-none transition-all" placeholder="https://hook.make.com/..." />
+                  <input value={val} onChange={(e) => set(e.target.value)} className="w-full rounded-xl bg-white dark:bg-surface-dark border border-slate-200 dark:border-border-dark py-4 px-4 text-xs font-mono focus:ring-2 focus:ring-primary outline-none transition-all shadow-sm" placeholder="https://hook.make.com/..." />
                 </div>
               ))}
             </div>
@@ -279,7 +406,7 @@ const SettingsScreen: React.FC = () => {
       </main>
 
       <div className="fixed bottom-[88px] left-0 right-0 px-6 max-w-md mx-auto z-40">
-        <button onClick={activeTab === 'perfil' ? handleSaveProfile : handleSaveWebhooks} disabled={saveStatus === 'saving'} className={`w-full py-4 rounded-xl text-white font-black shadow-lg flex items-center justify-center gap-2 transition-all ${saveStatus === 'saved' ? 'bg-emerald-500' : 'bg-primary'}`}>
+        <button onClick={activeTab === 'perfil' ? handleSaveProfile : handleSaveWebhooks} disabled={saveStatus === 'saving'} className={`w-full py-4 rounded-xl text-white font-black shadow-lg flex items-center justify-center gap-2 transition-all ${saveStatus === 'saved' ? 'bg-emerald-50' : 'bg-primary'}`}>
           <span className="material-symbols-outlined">{saveStatus === 'saving' ? 'sync' : saveStatus === 'saved' ? 'check' : 'save'}</span>
           <span>{saveStatus === 'saved' ? '¡Guardado!' : 'Guardar Cambios'}</span>
         </button>

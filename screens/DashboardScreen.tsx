@@ -27,7 +27,7 @@ const DashboardScreen: React.FC = () => {
               <span className="material-symbols-outlined">menu</span>
             </button>
             <div className="flex flex-col">
-              <p className="text-[10px] font-black uppercase tracking-[0.2em] text-primary">DataFlow Intelligence</p>
+              <p className="text-[10px] font-black uppercase tracking-[0.2em] text-primary">Abarrotes F1 Intelligence</p>
               <h1 className="text-xl font-extrabold tracking-tight">Hola, {profile?.displayName?.split(' ')[0] || 'Admin'}</h1>
             </div>
           </div>
@@ -55,7 +55,7 @@ const DashboardScreen: React.FC = () => {
         {/* ACTION GRID */}
         <section className="mt-8">
           <h2 className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-400 mb-5 px-1 flex items-center gap-2">
-            Control de Operación
+            Gestión F1
             <div className="flex-1 h-px bg-slate-100 dark:bg-white/5"></div>
           </h2>
           <div className="grid grid-cols-3 gap-4">
@@ -66,7 +66,16 @@ const DashboardScreen: React.FC = () => {
               <div className="size-14 rounded-2xl bg-primary/10 text-primary flex items-center justify-center group-hover:bg-primary group-hover:text-white transition-colors duration-300">
                 <span className="material-symbols-outlined text-2xl">point_of_sale</span>
               </div>
-              <span className="text-[10px] font-black uppercase tracking-tight text-center leading-none text-slate-600 dark:text-slate-400">Corte de Caja</span>
+              <span className="text-[10px] font-black uppercase tracking-tight text-center leading-none text-slate-600 dark:text-slate-400">Caja</span>
+            </button>
+            <button 
+              onClick={() => navigate('/accounting')}
+              className="flex flex-col items-center gap-3 p-5 rounded-[2rem] bg-white dark:bg-surface-dark border border-slate-100 dark:border-white/5 active:scale-95 transition-all shadow-sm group"
+            >
+              <div className="size-14 rounded-2xl bg-indigo-500/10 text-indigo-500 flex items-center justify-center group-hover:bg-indigo-500 group-hover:text-white transition-colors duration-300">
+                <span className="material-symbols-outlined text-2xl">account_balance</span>
+              </div>
+              <span className="text-[10px] font-black uppercase tracking-tight text-center leading-none text-slate-600 dark:text-slate-400">Conta</span>
             </button>
             <button 
               onClick={() => navigate('/tools/price-verification')}
@@ -75,16 +84,7 @@ const DashboardScreen: React.FC = () => {
               <div className="size-14 rounded-2xl bg-emerald-500/10 text-emerald-500 flex items-center justify-center group-hover:bg-emerald-500 group-hover:text-white transition-colors duration-300">
                 <span className="material-symbols-outlined text-2xl">search_check</span>
               </div>
-              <span className="text-[10px] font-black uppercase tracking-tight text-center leading-none text-slate-600 dark:text-slate-400">Consultar Precio</span>
-            </button>
-            <button 
-              onClick={() => navigate('/settings/bdd')}
-              className="flex flex-col items-center gap-3 p-5 rounded-[2rem] bg-white dark:bg-surface-dark border border-slate-100 dark:border-white/5 active:scale-95 transition-all shadow-sm group"
-            >
-              <div className="size-14 rounded-2xl bg-amber-500/10 text-amber-500 flex items-center justify-center group-hover:bg-amber-500 group-hover:text-white transition-colors duration-300">
-                <span className="material-symbols-outlined text-2xl">database_sync</span>
-              </div>
-              <span className="text-[10px] font-black uppercase tracking-tight text-center leading-none text-slate-600 dark:text-slate-400">Actualizar BDD</span>
+              <span className="text-[10px] font-black uppercase tracking-tight text-center leading-none text-slate-600 dark:text-slate-400">Precios</span>
             </button>
           </div>
         </section>

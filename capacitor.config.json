@@ -1,0 +1,10 @@
+
+{
+  "appId": "com.dataflow.admin",
+  "appName": "DataFlow Admin",
+  "webDir": "dist",
+  "bundledWebRuntime": false,
+  "server": {
+    "androidScheme": "https"
+  }
+}

@@ -35,3 +35,22 @@ export interface StoreProduct {
   margenPesos: number;
   lastUpdated: string;
 }
+
+export type AccountType = 'Activo' | 'Pasivo' | 'Capital' | 'Ingreso' | 'Gasto';
+
+export interface AccountingAccount {
+  id?: string;
+  code: string;
+  name: string;
+  type: AccountType;
+  description: string;
+  balance: number;
+  initialBalance?: number;
+  parentId?: string | null;
+}
+
+export interface AccountingProvider {
+  id?: string;
+  name: string;
+  whatsapp?: string;
+}

@@ -1,6 +1,6 @@
 {
-  "name": "DataFlow Admin Intelligence",
-  "description": "A high-performance administrative dashboard with AI-powered receipt analysis and business insights powered by Gemini.",
+  "name": "Miscelánea F1 Intelligence",
+  "description": "Sistema inteligente de gestión para Abarrotes y Miscelánea F1 con análisis de IA y control financiero.",
   "requestFramePermissions": [
     "camera",
     "microphone"

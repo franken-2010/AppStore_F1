@@ -4,25 +4,38 @@
 <head>
     <meta charset="utf-8"/>
     <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
-    <title>DataFlow Admin Intelligence</title>
+    <title>Miscelánea F1 Intelligence</title>
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#2563eb">
+    <link rel="apple-touch-icon" href="https://cdn-icons-png.flaticon.com/512/3759/3759521.png">
+    
+    <script>
+      // Captura inmediata del evento de instalación
+      window.deferredPrompt = null;
+      window.addEventListener('beforeinstallprompt', (e) => {
+        e.preventDefault();
+        window.deferredPrompt = e;
+        window.dispatchEvent(new CustomEvent('pwa-installable'));
+        console.log('PWA: Evento beforeinstallprompt capturado');
+      });
+
+      // Detección de si ya está instalada
+      window.isPWA = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+
+      const savedTheme = localStorage.getItem('theme');
+      if (savedTheme === 'light') {
+        document.documentElement.classList.remove('dark');
+      } else {
+        document.documentElement.classList.add('dark');
+      }
+    </script>
+
     <link href="https://fonts.googleapis.com" rel="preconnect"/>
     <link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
     <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@200..800&display=swap" rel="stylesheet"/>
     <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
     <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
     <script>
-      // Inicialización rápida del tema
-      const savedTheme = localStorage.getItem('theme');
-      if (savedTheme === 'light') {
-        document.documentElement.classList.remove('dark');
-      } else if (savedTheme === 'dark') {
-        document.documentElement.classList.add('dark');
-      } else if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
-        document.documentElement.classList.add('dark');
-      } else {
-        document.documentElement.classList.remove('dark');
-      }
-
       tailwind.config = {
         darkMode: "class",
         theme: {
@@ -79,5 +92,12 @@
 </head>
 <body class="bg-background-light dark:bg-background-dark font-display text-slate-900 dark:text-white transition-colors duration-200 antialiased selection:bg-primary selection:text-white">
     <div id="root"></div>
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('sw.js').catch(err => console.log('SW registration failed', err));
+        });
+      }
+    </script>
 </body>
 </html>

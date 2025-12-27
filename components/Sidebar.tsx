@@ -18,8 +18,8 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
   const menuItems = [
     { label: 'Dashboard', icon: 'dashboard', path: '/dashboard' },
     { label: 'Cortes de Caja', icon: 'point_of_sale', path: '/cortes' },
+    { label: 'Contabilidad', icon: 'account_balance', path: '/accounting' },
     { label: 'Herramientas', icon: 'build', path: '/tools' },
-    { label: 'Notificaciones', icon: 'notifications', path: '/settings' },
     { label: 'Configuración', icon: 'settings', path: '/settings' },
   ];
 
