@@ -2,15 +2,8 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { auth, db } from '../services/firebase';
 import { onAuthStateChanged, User } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
-import { doc, getDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
-
-interface UserProfile {
-  uid: string;
-  email: string | null;
-  displayName: string;
-  photoURL: string;
-  role: string;
-}
+import { doc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+import { UserProfile } from '../types';
 
 interface AuthContextType {
   user: User | null;
@@ -30,19 +23,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setUser(firebaseUser);
       
       if (firebaseUser) {
-        // Escuchar cambios en el documento de perfil en tiempo real
+        // Escuchar cambios en el documento de perfil en tiempo real (incluyendo webhooks)
         const docRef = doc(db, "users", firebaseUser.uid);
         const unsubProfile = onSnapshot(docRef, (docSnap) => {
           if (docSnap.exists()) {
             setProfile(docSnap.data() as UserProfile);
           } else {
-            setProfile({
+            const defaultProfile: UserProfile = {
               uid: firebaseUser.uid,
               email: firebaseUser.email,
               displayName: firebaseUser.displayName || 'Usuario',
-              photoURL: firebaseUser.photoURL || `https://ui-avatars.com/api/?name=${firebaseUser.email}&background=8253d5&color=fff`,
+              photoURL: firebaseUser.photoURL || `https://ui-avatars.com/api/?name=${firebaseUser.email}&background=2563eb&color=fff`,
               role: 'admin'
-            });
+            };
+            setProfile(defaultProfile);
           }
           setLoading(false);
         });

@@ -17,8 +17,8 @@ const SettingsScreen: React.FC = () => {
   const { addNotification } = useNotifications();
   const fileInputRef = useRef<HTMLInputElement>(null);
   
-  const [name, setName] = useState(profile?.displayName || '');
-  const [photoURL, setPhotoURL] = useState(profile?.photoURL || '');
+  const [name, setName] = useState('');
+  const [photoURL, setPhotoURL] = useState('');
   const [newPassword, setNewPassword] = useState('');
   
   const [webhookPriceUpdate, setWebhookPriceUpdate] = useState('');
@@ -31,7 +31,6 @@ const SettingsScreen: React.FC = () => {
   const [isDark, setIsDark] = useState(document.documentElement.classList.contains('dark'));
   const [isGeneratingIA, setIsGeneratingIA] = useState(false);
   const [copyFeedback, setCopyFeedback] = useState(false);
-  const [showManualHelp, setShowManualHelp] = useState(false);
   const [isBiometricLinked, setIsBiometricLinked] = useState(!!localStorage.getItem('biometric_credential'));
 
   const [showInstallBtn, setShowInstallBtn] = useState(!!(window as any).deferredPrompt);
@@ -39,40 +38,19 @@ const SettingsScreen: React.FC = () => {
 
   useEffect(() => {
     if (profile) {
-      setName(profile.displayName);
-      setPhotoURL(profile.photoURL);
+      setName(profile.displayName || '');
+      setPhotoURL(profile.photoURL || '');
+      setWebhookPriceUpdate(profile.webhookPriceUpdate || '');
+      setWebhookAddProduct(profile.webhookAddProduct || '');
+      setWebhookCortes(profile.webhookCortes || '');
+      setWebhookNotifications(profile.webhookNotifications || '');
     }
-    setWebhookPriceUpdate(localStorage.getItem('webhook_price_update') || '');
-    setWebhookAddProduct(localStorage.getItem('webhook_add_product') || '');
-    setWebhookCortes(localStorage.getItem('webhook_cortes') || '');
-    setWebhookNotifications(localStorage.getItem('webhook_notifications') || '');
 
     const handlePwaInstallable = () => setShowInstallBtn(true);
     window.addEventListener('pwa-installable', handlePwaInstallable);
     
-    // Version check logic
-    const checkForUpdates = async () => {
-      // Simulate fetching latest version from remote config or server
-      // In a real-world scenario, you would fetch a JSON file like /version.json
-      const LATEST_VERSION_FROM_SERVER = '1.2.6'; 
-      
-      const lastNotifiedVersion = localStorage.getItem('last_notified_version');
-      
-      // Basic semantic version comparison (only notify once per new version)
-      if (LATEST_VERSION_FROM_SERVER !== APP_VERSION && lastNotifiedVersion !== LATEST_VERSION_FROM_SERVER) {
-        addNotification({
-          title: 'Actualización Disponible',
-          message: `Una nueva versión (v${LATEST_VERSION_FROM_SERVER}) está lista. Por favor, reinicia la aplicación para obtener las últimas funciones y correcciones.`,
-          type: 'system'
-        });
-        localStorage.setItem('last_notified_version', LATEST_VERSION_FROM_SERVER);
-      }
-    };
-
-    checkForUpdates();
-
     return () => window.removeEventListener('pwa-installable', handlePwaInstallable);
-  }, [profile, addNotification]);
+  }, [profile]);
 
   const handleLinkBiometrics = async () => {
     if (!user || !user.email) return;
@@ -83,7 +61,7 @@ const SettingsScreen: React.FC = () => {
       const credential = await navigator.credentials.create({
         publicKey: {
           challenge,
-          rp: { name: "DataFlow Admin", id: window.location.hostname },
+          rp: { name: "Miscelánea F1 Intelligence", id: window.location.hostname },
           user: {
             id: new TextEncoder().encode(user.uid),
             name: user.email,
@@ -104,16 +82,13 @@ const SettingsScreen: React.FC = () => {
       }
     } catch (err) {
       console.error("Link biometric error:", err);
-      alert("No se pudo vincular la biometría. Asegúrate de estar en un sitio seguro (HTTPS) y tener habilitada la seguridad del dispositivo.");
+      alert("No se pudo vincular la biometría.");
     }
   };
 
   const handleInstallApp = async () => {
     const prompt = (window as any).deferredPrompt;
-    if (!prompt) {
-      setShowManualHelp(true);
-      return;
-    }
+    if (!prompt) return;
     prompt.prompt();
     const { outcome } = await prompt.userChoice;
     if (outcome === 'accepted') {
@@ -136,7 +111,7 @@ const SettingsScreen: React.FC = () => {
     setIsGeneratingIA(true);
     try {
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-      const prompt = `A modern, minimalist, high-quality 3D avatar of a business administrator person, professional style, rounded corners, vibrant primary blue and deep slate colors, soft lighting, profile view, tech dashboard theme background.`;
+      const prompt = `A professional 3D avatar of a retail store manager, wearing a polo shirt with a small 'F1' logo, modern business style, high quality, rounded profile, clean lighting.`;
       
       const response = await ai.models.generateContent({
         model: 'gemini-2.5-flash-image',
@@ -147,6 +122,11 @@ const SettingsScreen: React.FC = () => {
         if (part.inlineData) {
           const imageUrl = `data:image/png;base64,${part.inlineData.data}`;
           setPhotoURL(imageUrl);
+          // Auto-save the IA image
+          if (user) {
+            await updateDoc(doc(db, "users", user.uid), { photoURL: imageUrl });
+            addNotification({ title: 'Perfil Actualizado', message: 'Tu nueva imagen generada por IA ha sido guardada.', type: 'system' });
+          }
           break;
         }
       }
@@ -162,8 +142,12 @@ const SettingsScreen: React.FC = () => {
     const file = e.target.files?.[0];
     if (file) {
       const reader = new FileReader();
-      reader.onloadend = () => {
-        setPhotoURL(reader.result as string);
+      reader.onloadend = async () => {
+        const base64 = reader.result as string;
+        setPhotoURL(base64);
+        if (user) {
+          await updateDoc(doc(db, "users", user.uid), { photoURL: base64 });
+        }
       };
       reader.readAsDataURL(file);
     }
@@ -180,9 +164,13 @@ const SettingsScreen: React.FC = () => {
     if (!user) return;
     setSaveStatus('saving');
     try {
-      await updateProfile(user, { displayName: name, photoURL: photoURL });
       if (newPassword) await updatePassword(user, newPassword);
-      await updateDoc(doc(db, "users", user.uid), { displayName: name, photoURL: photoURL });
+      
+      await updateDoc(doc(db, "users", user.uid), { 
+        displayName: name, 
+        photoURL: photoURL 
+      });
+      
       setSaveStatus('saved');
       setTimeout(() => setSaveStatus('idle'), 2000);
       setNewPassword('');
@@ -193,16 +181,23 @@ const SettingsScreen: React.FC = () => {
     }
   };
 
-  const handleSaveWebhooks = () => {
+  const handleSaveWebhooks = async () => {
+    if (!user) return;
     setSaveStatus('saving');
-    localStorage.setItem('webhook_price_update', webhookPriceUpdate);
-    localStorage.setItem('webhook_add_product', webhookAddProduct);
-    localStorage.setItem('webhook_cortes', webhookCortes);
-    localStorage.setItem('webhook_notifications', webhookNotifications);
-    setTimeout(() => {
+    try {
+      await updateDoc(doc(db, "users", user.uid), {
+        webhookPriceUpdate,
+        webhookAddProduct,
+        webhookCortes,
+        webhookNotifications
+      });
       setSaveStatus('saved');
       setTimeout(() => setSaveStatus('idle'), 2000);
-    }, 800);
+    } catch (err) {
+      alert("Error al guardar webhooks en Firebase");
+    } finally {
+      setSaveStatus('idle');
+    }
   };
 
   return (
@@ -219,37 +214,35 @@ const SettingsScreen: React.FC = () => {
           <button 
             key={tab}
             onClick={() => tab === 'bdd' ? navigate('/settings/bdd') : setActiveTab(tab as any)}
-            className={`shrink-0 px-6 py-3 rounded-2xl text-sm font-bold transition-all uppercase tracking-widest ${activeTab === tab ? 'bg-primary text-white shadow-lg' : 'bg-slate-200 dark:bg-surface-dark text-slate-500'}`}
+            className={`shrink-0 px-6 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === tab ? 'bg-primary text-white shadow-lg shadow-primary/30' : 'bg-slate-200 dark:bg-surface-dark text-slate-500'}`}
           >
-            {tab === 'bdd' ? 'BDD' : tab}
+            {tab}
           </button>
         ))}
       </div>
 
       <main className="flex-1 overflow-y-auto p-6 space-y-8 no-scrollbar">
         {activeTab === 'perfil' && (
-          <section className="space-y-6 pb-12">
+          <section className="space-y-6 pb-12 animate-in fade-in">
             <div className="flex flex-col items-center gap-6 mb-4">
               <div className="relative group">
-                <div className="size-28 rounded-[2rem] border-4 border-primary bg-cover bg-center overflow-hidden shadow-2xl transition-transform group-hover:scale-105" style={{backgroundImage: `url('${photoURL}')`}}>
+                <div className="size-28 rounded-[2rem] border-4 border-primary bg-cover bg-center overflow-hidden shadow-2xl transition-transform group-hover:scale-105 bg-slate-200 dark:bg-slate-800" style={{backgroundImage: photoURL ? `url('${photoURL}')` : 'none'}}>
                   {isGeneratingIA && (
                     <div className="absolute inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center">
                       <span className="material-symbols-outlined animate-spin text-white text-3xl">sync</span>
                     </div>
                   )}
+                  {!photoURL && !isGeneratingIA && (
+                     <div className="absolute inset-0 flex items-center justify-center text-slate-400">
+                       <span className="material-symbols-outlined text-4xl">person</span>
+                     </div>
+                  )}
                 </div>
                 <div className="absolute -bottom-2 -right-2 flex gap-1">
-                  <button 
-                    onClick={() => fileInputRef.current?.click()}
-                    className="size-10 bg-white dark:bg-surface-dark text-primary rounded-2xl flex items-center justify-center border-2 border-primary shadow-lg hover:scale-110 transition-all"
-                  >
+                  <button onClick={() => fileInputRef.current?.click()} className="size-10 bg-white dark:bg-surface-dark text-primary rounded-2xl flex items-center justify-center border-2 border-primary shadow-lg hover:scale-110 transition-all">
                     <span className="material-symbols-outlined text-lg">add_a_photo</span>
                   </button>
-                  <button 
-                    onClick={generateIAImage}
-                    disabled={isGeneratingIA}
-                    className="size-10 bg-primary text-white rounded-2xl flex items-center justify-center border-2 border-primary shadow-lg hover:scale-110 transition-all disabled:opacity-50"
-                  >
+                  <button onClick={generateIAImage} disabled={isGeneratingIA} className="size-10 bg-primary text-white rounded-2xl flex items-center justify-center border-2 border-primary shadow-lg hover:scale-110 transition-all disabled:opacity-50">
                     <span className="material-symbols-outlined text-lg">auto_awesome</span>
                   </button>
                 </div>
@@ -262,7 +255,6 @@ const SettingsScreen: React.FC = () => {
               </div>
             </div>
 
-            {/* SECCIÓN BIOMÉTRICA */}
             <div className="p-5 rounded-3xl bg-white dark:bg-surface-dark border border-slate-100 dark:border-white/5 shadow-sm space-y-4">
               <div className="flex items-center gap-3">
                 <div className="size-10 bg-primary/10 text-primary rounded-xl flex items-center justify-center">
@@ -270,21 +262,17 @@ const SettingsScreen: React.FC = () => {
                 </div>
                 <div className="flex-1">
                   <p className="text-sm font-black">Acceso Biométrico</p>
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Inicia sesión con tu huella</p>
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Seguridad F1</p>
                 </div>
               </div>
-              
               {isBiometricLinked ? (
                 <div className="flex items-center gap-2 p-3 bg-emerald-500/5 text-emerald-500 rounded-2xl border border-emerald-500/10">
                   <span className="material-symbols-outlined text-lg">verified</span>
-                  <p className="text-xs font-bold">Tu dispositivo ya está vinculado.</p>
+                  <p className="text-xs font-bold uppercase tracking-wider">Dispositivo Vinculado</p>
                 </div>
               ) : (
-                <button 
-                  onClick={handleLinkBiometrics}
-                  className="w-full py-3.5 bg-slate-50 dark:bg-white/5 text-primary font-black rounded-2xl border-2 border-dashed border-primary/30 hover:bg-primary hover:text-white transition-all text-sm"
-                >
-                  Vincular Huella Digital
+                <button onClick={handleLinkBiometrics} className="w-full py-3.5 bg-slate-50 dark:bg-white/5 text-primary font-black rounded-2xl border-2 border-dashed border-primary/30 active:scale-95 transition-all text-xs uppercase tracking-widest">
+                  Activar Huella Digital
                 </button>
               )}
             </div>
@@ -305,7 +293,7 @@ const SettingsScreen: React.FC = () => {
 
             <div className="space-y-4">
               <div className="flex flex-col gap-2">
-                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Nombre Completo</label>
+                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Nombre de Administrador</label>
                 <div className="relative">
                   <input value={name} onChange={(e) => setName(e.target.value)} className="w-full rounded-xl bg-white dark:bg-surface-dark border border-slate-200 dark:border-border-dark py-4 px-4 pr-12 text-base font-bold outline-none focus:ring-2 focus:ring-primary shadow-sm" />
                   <VoiceInputButton onResult={setName} className="absolute right-2 top-1/2 -translate-y-1/2" />
@@ -313,102 +301,63 @@ const SettingsScreen: React.FC = () => {
               </div>
               <div className="flex flex-col gap-2">
                 <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Nueva Contraseña</label>
-                <input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} className="w-full rounded-xl bg-white dark:bg-surface-dark border border-slate-200 dark:border-border-dark py-4 px-4 text-base font-bold outline-none shadow-sm" placeholder="Dejar en blanco para no cambiar" />
+                <input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} className="w-full rounded-xl bg-white dark:bg-surface-dark border border-slate-200 dark:border-border-dark py-4 px-4 text-base font-bold outline-none shadow-sm" placeholder="••••••••" />
               </div>
             </div>
 
-            <div className="mt-8 pt-8 border-t border-slate-100 dark:border-white/5">
-              <div className="flex items-center gap-2 mb-4">
-                <span className="material-symbols-outlined text-primary">smartphone</span>
-                <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">App Local (Nativa)</h3>
-              </div>
-              
-              <div className="p-6 bg-white dark:bg-surface-dark rounded-3xl border border-slate-100 dark:border-white/5 shadow-sm space-y-4">
-                <div className="flex justify-between items-center pb-2 border-b border-slate-50 dark:border-white/5">
-                  <p className="text-sm font-bold">Versión</p>
-                  <span className="text-xs font-black bg-slate-100 dark:bg-white/10 px-3 py-1 rounded-full text-slate-500">v{APP_VERSION}</span>
-                </div>
-                
-                {isPWA ? (
-                  <div className="flex items-center gap-3 text-emerald-500 justify-center py-4 bg-emerald-500/5 rounded-2xl">
-                    <span className="material-symbols-outlined text-2xl">check_circle</span>
-                    <span className="text-xs font-black uppercase tracking-widest">Estás usando la versión instalada</span>
-                  </div>
-                ) : (
-                  <div className="pt-2">
-                    <button 
-                      onClick={handleInstallApp}
-                      className={`w-full py-4 font-black rounded-2xl flex items-center justify-center gap-3 transition-all active:scale-95 shadow-lg ${showInstallBtn ? 'bg-primary text-white' : 'bg-slate-200 dark:bg-white/5 text-slate-500'}`}
-                    >
-                      <span className="material-symbols-outlined">{showInstallBtn ? 'install_mobile' : 'help'}</span>
-                      {showInstallBtn ? 'Instalar ahora' : '¿Cómo instalar?'}
-                    </button>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            <button onClick={() => signOut(auth).then(() => navigate('/'))} className="w-full py-4 text-red-500 font-black flex items-center justify-center gap-2 hover:bg-red-500/5 rounded-xl transition-colors">
-              <span className="material-symbols-outlined">logout</span> Cerrar Sesión
+            <button onClick={() => signOut(auth).then(() => navigate('/'))} className="w-full py-4 text-red-500 font-black flex items-center justify-center gap-2 hover:bg-red-500/5 rounded-2xl transition-colors mt-8">
+              <span className="material-symbols-outlined">logout</span> Cerrar Sesión F1
             </button>
           </section>
         )}
 
         {activeTab === 'webhooks' && (
-          <section className="space-y-8 animate-in fade-in slide-in-from-bottom-5">
+          <section className="space-y-8 animate-in fade-in pb-12">
             <div className="bg-primary/5 dark:bg-primary/10 border border-primary/20 p-5 rounded-3xl relative overflow-hidden">
-               <div className="absolute top-0 right-0 p-3 opacity-10">
-                 <span className="material-symbols-outlined text-5xl">sensors</span>
-               </div>
                <div className="flex items-center gap-2 mb-4">
-                 <span className="text-[10px] font-black bg-primary text-white px-2 py-0.5 rounded-full uppercase tracking-widest">Live Push</span>
-                 <h3 className="text-sm font-black text-slate-900 dark:text-white">Webhook de Notificaciones Reales</h3>
+                 <span className="text-[10px] font-black bg-primary text-white px-2 py-0.5 rounded-full uppercase tracking-widest">Push BDD</span>
+                 <h3 className="text-sm font-black text-slate-900 dark:text-white">Endpoint de Entrada</h3>
                </div>
                <div className="space-y-3">
                  <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
-                   Este es un endpoint real público a través de <strong>ntfy.sh</strong>. Envíe sus peticiones POST aquí y la app las recibirá al instante.
+                   Usa este enlace en <strong>ntfy.sh</strong> para recibir actualizaciones en tiempo real desde Make u otros servicios.
                  </p>
                  <div className="flex items-center gap-2">
-                   <input 
-                    readOnly 
-                    value={systemWebhookURL} 
-                    className="flex-1 bg-white/50 dark:bg-black/20 border border-slate-200 dark:border-white/5 rounded-xl py-3 px-4 text-[10px] font-mono text-primary outline-none"
-                   />
-                   <button 
-                    onClick={handleCopyWebhook}
-                    className="size-11 bg-primary text-white rounded-xl flex items-center justify-center shadow-lg active:scale-90 transition-all relative"
-                   >
-                     {copyFeedback ? (
-                       <span className="material-symbols-outlined text-lg animate-in zoom-in">check</span>
-                     ) : (
-                       <span className="material-symbols-outlined text-lg">content_copy</span>
-                     )}
+                   <input readOnly value={systemWebhookURL} className="flex-1 bg-white/50 dark:bg-black/20 border border-slate-200 dark:border-white/5 rounded-xl py-3 px-4 text-[10px] font-mono text-primary outline-none" />
+                   <button onClick={handleCopyWebhook} className="size-11 bg-primary text-white rounded-xl flex items-center justify-center shadow-lg active:scale-90 transition-all relative">
+                     <span className="material-symbols-outlined text-lg">{copyFeedback ? 'check' : 'content_copy'}</span>
                    </button>
                  </div>
                </div>
             </div>
 
-            <div className="h-px bg-slate-100 dark:bg-white/5 mx-2"></div>
-
             <div className="space-y-6">
-              <div className="px-1">
-                <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">Configuración Externa</h3>
+              <div className="px-1 border-l-2 border-primary pl-3">
+                <h3 className="text-xs font-black text-slate-900 dark:text-white uppercase tracking-widest">Automatizaciones Make (Firebase BDD)</h3>
+                <p className="text-[10px] text-slate-400 font-bold uppercase mt-1">Configuración Centralizada</p>
               </div>
-              {[['Price Update', webhookPriceUpdate, setWebhookPriceUpdate], ['Add Product', webhookAddProduct, setWebhookAddProduct], ['Cortes', webhookCortes, setWebhookCortes], ['Notifications Poll', webhookNotifications, setWebhookNotifications]].map(([label, val, set]: any) => (
-                <div key={label} className="flex flex-col gap-2">
-                  <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">{label}</label>
-                  <input value={val} onChange={(e) => set(e.target.value)} className="w-full rounded-xl bg-white dark:bg-surface-dark border border-slate-200 dark:border-border-dark py-4 px-4 text-xs font-mono focus:ring-2 focus:ring-primary outline-none transition-all shadow-sm" placeholder="https://hook.make.com/..." />
-                </div>
-              ))}
+              <div className="space-y-5">
+                {[
+                  { label: 'Actualizar Precios', val: webhookPriceUpdate, set: setWebhookPriceUpdate },
+                  { label: 'Alta de Productos', val: webhookAddProduct, set: setWebhookAddProduct },
+                  { label: 'Cortes de Caja', val: webhookCortes, set: setWebhookCortes },
+                  { label: 'Notificaciones Poll', val: webhookNotifications, set: setWebhookNotifications }
+                ].map((item) => (
+                  <div key={item.label} className="flex flex-col gap-2 group">
+                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1 group-focus-within:text-primary transition-colors">{item.label}</label>
+                    <input value={item.val} onChange={(e) => item.set(e.target.value)} className="w-full rounded-xl bg-white dark:bg-surface-dark border border-slate-200 dark:border-border-dark py-4 px-4 text-xs font-mono focus:ring-2 focus:ring-primary outline-none transition-all shadow-sm" placeholder="https://hook.make.com/..." />
+                  </div>
+                ))}
+              </div>
             </div>
           </section>
         )}
       </main>
 
       <div className="fixed bottom-[88px] left-0 right-0 px-6 max-w-md mx-auto z-40">
-        <button onClick={activeTab === 'perfil' ? handleSaveProfile : handleSaveWebhooks} disabled={saveStatus === 'saving'} className={`w-full py-4 rounded-xl text-white font-black shadow-lg flex items-center justify-center gap-2 transition-all ${saveStatus === 'saved' ? 'bg-emerald-50' : 'bg-primary'}`}>
-          <span className="material-symbols-outlined">{saveStatus === 'saving' ? 'sync' : saveStatus === 'saved' ? 'check' : 'save'}</span>
-          <span>{saveStatus === 'saved' ? '¡Guardado!' : 'Guardar Cambios'}</span>
+        <button onClick={activeTab === 'perfil' ? handleSaveProfile : handleSaveWebhooks} disabled={saveStatus === 'saving'} className={`w-full py-4 rounded-xl text-white font-black shadow-xl flex items-center justify-center gap-2 transition-all active:scale-[0.98] ${saveStatus === 'saved' ? 'bg-emerald-500' : 'bg-primary shadow-primary/30'}`}>
+          <span className="material-symbols-outlined animate-in zoom-in">{saveStatus === 'saving' ? 'sync' : saveStatus === 'saved' ? 'verified' : 'save_as'}</span>
+          <span>{saveStatus === 'saved' ? '¡Persistencia Exitosa!' : saveStatus === 'saving' ? 'Sincronizando...' : 'Sincronizar con Firebase'}</span>
         </button>
       </div>
       <BottomNav />

@@ -52,5 +52,18 @@ export interface AccountingAccount {
 export interface AccountingProvider {
   id?: string;
   name: string;
+  contactName?: string;
   whatsapp?: string;
+}
+
+export interface UserProfile {
+  uid: string;
+  email: string | null;
+  displayName: string;
+  photoURL: string;
+  role: string;
+  webhookPriceUpdate?: string;
+  webhookAddProduct?: string;
+  webhookCortes?: string;
+  webhookNotifications?: string;
 }
