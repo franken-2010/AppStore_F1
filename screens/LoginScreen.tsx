@@ -25,6 +25,8 @@ const LoginScreen: React.FC = () => {
   const [resetEmail, setResetEmail] = useState('');
   const [isBiometricSupported, setIsBiometricSupported] = useState(false);
   
+  const isIframe = window.self !== window.top;
+
   const [showInstallBtn, setShowInstallBtn] = useState(!!(window as any).deferredPrompt);
   const isPWA = (window as any).isPWA;
 
@@ -35,8 +37,8 @@ const LoginScreen: React.FC = () => {
       setEmail(savedEmail);
     }
 
-    // Verificar soporte biométrico
-    if (window.PublicKeyCredential) {
+    // Verificar soporte biométrico (solo si no es un iframe o tiene HTTPS)
+    if (window.PublicKeyCredential && !isIframe && window.isSecureContext) {
       (window.PublicKeyCredential as any).isUserVerifyingPlatformAuthenticatorAvailable()
         .then((available: boolean) => setIsBiometricSupported(available));
     }
@@ -44,12 +46,17 @@ const LoginScreen: React.FC = () => {
     const handlePwaInstallable = () => setShowInstallBtn(true);
     window.addEventListener('pwa-installable', handlePwaInstallable);
     return () => window.removeEventListener('pwa-installable', handlePwaInstallable);
-  }, []);
+  }, [isIframe]);
 
   const handleBiometricLogin = async () => {
     const biometricData = localStorage.getItem('biometric_credential');
     if (!biometricData) {
       setError({ message: 'Primero vincula tu huella en Ajustes > Perfil.' });
+      return;
+    }
+
+    if (isIframe) {
+      setError({ message: 'Biometría bloqueada en marcos (iframes). Abre la app directamente.' });
       return;
     }
 
@@ -78,11 +85,19 @@ const LoginScreen: React.FC = () => {
           await setPersistence(auth, browserLocalPersistence);
           await signInWithEmailAndPassword(auth, savedEmail, savedPass);
           navigate('/dashboard');
+        } else {
+          setError({ message: 'Huella válida pero falta sincronización de credenciales.' });
         }
       }
     } catch (err: any) {
-      console.error("Biometric error:", err);
-      setError({ message: 'Autenticación cancelada o fallida.' });
+      console.error("Biometric login error:", err);
+      if (err.name === 'SecurityError' || err.message.includes('Permissions Policy')) {
+        setError({ message: '🔒 Bloqueo de Seguridad: Abre la app en una pestaña nueva para usar biometría.' });
+      } else if (err.name === 'NotAllowedError') {
+        setError({ message: 'Autenticación biométrica cancelada.' });
+      } else {
+        setError({ message: 'Error biométrico: ' + err.message });
+      }
     } finally {
       setLoading(false);
     }

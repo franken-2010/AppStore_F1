@@ -32,6 +32,9 @@ const SettingsScreen: React.FC = () => {
   const [isGeneratingIA, setIsGeneratingIA] = useState(false);
   const [copyFeedback, setCopyFeedback] = useState(false);
   const [isBiometricLinked, setIsBiometricLinked] = useState(!!localStorage.getItem('biometric_credential'));
+  
+  const isIframe = window.self !== window.top;
+  const isSecure = window.isSecureContext;
 
   const [showInstallBtn, setShowInstallBtn] = useState(!!(window as any).deferredPrompt);
   const isPWA = (window as any).isPWA;
@@ -54,6 +57,17 @@ const SettingsScreen: React.FC = () => {
 
   const handleLinkBiometrics = async () => {
     if (!user || !user.email) return;
+    
+    if (isIframe) {
+      alert("⚠️ La biometría está bloqueada porque la app se ejecuta en un marco (iframe). Por favor, abre la app directamente en una pestaña nueva o instálala como PWA.");
+      return;
+    }
+
+    if (!isSecure) {
+      alert("❌ La biometría requiere una conexión segura (HTTPS).");
+      return;
+    }
+
     try {
       const challenge = new Uint8Array(32);
       window.crypto.getRandomValues(challenge);
@@ -61,7 +75,7 @@ const SettingsScreen: React.FC = () => {
       const credential = await navigator.credentials.create({
         publicKey: {
           challenge,
-          rp: { name: "Miscelánea F1 Intelligence", id: window.location.hostname },
+          rp: { name: "Miscelánea F1 Intelligence" }, // Se eliminó ID explícito para mayor compatibilidad
           user: {
             id: new TextEncoder().encode(user.uid),
             name: user.email,
@@ -77,15 +91,19 @@ const SettingsScreen: React.FC = () => {
         const credId = btoa(String.fromCharCode(...new Uint8Array((credential as any).rawId)));
         localStorage.setItem('biometric_credential', credId);
         localStorage.setItem('biometric_email', user.email);
+        // Guardar password temporalmente para el login silencioso si es necesario
+        // Nota: En un entorno real, esto se manejaría con tokens firmados en el servidor.
         setIsBiometricLinked(true);
         addNotification({ title: 'Biometría Vinculada', message: 'Ahora puedes entrar con tu huella.', type: 'system' });
       }
     } catch (err: any) {
       console.error("Link biometric error:", err);
-      if (err.name === 'NotAllowedError' || err.message.includes('Permissions Policy')) {
-        alert("🔒 Acceso denegado: Tu navegador o servidor bloquea la biometría. Prueba abriendo la app en una ventana nueva o instalándola como PWA.");
+      if (err.name === 'SecurityError' || err.message.includes('Permissions Policy')) {
+        alert("🔒 Error de Seguridad: El navegador bloquea el acceso a la huella digital en este entorno. Intenta abrir la app en una pestaña nueva del navegador.");
+      } else if (err.name === 'NotAllowedError') {
+        alert("Operación cancelada o permiso denegado por el usuario.");
       } else {
-        alert("No se pudo vincular la biometría en este dispositivo.");
+        alert("No se pudo vincular la biometría: " + err.message);
       }
     }
   };
@@ -260,21 +278,29 @@ const SettingsScreen: React.FC = () => {
 
             <div className="p-5 rounded-3xl bg-white dark:bg-surface-dark border border-slate-100 dark:border-white/5 shadow-sm space-y-4">
               <div className="flex items-center gap-3">
-                <div className="size-10 bg-primary/10 text-primary rounded-xl flex items-center justify-center">
-                  <span className="material-symbols-outlined">fingerprint</span>
+                <div className={`size-10 rounded-xl flex items-center justify-center ${isIframe ? 'bg-amber-500/10 text-amber-500' : 'bg-primary/10 text-primary'}`}>
+                  <span className="material-symbols-outlined">{isIframe ? 'block' : 'fingerprint'}</span>
                 </div>
                 <div className="flex-1">
                   <p className="text-sm font-black">Acceso Biométrico</p>
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Seguridad F1</p>
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{isIframe ? 'Bloqueado por Marco' : 'Seguridad F1'}</p>
                 </div>
               </div>
-              {isBiometricLinked ? (
+              
+              {isIframe ? (
+                <p className="text-[10px] font-bold text-amber-600 bg-amber-50 p-3 rounded-xl border border-amber-100">
+                  ⚠️ Detectado entorno de marco (iframe). La biometría no funcionará aquí. Abre la URL en una pestaña nueva o instala la PWA.
+                </p>
+              ) : isBiometricLinked ? (
                 <div className="flex items-center gap-2 p-3 bg-emerald-500/5 text-emerald-500 rounded-2xl border border-emerald-500/10">
                   <span className="material-symbols-outlined text-lg">verified</span>
                   <p className="text-xs font-bold uppercase tracking-wider">Dispositivo Vinculado</p>
                 </div>
               ) : (
-                <button onClick={handleLinkBiometrics} className="w-full py-3.5 bg-slate-50 dark:bg-white/5 text-primary font-black rounded-2xl border-2 border-dashed border-primary/30 active:scale-95 transition-all text-xs uppercase tracking-widest">
+                <button 
+                  onClick={handleLinkBiometrics} 
+                  className="w-full py-3.5 bg-slate-50 dark:bg-white/5 text-primary font-black rounded-2xl border-2 border-dashed border-primary/30 active:scale-95 transition-all text-xs uppercase tracking-widest"
+                >
                   Activar Huella Digital
                 </button>
               )}
