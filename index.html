@@ -5,7 +5,7 @@
     <meta charset="utf-8"/>
     <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
     <title>Miscelánea F1 Intelligence</title>
-    <link rel="manifest" href="manifest.json">
+    <link rel="manifest" href="./manifest.json">
     <meta name="theme-color" content="#2563eb">
     <link rel="apple-touch-icon" href="https://cdn-icons-png.flaticon.com/512/3759/3759521.png">
     
@@ -92,10 +92,11 @@
 </head>
 <body class="bg-background-light dark:bg-background-dark font-display text-slate-900 dark:text-white transition-colors duration-200 antialiased selection:bg-primary selection:text-white">
     <div id="root"></div>
+    <script type="module" src="./index.tsx"></script>
     <script>
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
-          navigator.serviceWorker.register('sw.js').catch(err => console.log('SW registration failed', err));
+          navigator.serviceWorker.register('./sw.js').catch(err => console.log('SW registration failed', err));
         });
       }
     </script>

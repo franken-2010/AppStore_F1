@@ -23,14 +23,5 @@
       "type": "image/png",
       "purpose": "maskable"
     }
-  ],
-  "screenshots": [
-    {
-      "src": "https://images.unsplash.com/photo-1578916171728-46686eac8d58?q=80&w=1000&auto=format&fit=crop",
-      "sizes": "1000x2000",
-      "type": "image/jpeg",
-      "form_factor": "narrow",
-      "label": "Dashboard Abarrotes F1"
-    }
   ]
 }
