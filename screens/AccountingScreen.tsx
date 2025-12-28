@@ -29,7 +29,6 @@ const AccountingScreen: React.FC = () => {
   
   const [showAddAccount, setShowAddAccount] = useState(false);
   const [editingAccount, setEditingAccount] = useState<AccountingAccount | null>(null);
-  const [showAddProvider, setShowAddProvider] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
 
   const [collapsedCategories, setCollapsedCategories] = useState<Set<AccountType>>(new Set());
@@ -42,28 +41,32 @@ const AccountingScreen: React.FC = () => {
   const [accInitialBalance, setAccInitialBalance] = useState<string>('0');
   const [accParentId, setAccParentId] = useState<string>('');
 
-  const [provName, setProvName] = useState('');
-  const [provContact, setProvContact] = useState('');
-  const [provWhatsapp, setProvWhatsapp] = useState('');
-
   useEffect(() => {
     if (!user) return;
+    console.log("Iniciando conexión a Firebase para usuario:", user.uid);
+    
     const unsubAcc = onSnapshot(query(collection(db, "users", user.uid, "accounts")), (snap) => {
       const accs = snap.docs.map(d => ({ id: d.id, ...d.data() } as AccountingAccount));
       setAccounts(accs);
+    }, (error) => {
+      console.error("Error al leer cuentas:", error);
     });
+
     const unsubProv = onSnapshot(query(collection(db, "users", user.uid, "providers")), (snap) => {
       setProviders(snap.docs.map(d => ({ id: d.id, ...d.data() })));
     });
+
     return () => { unsubAcc(); unsubProv(); };
   }, [user]);
 
   // Autogenerar código cuando cambia el tipo (solo si es cuenta nueva)
   useEffect(() => {
     if (!editingAccount && showAddAccount) {
-      const prefix = { 'Activo': '1', 'Pasivo': '2', 'Capital': '3', 'Ingreso': '4', 'Gasto': '5' }[accType];
-      const count = accounts.filter(a => a.type === accType).length + 1;
-      setAccCode(`${prefix}${String(count).padStart(3, '0')}`);
+      const prefixMap: Record<string, string> = { 'Activo': '1', 'Pasivo': '2', 'Capital': '3', 'Ingreso': '4', 'Gasto': '5' };
+      const prefix = prefixMap[accType] || '1';
+      const sameTypeAccs = accounts.filter(a => a.type === accType);
+      const nextNum = sameTypeAccs.length + 1;
+      setAccCode(`${prefix}${String(nextNum).padStart(3, '0')}`);
     }
   }, [accType, editingAccount, showAddAccount, accounts]);
 
@@ -75,16 +78,18 @@ const AccountingScreen: React.FC = () => {
   };
 
   const saveAccount = async () => {
-    if (!user || !accName || !accCode) {
-      alert("Por favor completa el nombre y el código.");
+    if (!user) return;
+    if (!accName.trim() || !accCode.trim()) {
+      alert("Por favor completa el nombre y el código contable.");
       return;
     }
+
     setIsProcessing(true);
     try {
       const balanceNum = parseFloat(accInitialBalance) || 0;
       const accountData: any = {
-        name: accName, 
-        code: accCode, 
+        name: accName.trim(), 
+        code: accCode.trim(), 
         type: accType, 
         description: accDesc,
         initialBalance: balanceNum, 
@@ -95,16 +100,17 @@ const AccountingScreen: React.FC = () => {
       if (editingAccount && editingAccount.id) {
         const diff = balanceNum - (editingAccount.initialBalance || 0);
         accountData.balance = (editingAccount.balance || 0) + diff;
-        await updateDoc(doc(db, "users", user.uid, "accounts", editingAccount.id), accountData);
+        const ref = doc(db, "users", user.uid, "accounts", editingAccount.id);
+        await updateDoc(ref, accountData);
       } else {
         accountData.balance = balanceNum;
         accountData.createdAt = serverTimestamp();
         await addDoc(collection(db, "users", user.uid, "accounts"), accountData);
       }
       closeAccountModal();
-    } catch (err) { 
-      console.error(err);
-      alert("Error al conectar con Firebase. Revisa tu conexión."); 
+    } catch (err: any) { 
+      console.error("Error al guardar cuenta:", err);
+      alert(`Error al guardar: ${err.message}`); 
     } finally { 
       setIsProcessing(false); 
     }
@@ -112,27 +118,28 @@ const AccountingScreen: React.FC = () => {
 
   const handleDeleteAccount = async () => {
     if (!user || !editingAccount || !editingAccount.id) {
-      alert("Error: No se encontró la referencia de la cuenta.");
+      alert("No se pudo identificar la cuenta para eliminar.");
       return;
     }
     
     const hasChildren = accounts.some(a => a.parentId === editingAccount.id);
     if (hasChildren) {
-      alert("⚠️ No puedes eliminar esta cuenta porque tiene sub-cuentas vinculadas.");
+      alert("⚠️ No puedes eliminar esta cuenta porque tiene sub-cuentas.");
       return;
     }
 
-    if (!window.confirm(`¿ELIMINAR PERMANENTEMENTE?\n\n"${editingAccount.name}" (${editingAccount.code})`)) return;
+    if (!window.confirm(`¿BORRAR DEFINITIVAMENTE?\n\nEsta acción eliminará "${editingAccount.name}" de Firebase.`)) return;
 
     setIsProcessing(true);
     try {
-      const ref = doc(db, "users", user.uid, "accounts", editingAccount.id);
-      await deleteDoc(ref);
-      alert("✅ Cuenta eliminada de la base de datos.");
+      const accountRef = doc(db, "users", user.uid, "accounts", editingAccount.id);
+      console.log("Intentando borrar cuenta en ruta:", accountRef.path);
+      await deleteDoc(accountRef);
+      alert("✅ Cuenta eliminada correctamente.");
       closeAccountModal();
-    } catch (err) { 
-      console.error("Firebase Delete Error:", err);
-      alert("❌ Error de Firebase: No tienes permisos para borrar o la ruta es inválida."); 
+    } catch (err: any) { 
+      console.error("Error crítico de Firebase al eliminar:", err);
+      alert(`❌ Error al eliminar: ${err.code === 'permission-denied' ? 'Sin permisos en Firebase.' : err.message}`); 
     } finally { 
       setIsProcessing(false); 
     }
@@ -175,8 +182,11 @@ const AccountingScreen: React.FC = () => {
           className={`flex items-center justify-between py-3 border-b border-slate-100 dark:border-white/5 active:bg-slate-50 dark:active:bg-white/5 transition-colors cursor-pointer px-4`}
           style={{ paddingLeft: `${16 + (depth * 16)}px` }}
         >
-          <span className="text-sm font-medium text-slate-700 dark:text-slate-200">{acc.name}</span>
-          <span className={`text-sm font-bold ${getAmountColor(acc.type)}`}>
+          <div className="flex flex-col">
+            <span className="text-[10px] font-bold text-slate-400 font-mono leading-none mb-1">{acc.code}</span>
+            <span className="text-sm font-black text-slate-700 dark:text-slate-200">{acc.name}</span>
+          </div>
+          <span className={`text-sm font-black ${getAmountColor(acc.type)}`}>
             $ {acc.balance?.toLocaleString('es-MX', { minimumFractionDigits: 2 })}
           </span>
         </div>
@@ -189,7 +199,7 @@ const AccountingScreen: React.FC = () => {
     <div className="relative flex h-full min-h-screen w-full flex-col overflow-x-hidden pb-32 max-w-md mx-auto bg-background-light dark:bg-background-dark font-display antialiased">
       <Sidebar isOpen={isSidebarOpen} onClose={() => setIsSidebarOpen(false)} />
       
-      <header className="sticky top-0 z-30 bg-background-light dark:bg-background-dark pt-12 px-6 pb-2">
+      <header className="sticky top-0 z-30 bg-background-light/95 dark:bg-background-dark/95 backdrop-blur-md pt-12 px-6 pb-2">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-3">
             <button onClick={() => setIsSidebarOpen(true)} className="p-1 -ml-1 text-slate-700 dark:text-slate-300">
@@ -197,9 +207,7 @@ const AccountingScreen: React.FC = () => {
             </button>
             <h1 className="text-lg font-bold">Contabilidad</h1>
           </div>
-          <div className="flex items-center gap-1">
-            <ProfileMenu />
-          </div>
+          <ProfileMenu />
         </div>
 
         <div className="flex justify-between py-4 border-b border-slate-100 dark:border-white/5">
@@ -231,8 +239,8 @@ const AccountingScreen: React.FC = () => {
       </header>
 
       <main className="flex-1 overflow-y-auto no-scrollbar">
-        {activeTab === 'cuentas' && (
-          <div className="divide-y divide-slate-100 dark:divide-white/5">
+        {activeTab === 'cuentas' ? (
+          <div className="divide-y divide-slate-100 dark:divide-white/5 animate-in fade-in">
             {(['Activo', 'Pasivo', 'Capital', 'Ingreso', 'Gasto'] as AccountType[]).map(cat => {
               const catAccs = rootAccounts.filter(a => a.type === cat);
               if (catAccs.length === 0) return null;
@@ -256,13 +264,23 @@ const AccountingScreen: React.FC = () => {
               );
             })}
           </div>
+        ) : activeTab === 'proveedores' ? (
+          <div className="p-10 text-center space-y-4 animate-in fade-in">
+            <span className="material-symbols-outlined text-6xl text-slate-200">storefront</span>
+            <p className="text-slate-400 font-bold uppercase tracking-widest text-xs">Módulo en Desarrollo</p>
+          </div>
+        ) : (
+          <div className="p-10 text-center space-y-4 animate-in fade-in">
+            <span className="material-symbols-outlined text-6xl text-slate-200">analytics</span>
+            <p className="text-slate-400 font-bold uppercase tracking-widest text-xs">Resumen no disponible</p>
+          </div>
         )}
       </main>
 
       <div className="fixed bottom-[100px] right-6 z-40">
         <button 
           onClick={() => { closeAccountModal(); setShowAddAccount(true); }}
-          className="size-14 bg-primary text-white rounded-full shadow-2xl flex items-center justify-center active:scale-90 transition-all"
+          className="size-14 bg-primary text-white rounded-full shadow-2xl flex items-center justify-center active:scale-90 transition-all border-4 border-white dark:border-background-dark"
         >
           <span className="material-symbols-outlined text-3xl">add</span>
         </button>
@@ -271,67 +289,99 @@ const AccountingScreen: React.FC = () => {
       {showAddAccount && (
         <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={closeAccountModal}></div>
-          <div className="relative w-full max-w-md bg-white dark:bg-slate-900 rounded-t-3xl p-6 shadow-2xl animate-in slide-in-from-bottom-10">
+          <div className="relative w-full max-w-md bg-white dark:bg-slate-900 rounded-t-[2.5rem] p-6 shadow-2xl animate-in slide-in-from-bottom-10">
             <div className="flex justify-between items-center mb-6">
-              <h3 className="text-xl font-black">{editingAccount ? 'Editar Cuenta' : 'Nueva Cuenta'}</h3>
+              <h3 className="text-xl font-black">{editingAccount ? 'Editar Cuenta' : 'Nueva Cuenta F1'}</h3>
               <button onClick={closeAccountModal} className="p-2 text-slate-400"><span className="material-symbols-outlined">close</span></button>
             </div>
+            
             <div className="space-y-4">
               <div className="space-y-1">
-                <label className="text-[10px] font-black uppercase text-slate-400 ml-1">Nombre</label>
-                <input value={accName} onChange={e => setAccName(e.target.value)} className="w-full p-4 bg-slate-100 dark:bg-white/5 rounded-xl font-bold border-none" placeholder="Ej: Caja Chica" />
+                <label className="text-[10px] font-black uppercase text-slate-400 ml-1">Nombre de la Cuenta</label>
+                <input 
+                  value={accName} 
+                  onChange={e => setAccName(e.target.value)} 
+                  className="w-full p-4 bg-slate-100 dark:bg-white/5 rounded-2xl font-bold border-none focus:ring-2 focus:ring-primary/20" 
+                  placeholder="Ej: Caja Sucursal" 
+                />
               </div>
+
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1">
-                  <label className="text-[10px] font-black uppercase text-slate-400 ml-1">Código</label>
-                  <input value={accCode} onChange={e => setAccCode(e.target.value)} className="w-full p-4 bg-slate-100 dark:bg-white/5 rounded-xl font-bold border-none" />
+                  <label className="text-[10px] font-black uppercase text-slate-400 ml-1">Código Contable</label>
+                  <input 
+                    value={accCode} 
+                    onChange={e => setAccCode(e.target.value)} 
+                    className="w-full p-4 bg-slate-100 dark:bg-white/5 rounded-2xl font-black border-none font-mono" 
+                  />
                 </div>
                 <div className="space-y-1">
                   <label className="text-[10px] font-black uppercase text-slate-400 ml-1">Naturaleza</label>
-                  <select value={accType} onChange={e => setAccType(e.target.value as any)} className="w-full p-4 bg-slate-100 dark:bg-white/5 rounded-xl font-bold border-none appearance-none">
+                  <select 
+                    value={accType} 
+                    onChange={e => setAccType(e.target.value as any)} 
+                    className="w-full p-4 bg-slate-100 dark:bg-white/5 rounded-2xl font-bold border-none appearance-none"
+                  >
                     {['Activo', 'Pasivo', 'Capital', 'Ingreso', 'Gasto'].map(t => <option key={t} value={t}>{t}</option>)}
                   </select>
                 </div>
               </div>
+
               <div className="space-y-1">
                 <label className="text-[10px] font-black uppercase text-slate-400 ml-1">Saldo Inicial</label>
                 <div className="relative">
                    <span className="absolute left-4 top-1/2 -translate-y-1/2 font-black text-slate-400">$</span>
                    <input 
                     type="number" 
+                    step="0.01"
+                    inputMode="decimal"
                     value={accInitialBalance} 
                     onFocus={(e) => {
                       e.target.select();
-                      if (accInitialBalance === '0') setAccInitialBalance('');
+                      if (accInitialBalance === '0' || accInitialBalance === '0.00') setAccInitialBalance('');
                     }}
                     onBlur={() => {
-                      if (accInitialBalance === '') setAccInitialBalance('0');
+                      if (accInitialBalance.trim() === '') setAccInitialBalance('0');
                     }}
                     onChange={e => setAccInitialBalance(e.target.value)} 
-                    className="w-full p-4 pl-8 bg-slate-100 dark:bg-white/5 rounded-xl font-bold border-none" 
+                    className="w-full p-4 pl-8 bg-slate-100 dark:bg-white/5 rounded-2xl font-bold border-none" 
                     placeholder="0.00"
                   />
                 </div>
               </div>
+
               <div className="space-y-1">
-                <label className="text-[10px] font-black uppercase text-slate-400 ml-1">Depende de</label>
-                <select value={accParentId} onChange={e => setAccParentId(e.target.value)} className="w-full p-4 bg-slate-100 dark:bg-white/5 rounded-xl font-bold border-none appearance-none">
-                  <option value="">Cuenta Raíz</option>
+                <label className="text-[10px] font-black uppercase text-slate-400 ml-1">Cuenta Principal</label>
+                <select 
+                  value={accParentId} 
+                  onChange={e => setAccParentId(e.target.value)} 
+                  className="w-full p-4 bg-slate-100 dark:bg-white/5 rounded-2xl font-bold border-none appearance-none"
+                >
+                  <option value="">Ninguna (Es Raíz)</option>
                   {accounts.filter(a => a.id !== editingAccount?.id).map(a => <option key={a.id} value={a.id}>{a.code} - {a.name}</option>)}
                 </select>
               </div>
-              <button onClick={saveAccount} disabled={isProcessing} className="w-full py-4 bg-primary text-white font-black rounded-xl mt-4 active:scale-95 transition-all">
-                {isProcessing ? 'Sincronizando...' : editingAccount ? 'Guardar Cambios' : 'Crear Cuenta'}
-              </button>
-              {editingAccount && (
+
+              <div className="pt-2 flex flex-col gap-3">
                 <button 
-                  onClick={handleDeleteAccount} 
+                  onClick={saveAccount} 
                   disabled={isProcessing} 
-                  className="w-full py-3 text-red-500 font-black uppercase text-[11px] tracking-widest mt-2 bg-red-500/10 rounded-xl hover:bg-red-500 hover:text-white transition-all border border-red-500/20"
+                  className="w-full py-4 bg-primary text-white font-black rounded-2xl shadow-xl active:scale-95 transition-all flex items-center justify-center gap-2"
                 >
-                  Eliminar permanentemente
+                  {isProcessing && <span className="material-symbols-outlined animate-spin text-sm">sync</span>}
+                  {editingAccount ? 'Actualizar Cuenta' : 'Crear Cuenta en Firebase'}
                 </button>
-              )}
+                
+                {editingAccount && (
+                  <button 
+                    onClick={handleDeleteAccount} 
+                    disabled={isProcessing} 
+                    className="w-full py-3 text-red-500 font-black uppercase text-[11px] tracking-widest bg-red-500/10 rounded-2xl hover:bg-red-500 hover:text-white transition-all border border-red-500/20"
+                  >
+                    Borrar Permanentemente
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         </div>
