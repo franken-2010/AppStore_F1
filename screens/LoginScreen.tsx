@@ -12,7 +12,6 @@ import {
   signInWithPopup
 } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
 import { doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
-import VoiceInputButton from '../components/VoiceInputButton';
 
 const LoginScreen: React.FC = () => {
   const navigate = useNavigate();
@@ -24,13 +23,18 @@ const LoginScreen: React.FC = () => {
   const [error, setError] = useState<{ message: string, code?: string }>({ message: '' });
   const [isForgotMode, setIsForgotMode] = useState(false);
   const [resetEmail, setResetEmail] = useState('');
-  const [showHelp, setShowHelp] = useState(false);
   const [isBiometricSupported, setIsBiometricSupported] = useState(false);
   
   const [showInstallBtn, setShowInstallBtn] = useState(!!(window as any).deferredPrompt);
   const isPWA = (window as any).isPWA;
 
   useEffect(() => {
+    // Cargar correo recordado
+    const savedEmail = localStorage.getItem('f1_remembered_email');
+    if (savedEmail) {
+      setEmail(savedEmail);
+    }
+
     // Verificar soporte biométrico
     if (window.PublicKeyCredential) {
       (window.PublicKeyCredential as any).isUserVerifyingPlatformAuthenticatorAvailable()
@@ -103,6 +107,14 @@ const LoginScreen: React.FC = () => {
     try {
       await setPersistence(auth, rememberMe ? browserLocalPersistence : browserSessionPersistence);
       await signInWithEmailAndPassword(auth, email, password);
+      
+      // Persistir correo si rememberMe está activo
+      if (rememberMe) {
+        localStorage.setItem('f1_remembered_email', email);
+      } else {
+        localStorage.removeItem('f1_remembered_email');
+      }
+
       navigate('/dashboard');
     } catch (err: any) {
       setError({ message: 'Credenciales inválidas.' });
@@ -159,22 +171,59 @@ const LoginScreen: React.FC = () => {
               <div className="group">
                 <label className="block text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-2 ml-1">Correo Electrónico</label>
                 <div className="relative flex items-center">
-                  <input value={email} onChange={(e) => setEmail(e.target.value)} className="w-full bg-white dark:bg-surface-dark border border-slate-200 dark:border-slate-800 rounded-xl px-5 py-4 pl-12 pr-12 text-base font-bold outline-none shadow-sm focus:ring-2 focus:ring-primary/20" placeholder="admin@f1.com" type="email" />
+                  <input 
+                    value={email} 
+                    onChange={(e) => setEmail(e.target.value)} 
+                    autoComplete="email"
+                    className="w-full bg-white dark:bg-surface-dark border border-slate-200 dark:border-slate-800 rounded-xl px-5 py-4 pl-12 pr-5 text-base font-bold outline-none shadow-sm focus:ring-2 focus:ring-primary/20" 
+                    placeholder="admin@f1.com" 
+                    type="email" 
+                  />
                   <span className="material-symbols-outlined absolute left-4 text-slate-400">mail</span>
-                  <VoiceInputButton onResult={setEmail} className="absolute right-2" />
                 </div>
               </div>
               
               <div className="group">
                 <label className="block text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-2 ml-1">Contraseña</label>
                 <div className="relative flex items-center">
-                  <input value={password} onChange={(e) => setPassword(e.target.value)} className="w-full bg-white dark:bg-surface-dark border border-slate-200 dark:border-slate-800 rounded-xl px-5 py-4 pl-12 pr-12 text-base font-bold outline-none shadow-sm focus:ring-2 focus:ring-primary/20" placeholder="••••••••" type={showPassword ? "text" : "password"} />
+                  <input 
+                    value={password} 
+                    onChange={(e) => setPassword(e.target.value)} 
+                    autoComplete="current-password"
+                    className="w-full bg-white dark:bg-surface-dark border border-slate-200 dark:border-slate-800 rounded-xl px-5 py-4 pl-12 pr-12 text-base font-bold outline-none shadow-sm focus:ring-2 focus:ring-primary/20" 
+                    placeholder="••••••••" 
+                    type={showPassword ? "text" : "password"} 
+                  />
                   <span className="material-symbols-outlined absolute left-4 text-slate-400">lock</span>
                   <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-4 text-slate-400"><span className="material-symbols-outlined">{showPassword ? "visibility" : "visibility_off"}</span></button>
                 </div>
               </div>
 
-              <div className="flex gap-2">
+              <div className="flex items-center justify-between px-1 mb-2">
+                <label className="flex items-center gap-2 cursor-pointer group">
+                  <div className="relative">
+                    <input 
+                      type="checkbox" 
+                      checked={rememberMe} 
+                      onChange={(e) => setRememberMe(e.target.checked)} 
+                      className="peer sr-only"
+                    />
+                    <div className="size-5 rounded-md border-2 border-slate-300 dark:border-slate-600 peer-checked:bg-primary peer-checked:border-primary transition-all"></div>
+                    <span className="material-symbols-outlined absolute inset-0 text-white text-[16px] flex items-center justify-center opacity-0 peer-checked:opacity-100 transition-opacity">check</span>
+                  </div>
+                  <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 group-hover:text-primary transition-colors">Recordar usuario</span>
+                </label>
+                
+                <button 
+                  type="button" 
+                  onClick={() => setIsForgotMode(true)}
+                  className="text-[11px] font-bold text-primary hover:underline"
+                >
+                  ¿Olvidaste tu contraseña?
+                </button>
+              </div>
+
+              <div className="flex gap-2 pt-2">
                 <button type="submit" disabled={loading} className="flex-1 bg-primary text-white font-black text-lg rounded-xl py-4 shadow-xl active:scale-95 disabled:opacity-50 transition-all">
                   {loading ? 'Entrando...' : 'Entrar al Sistema'}
                 </button>
@@ -239,7 +288,6 @@ const LoginScreen: React.FC = () => {
                 <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2 ml-1">Tu Correo</label>
                 <div className="relative">
                   <input value={resetEmail} onChange={(e) => setResetEmail(e.target.value)} className="w-full bg-white dark:bg-surface-dark border border-slate-200 rounded-xl px-5 py-4 pr-12 text-base font-bold outline-none" placeholder="email@f1.com" type="email" required />
-                  <VoiceInputButton onResult={setResetEmail} className="absolute right-2 top-1/2 -translate-y-1/2" />
                 </div>
               </div>
               <button type="submit" disabled={loading} className="w-full bg-primary text-white font-black py-4 rounded-xl shadow-lg">Enviar enlace</button>

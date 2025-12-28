@@ -3,7 +3,7 @@ import React, { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import BottomNav from '../components/BottomNav';
 import { db } from '../services/firebase';
-import { collection, writeBatch, doc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+import { collection, writeBatch, doc, getDocs, deleteDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 import { StoreProduct } from '../types';
 
 const DatabaseUploadScreen: React.FC = () => {
@@ -74,6 +74,52 @@ const DatabaseUploadScreen: React.FC = () => {
     };
 
     reader.readAsText(file);
+  };
+
+  const handleDeleteAllProducts = async () => {
+    const confirmed = window.confirm("⚠️ ATENCIÓN: ACCIÓN IRREVERSIBLE\n\n¿Realmente desea eliminar TODOS los productos de la base de datos?\n\nEsto borrará cada registro en la colección 'products' de Firebase.");
+    
+    if (!confirmed) return;
+
+    setIsUploading(true);
+    setUploadStatus({ text: "Borrando catálogo completo...", type: "info" });
+    setUploadProgress(0);
+    
+    try {
+      const productsRef = collection(db, "products");
+      const snapshot = await getDocs(productsRef);
+      
+      const total = snapshot.docs.length;
+      if (total === 0) {
+        setUploadStatus({ text: "No hay productos que eliminar.", type: "info" });
+        setIsUploading(false);
+        return;
+      }
+
+      let deleted = 0;
+      const chunkSize = 400; // Firebase limit is 500
+
+      for (let i = 0; i < snapshot.docs.length; i += chunkSize) {
+        const batch = writeBatch(db);
+        const chunk = snapshot.docs.slice(i, i + chunkSize);
+        
+        chunk.forEach(doc => batch.delete(doc.ref));
+        await batch.commit();
+        
+        deleted += chunk.length;
+        setUploadProgress(Math.min(100, Math.round((deleted / total) * 100)));
+      }
+
+      setUploadStatus({ text: `✅ Catálogo eliminado con éxito (${deleted} registros borrados).`, type: "success" });
+      alert(`Se han borrado ${deleted} productos correctamente.`);
+    } catch (error) {
+      console.error("Error al borrar productos:", error);
+      setUploadStatus({ text: "❌ Error crítico al intentar borrar el catálogo.", type: "error" });
+      alert("Error al intentar borrar la base de datos. Verifique su conexión.");
+    } finally {
+      setIsUploading(false);
+      setUploadProgress(0);
+    }
   };
 
   const handleUploadToFirebase = async () => {
@@ -164,6 +210,23 @@ const DatabaseUploadScreen: React.FC = () => {
                 <div className="h-full bg-primary transition-all" style={{ width: `${uploadProgress}%` }}></div>
               </div>
             )}
+
+            <div className="mt-12 p-6 bg-red-500/5 border border-red-500/20 rounded-3xl space-y-4">
+              <div className="flex items-center gap-2 text-red-500">
+                <span className="material-symbols-outlined text-xl">warning</span>
+                <h3 className="text-xs font-black uppercase tracking-widest">Zona de Peligro</h3>
+              </div>
+              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest leading-tight">
+                Si deseas reiniciar el catálogo por completo antes de subir un nuevo CSV, usa esta opción.
+              </p>
+              <button 
+                onClick={handleDeleteAllProducts}
+                disabled={isUploading}
+                className="w-full py-3.5 bg-red-500 text-white font-black rounded-xl text-xs uppercase tracking-widest shadow-lg shadow-red-500/20 active:scale-95 disabled:opacity-50 transition-all"
+              >
+                Borrar Todo el Catálogo
+              </button>
+            </div>
           </>
         ) : (
           <div className="space-y-6 animate-in fade-in">
