@@ -16,9 +16,9 @@ const BottomNav: React.FC = () => {
           {isActive('/dashboard') && <span className="text-[10px] font-bold">Inicio</span>}
         </Link>
 
-        <Link to="/cortes" className={`flex flex-col items-center justify-center gap-1 ${isActive('/cortes') ? 'text-primary' : 'text-slate-400 dark:text-slate-500 hover:text-primary dark:hover:text-primary'} transition-colors`}>
-          <span className="material-symbols-outlined text-2xl">point_of_sale</span>
-          {isActive('/cortes') && <span className="text-[10px] font-bold">Cortes</span>}
+        <Link to="/chat" className={`flex flex-col items-center justify-center gap-1 ${isActive('/chat') ? 'text-primary' : 'text-slate-400 dark:text-slate-500 hover:text-primary dark:hover:text-primary'} transition-colors`}>
+          <span className="material-symbols-outlined text-2xl">voice_chat</span>
+          {isActive('/chat') && <span className="text-[10px] font-bold">IA F1</span>}
         </Link>
 
         <Link to="/accounting" className={`flex flex-col items-center justify-center gap-1 ${isActive('/accounting') ? 'text-primary' : 'text-slate-400 dark:text-slate-500 hover:text-primary dark:hover:text-primary'} transition-colors relative`}>

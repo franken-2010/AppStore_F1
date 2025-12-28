@@ -14,6 +14,7 @@ import SettingsScreen from './screens/SettingsScreen';
 import DatabaseUploadScreen from './screens/DatabaseUploadScreen';
 import PriceVerificationScreen from './screens/PriceVerificationScreen';
 import AccountingScreen from './screens/AccountingScreen';
+import ChatScreen from './screens/ChatScreen';
 
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user, loading } = useAuth();
@@ -36,6 +37,7 @@ const App: React.FC = () => {
             <Route path="/tools/product-add" element={<ProtectedRoute><ProductAddScreen /></ProtectedRoute>} />
             <Route path="/tools/price-verification" element={<ProtectedRoute><PriceVerificationScreen /></ProtectedRoute>} />
             <Route path="/accounting" element={<ProtectedRoute><AccountingScreen /></ProtectedRoute>} />
+            <Route path="/chat" element={<ProtectedRoute><ChatScreen /></ProtectedRoute>} />
             <Route path="/settings" element={<ProtectedRoute><SettingsScreen /></ProtectedRoute>} />
             <Route path="/settings/bdd" element={<ProtectedRoute><DatabaseUploadScreen /></ProtectedRoute>} />
           </Routes>

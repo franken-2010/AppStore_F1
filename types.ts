@@ -6,6 +6,21 @@ export interface ReceiptAnalysis {
   summary: string;
 }
 
+export interface ChatAttachment {
+  type: 'image' | 'file';
+  url: string; // base64 o blob url
+  name?: string;
+  mimeType: string;
+}
+
+export interface ChatMessage {
+  id: string;
+  role: 'user' | 'model';
+  text: string;
+  timestamp: Date;
+  attachments?: ChatAttachment[];
+}
+
 export interface ActivityItem {
   id: string;
   title: string;

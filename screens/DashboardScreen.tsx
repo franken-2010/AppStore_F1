@@ -78,13 +78,13 @@ const DashboardScreen: React.FC = () => {
               <span className="text-[10px] font-black uppercase tracking-tight text-center leading-none text-slate-600 dark:text-slate-400">Conta</span>
             </button>
             <button 
-              onClick={() => navigate('/tools/price-verification')}
-              className="flex flex-col items-center gap-3 p-5 rounded-[2rem] bg-white dark:bg-surface-dark border border-slate-100 dark:border-white/5 active:scale-95 transition-all shadow-sm group"
+              onClick={() => navigate('/chat')}
+              className="flex flex-col items-center gap-3 p-5 rounded-[2rem] bg-gradient-to-tr from-primary to-indigo-600 text-white active:scale-95 transition-all shadow-lg shadow-primary/20 group"
             >
-              <div className="size-14 rounded-2xl bg-emerald-500/10 text-emerald-500 flex items-center justify-center group-hover:bg-emerald-500 group-hover:text-white transition-colors duration-300">
-                <span className="material-symbols-outlined text-2xl">search_check</span>
+              <div className="size-14 rounded-2xl bg-white/20 text-white flex items-center justify-center group-hover:bg-white/40 transition-colors duration-300">
+                <span className="material-symbols-outlined text-2xl">voice_chat</span>
               </div>
-              <span className="text-[10px] font-black uppercase tracking-tight text-center leading-none text-slate-600 dark:text-slate-400">Precios</span>
+              <span className="text-[10px] font-black uppercase tracking-tight text-center leading-none">Chat IA</span>
             </button>
           </div>
         </section>
