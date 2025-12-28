@@ -80,9 +80,13 @@ const SettingsScreen: React.FC = () => {
         setIsBiometricLinked(true);
         addNotification({ title: 'Biometría Vinculada', message: 'Ahora puedes entrar con tu huella.', type: 'system' });
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error("Link biometric error:", err);
-      alert("No se pudo vincular la biometría.");
+      if (err.name === 'NotAllowedError' || err.message.includes('Permissions Policy')) {
+        alert("🔒 Acceso denegado: Tu navegador o servidor bloquea la biometría. Prueba abriendo la app en una ventana nueva o instalándola como PWA.");
+      } else {
+        alert("No se pudo vincular la biometría en este dispositivo.");
+      }
     }
   };
 
@@ -122,7 +126,6 @@ const SettingsScreen: React.FC = () => {
         if (part.inlineData) {
           const imageUrl = `data:image/png;base64,${part.inlineData.data}`;
           setPhotoURL(imageUrl);
-          // Auto-save the IA image
           if (user) {
             await updateDoc(doc(db, "users", user.uid), { photoURL: imageUrl });
             addNotification({ title: 'Perfil Actualizado', message: 'Tu nueva imagen generada por IA ha sido guardada.', type: 'system' });
@@ -299,10 +302,6 @@ const SettingsScreen: React.FC = () => {
                   <VoiceInputButton onResult={setName} className="absolute right-2 top-1/2 -translate-y-1/2" />
                 </div>
               </div>
-              <div className="flex flex-col gap-2">
-                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Nueva Contraseña</label>
-                <input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} className="w-full rounded-xl bg-white dark:bg-surface-dark border border-slate-200 dark:border-border-dark py-4 px-4 text-base font-bold outline-none shadow-sm" placeholder="••••••••" />
-              </div>
             </div>
 
             <button onClick={() => signOut(auth).then(() => navigate('/'))} className="w-full py-4 text-red-500 font-black flex items-center justify-center gap-2 hover:bg-red-500/5 rounded-2xl transition-colors mt-8">
@@ -320,7 +319,7 @@ const SettingsScreen: React.FC = () => {
                </div>
                <div className="space-y-3">
                  <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
-                   Usa este enlace en <strong>ntfy.sh</strong> para recibir actualizaciones en tiempo real desde Make u otros servicios.
+                   Usa este enlace en <strong>ntfy.sh</strong> para recibir actualizaciones en tiempo real.
                  </p>
                  <div className="flex items-center gap-2">
                    <input readOnly value={systemWebhookURL} className="flex-1 bg-white/50 dark:bg-black/20 border border-slate-200 dark:border-white/5 rounded-xl py-3 px-4 text-[10px] font-mono text-primary outline-none" />
@@ -332,12 +331,7 @@ const SettingsScreen: React.FC = () => {
             </div>
 
             <div className="space-y-6">
-              <div className="px-1 border-l-2 border-primary pl-3">
-                <h3 className="text-xs font-black text-slate-900 dark:text-white uppercase tracking-widest">Automatizaciones Make (Firebase BDD)</h3>
-                <p className="text-[10px] text-slate-400 font-bold uppercase mt-1">Configuración Centralizada</p>
-              </div>
-              <div className="space-y-5">
-                {[
+              {[
                   { label: 'Actualizar Precios', val: webhookPriceUpdate, set: setWebhookPriceUpdate },
                   { label: 'Alta de Productos', val: webhookAddProduct, set: setWebhookAddProduct },
                   { label: 'Cortes de Caja', val: webhookCortes, set: setWebhookCortes },
@@ -348,7 +342,6 @@ const SettingsScreen: React.FC = () => {
                     <input value={item.val} onChange={(e) => item.set(e.target.value)} className="w-full rounded-xl bg-white dark:bg-surface-dark border border-slate-200 dark:border-border-dark py-4 px-4 text-xs font-mono focus:ring-2 focus:ring-primary outline-none transition-all shadow-sm" placeholder="https://hook.make.com/..." />
                   </div>
                 ))}
-              </div>
             </div>
           </section>
         )}
@@ -357,7 +350,7 @@ const SettingsScreen: React.FC = () => {
       <div className="fixed bottom-[88px] left-0 right-0 px-6 max-w-md mx-auto z-40">
         <button onClick={activeTab === 'perfil' ? handleSaveProfile : handleSaveWebhooks} disabled={saveStatus === 'saving'} className={`w-full py-4 rounded-xl text-white font-black shadow-xl flex items-center justify-center gap-2 transition-all active:scale-[0.98] ${saveStatus === 'saved' ? 'bg-emerald-500' : 'bg-primary shadow-primary/30'}`}>
           <span className="material-symbols-outlined animate-in zoom-in">{saveStatus === 'saving' ? 'sync' : saveStatus === 'saved' ? 'verified' : 'save_as'}</span>
-          <span>{saveStatus === 'saved' ? '¡Persistencia Exitosa!' : saveStatus === 'saving' ? 'Sincronizando...' : 'Sincronizar con Firebase'}</span>
+          <span>{saveStatus === 'saved' ? '¡Éxito!' : saveStatus === 'saving' ? 'Guardando...' : 'Sincronizar con Firebase'}</span>
         </button>
       </div>
       <BottomNav />

@@ -48,7 +48,7 @@ const AccountingScreen: React.FC = () => {
       const accs = snap.docs.map(d => ({ id: d.id, ...d.data() } as AccountingAccount));
       setAccounts(accs);
     }, (error) => {
-      console.error("Error al leer cuentas de Firestore:", error);
+      console.error("Error al leer cuentas:", error);
     });
 
     const unsubProv = onSnapshot(query(collection(db, "users", user.uid, "providers")), (snap) => {
@@ -78,11 +78,11 @@ const AccountingScreen: React.FC = () => {
 
   const saveAccount = async () => {
     if (!user) {
-      alert("No hay una sesión activa. Por favor, re-ingresa.");
+      alert("No hay una sesión activa.");
       return;
     }
     if (!accName.trim() || !accCode.trim()) {
-      alert("Por favor completa el nombre y el código contable.");
+      alert("Por favor completa el nombre y el código.");
       return;
     }
 
@@ -111,43 +111,38 @@ const AccountingScreen: React.FC = () => {
       }
       closeAccountModal();
     } catch (err: any) { 
-      console.error("Error al guardar en Firebase:", err);
-      alert(`Error al guardar: ${err.message}`); 
+      console.error("Error al guardar:", err);
+      alert(`Error: ${err.message}`); 
     } finally { 
       setIsProcessing(false); 
     }
   };
 
   const handleDeleteAccount = async () => {
-    if (!user) {
-      alert("Error de sesión: No se detectó usuario.");
-      return;
-    }
-    
-    if (!editingAccount || !editingAccount.id) {
-      alert("Error técnico: ID de cuenta no encontrado.");
+    if (!user || !editingAccount || !editingAccount.id) {
+      alert("Error: ID de cuenta no identificado.");
       return;
     }
     
     const hasChildren = accounts.some(a => a.parentId === editingAccount.id);
     if (hasChildren) {
-      alert("⚠️ No puedes eliminar esta cuenta porque tiene sub-cuentas vinculadas.");
+      alert("⚠️ No puedes eliminar esta cuenta porque tiene sub-cuentas.");
       return;
     }
 
-    const confirmed = window.confirm(`¿BORRAR DEFINITIVAMENTE?\n\nLa cuenta "${editingAccount.name}" (${editingAccount.code}) se eliminará de la base de datos de Firebase.`);
+    const confirmed = window.confirm(`¿ELIMINAR PERMANENTEMENTE?\n\n"${editingAccount.name}" (${editingAccount.code}) será borrada de Firebase.`);
     
     if (!confirmed) return;
 
     setIsProcessing(true);
     try {
-      const accountRef = doc(db, "users", user.uid, "accounts", editingAccount.id);
-      await deleteDoc(accountRef);
-      alert("✅ Cuenta eliminada correctamente de Firebase.");
+      const ref = doc(db, "users", user.uid, "accounts", editingAccount.id);
+      await deleteDoc(ref);
+      alert("✅ Cuenta eliminada correctamente.");
       closeAccountModal();
     } catch (err: any) { 
-      console.error("Error crítico de Firebase al eliminar:", err);
-      alert(`❌ Error al eliminar: ${err.message}`); 
+      console.error("Error al eliminar:", err);
+      alert(`❌ Error: ${err.message}`); 
     } finally { 
       setIsProcessing(false); 
     }
@@ -341,22 +336,20 @@ const AccountingScreen: React.FC = () => {
                     value={accInitialBalance} 
                     onFocus={(e) => {
                       e.target.select();
-                      // Borra el 0 inicial automáticamente para mayor comodidad
                       if (accInitialBalance === '0' || accInitialBalance === '0.00') setAccInitialBalance('');
                     }}
                     onBlur={() => {
-                      // Restaura el 0 si se deja vacío
                       if (accInitialBalance.trim() === '') setAccInitialBalance('0');
                     }}
                     onChange={e => setAccInitialBalance(e.target.value)} 
-                    className="w-full p-4 pl-8 bg-slate-100 dark:bg-white/5 rounded-2xl font-bold border-none transition-all focus:bg-white dark:focus:bg-white/10" 
+                    className="w-full p-4 pl-8 bg-slate-100 dark:bg-white/5 rounded-2xl font-bold border-none" 
                     placeholder="0.00"
                   />
                 </div>
               </div>
 
               <div className="space-y-1">
-                <label className="text-[10px] font-black uppercase text-slate-400 ml-1">Cuenta Principal</label>
+                <label className="text-[10px] font-black uppercase text-slate-400 ml-1">Depende de</label>
                 <select 
                   value={accParentId} 
                   onChange={e => setAccParentId(e.target.value)} 
@@ -374,7 +367,7 @@ const AccountingScreen: React.FC = () => {
                   className="w-full py-4 bg-primary text-white font-black rounded-2xl shadow-xl active:scale-95 transition-all flex items-center justify-center gap-2"
                 >
                   {isProcessing && <span className="material-symbols-outlined animate-spin text-sm">sync</span>}
-                  {editingAccount ? 'Actualizar en Firebase' : 'Crear Cuenta'}
+                  {editingAccount ? 'Actualizar Cuenta' : 'Crear Cuenta'}
                 </button>
                 
                 {editingAccount && (

@@ -16,10 +16,8 @@
         e.preventDefault();
         window.deferredPrompt = e;
         window.dispatchEvent(new CustomEvent('pwa-installable'));
-        console.log('PWA: Evento beforeinstallprompt capturado');
       });
 
-      // Detección de si ya está instalada
       window.isPWA = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
 
       const savedTheme = localStorage.getItem('theme');
@@ -92,6 +90,7 @@
 </head>
 <body class="bg-background-light dark:bg-background-dark font-display text-slate-900 dark:text-white transition-colors duration-200 antialiased selection:bg-primary selection:text-white">
     <div id="root"></div>
+    <!-- Nota: En GitHub Pages, asegúrate de que el archivo index.tsx se compile o se cargue correctamente -->
     <script type="module" src="./index.tsx"></script>
     <script>
       if ('serviceWorker' in navigator) {
