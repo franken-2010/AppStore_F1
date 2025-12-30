@@ -1,5 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import BottomNav from '../components/BottomNav';
 import ProfileMenu from '../components/ProfileMenu';
 import Sidebar from '../components/Sidebar';
@@ -10,7 +11,11 @@ import {
   addDoc, 
   onSnapshot, 
   query, 
-  serverTimestamp 
+  serverTimestamp,
+  doc,
+  writeBatch,
+  increment,
+  orderBy
 } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 import { GeminiService } from '../services/geminiService';
 import VoiceInputButton from '../components/VoiceInputButton';
@@ -19,6 +24,7 @@ import { AccountingAccount } from '../types';
 type TabMode = 'manual' | 'raw';
 
 const CortesScreen: React.FC = () => {
+  const navigate = useNavigate();
   const { user } = useAuth();
   const [activeTab, setActiveTab] = useState<TabMode>('manual');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -36,7 +42,9 @@ const CortesScreen: React.FC = () => {
 
   useEffect(() => {
     if (!user) return;
-    const unsub = onSnapshot(query(collection(db, "users", user.uid, "accounts")), (snap) => {
+    // Cargar cuentas del usuario para clasificación
+    const q = query(collection(db, "users", user.uid, "accounts"), orderBy("order", "asc"));
+    const unsub = onSnapshot(q, (snap) => {
       setAccounts(snap.docs.map(d => ({ id: d.id, ...d.data() } as AccountingAccount)));
     });
     return () => unsub();
@@ -56,10 +64,20 @@ const CortesScreen: React.FC = () => {
 
   const handleSaveManual = async () => {
     if (!user) return;
+    if (!selectedIncomeAcc) {
+      setStatus({ text: 'Debes seleccionar una cuenta de ingreso (ej. Caja).', type: 'error' });
+      return;
+    }
+
     setIsSaving(true);
+    setStatus(null);
+
     try {
-      await addDoc(collection(db, "cortes"), {
-        uid: user.uid, 
+      const batch = writeBatch(db);
+
+      // 1. Guardar el registro del corte
+      const corteRef = doc(collection(db, "users", user.uid, "cortes"));
+      batch.set(corteRef, {
         fecha, 
         modo: 'manual', 
         ...manualData, 
@@ -67,16 +85,36 @@ const CortesScreen: React.FC = () => {
         totalEgresos, 
         efectivoReal, 
         diferencia,
-        accounting: {
-          incomeAccountId: selectedIncomeAcc,
-          expenseAccountId: selectedExpenseAcc
-        },
+        incomeAccountId: selectedIncomeAcc,
+        expenseAccountId: selectedExpenseAcc || null,
         createdAt: serverTimestamp()
       });
-      setStatus({ text: 'Corte guardado y clasificado en contabilidad.', type: 'success' });
+
+      // 2. Actualizar balance de la cuenta de Ingresos (Suma ventas netas)
+      const incomeAccRef = doc(db, "users", user.uid, "accounts", selectedIncomeAcc);
+      batch.update(incomeAccRef, {
+        balance: increment(efectivoReal),
+        updatedAt: serverTimestamp()
+      });
+
+      // 3. Si hay cuenta de gastos y hay gastos, opcionalmente registrar (ya incluido en efectivoReal)
+      // Nota: Aquí se asume que el efectivoReal es lo que entra a la cuenta seleccionada.
+
+      await batch.commit();
+
+      setStatus({ text: 'Corte guardado y saldo de cuenta actualizado.', type: 'success' });
+      
+      // Resetear form
       setManualData({ ventas: 0, fiesta: 0, recargas: 0, estancias: 0, pagosCxc: 0, consumoPersonal: 0, gastosGenerales: 0, dineroEntregado: 0, ingresosCxc: 0, nota: '' });
-      setSelectedIncomeAcc(''); setSelectedExpenseAcc('');
-    } catch (err) { setStatus({ text: 'Error al guardar.', type: 'error' }); } finally { setIsSaving(false); }
+      setSelectedIncomeAcc(''); 
+      setSelectedExpenseAcc('');
+      
+    } catch (err) { 
+      console.error("Error saving corte:", err);
+      setStatus({ text: 'Error al conectar con la base de datos.', type: 'error' }); 
+    } finally { 
+      setIsSaving(false); 
+    }
   };
 
   const InputRow = ({ label, field, icon, value }: any) => (
@@ -94,6 +132,7 @@ const CortesScreen: React.FC = () => {
   return (
     <div className="relative flex h-full min-h-screen w-full flex-col overflow-x-hidden pb-32 max-w-md mx-auto bg-background-light dark:bg-background-dark font-display">
       <Sidebar isOpen={isSidebarOpen} onClose={() => setIsSidebarOpen(false)} />
+      
       <header className="sticky top-0 z-30 bg-background-light/95 dark:bg-background-dark/95 backdrop-blur-md pt-12 px-5 pb-4">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-3">
@@ -120,6 +159,11 @@ const CortesScreen: React.FC = () => {
 
         {activeTab === 'manual' ? (
           <div className="space-y-6 animate-in fade-in">
+            <div className="flex flex-col gap-1 mb-2">
+              <label className="text-[10px] font-black uppercase text-slate-500 tracking-widest ml-1">Fecha del Corte</label>
+              <input type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} className="w-full bg-white dark:bg-surface-dark rounded-xl py-3 px-4 text-sm font-bold border-none" />
+            </div>
+
             <div className="grid grid-cols-2 gap-4">
               <InputRow label="Ventas" field="ventas" icon="shopping_bag" value={manualData.ventas} />
               <InputRow label="Fiesta" field="fiesta" icon="celebration" value={manualData.fiesta} />
@@ -132,20 +176,15 @@ const CortesScreen: React.FC = () => {
               <h3 className="text-[10px] font-black text-primary uppercase tracking-widest px-1">Clasificación Contable</h3>
               <div className="space-y-3">
                 <div className="flex flex-col gap-1.5">
-                  <label className="text-[9px] font-black uppercase text-slate-400 ml-1">Cuenta de Ingresos</label>
-                  <select value={selectedIncomeAcc} onChange={(e) => setSelectedIncomeAcc(e.target.value)} className="w-full bg-slate-50 dark:bg-background-dark rounded-xl py-3 px-4 text-xs font-bold border-none appearance-none">
-                    <option value="">Seleccionar cuenta...</option>
-                    {accounts.filter(a => a.type === 'Ingreso' || a.type === 'Activo').map(acc => (
-                      <option key={acc.id} value={acc.id}>{acc.code} - {acc.name}</option>
-                    ))}
-                  </select>
-                </div>
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-[9px] font-black uppercase text-slate-400 ml-1">Cuenta de Gastos</label>
-                  <select value={selectedExpenseAcc} onChange={(e) => setSelectedExpenseAcc(e.target.value)} className="w-full bg-slate-50 dark:bg-background-dark rounded-xl py-3 px-4 text-xs font-bold border-none appearance-none">
-                    <option value="">Seleccionar cuenta...</option>
-                    {accounts.filter(a => a.type === 'Gasto' || a.type === 'Pasivo').map(acc => (
-                      <option key={acc.id} value={acc.id}>{acc.code} - {acc.name}</option>
+                  <label className="text-[9px] font-black uppercase text-slate-400 ml-1">¿A qué cuenta entra el dinero?</label>
+                  <select 
+                    value={selectedIncomeAcc} 
+                    onChange={(e) => setSelectedIncomeAcc(e.target.value)} 
+                    className="w-full bg-slate-50 dark:bg-background-dark rounded-xl py-3 px-4 text-xs font-bold border-none"
+                  >
+                    <option value="">Seleccionar cuenta (ej. Caja)...</option>
+                    {accounts.filter(a => a.type === 'Activo').map(acc => (
+                      <option key={acc.id} value={acc.id}>{acc.name} - Bal: ${acc.balance?.toLocaleString()}</option>
                     ))}
                   </select>
                 </div>
@@ -159,28 +198,89 @@ const CortesScreen: React.FC = () => {
                  <VoiceInputButton onResult={(t) => setManualData({...manualData, nota: manualData.nota + ' ' + t})} className="absolute right-2 bottom-2" />
                </div>
             </div>
+
+            <div className="p-6 bg-slate-900 rounded-3xl space-y-3 text-white">
+              <div className="flex justify-between items-center">
+                <span className="text-xs font-bold text-slate-400 uppercase">Efectivo Calculado</span>
+                <span className="text-xl font-black">${efectivoReal.toLocaleString()}</span>
+              </div>
+              <div className="h-px bg-white/10 w-full"></div>
+              <div className="flex flex-col gap-1.5">
+                 <label className="text-[10px] font-black uppercase text-slate-400">Efectivo en mano (Dinero entregado)</label>
+                 <input 
+                  type="number" 
+                  value={manualData.dineroEntregado || ''} 
+                  onChange={(e) => handleInputChange('dineroEntregado', e.target.value)} 
+                  className="w-full bg-white/10 border-none rounded-xl py-3 px-4 text-white font-black" 
+                  placeholder="0.00" 
+                 />
+              </div>
+              <div className="flex justify-between items-center pt-2">
+                <span className="text-xs font-bold text-slate-400 uppercase">Diferencia</span>
+                <span className={`text-lg font-black ${diferencia === 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                  {diferencia > 0 ? '+' : ''}{diferencia.toLocaleString()}
+                </span>
+              </div>
+            </div>
             
-            <button onClick={handleSaveManual} disabled={isSaving} className="w-full py-4 bg-primary text-white font-black rounded-2xl shadow-xl active:scale-95 transition-all">
-              {isSaving ? 'Guardando...' : 'Guardar y Clasificar'}
+            <button 
+              onClick={handleSaveManual} 
+              disabled={isSaving} 
+              className="w-full py-4 bg-primary text-white font-black rounded-2xl shadow-xl active:scale-95 transition-all flex items-center justify-center gap-2"
+            >
+              {isSaving ? <span className="material-symbols-outlined animate-spin">sync</span> : <span className="material-symbols-outlined">save</span>}
+              {isSaving ? 'Guardando...' : 'Finalizar y Actualizar Cuentas'}
             </button>
           </div>
         ) : (
           <div className="space-y-6 animate-in fade-in">
             <div className="flex flex-col gap-2">
               <div className="flex justify-between items-center px-1">
-                <label className="text-[10px] font-black uppercase text-slate-500 tracking-widest">Reporte Completo</label>
+                <label className="text-[10px] font-black uppercase text-slate-500 tracking-widest">Reporte Completo (Make/WhatsApp)</label>
                 <VoiceInputButton onResult={(t) => setRawText(rawText + '\n' + t)} />
               </div>
-              <textarea value={rawText} onChange={(e) => setRawText(e.target.value)} className="w-full h-64 bg-white dark:bg-surface-dark rounded-2xl p-4 text-sm font-mono focus:ring-2 focus:ring-primary shadow-sm resize-none" placeholder="Pega el reporte..." />
+              <textarea value={rawText} onChange={(e) => setRawText(e.target.value)} className="w-full h-64 bg-white dark:bg-surface-dark rounded-2xl p-4 text-sm font-mono focus:ring-2 focus:ring-primary shadow-sm resize-none" placeholder="Pega el reporte aquí..." />
             </div>
-            <button onClick={async () => {setIsSaving(true); const r = await GeminiService.parseCorteText(rawText, fecha); setParsedPreview(r); setIsSaving(false);}} disabled={isSaving || !rawText} className="w-full py-4 bg-primary text-white font-black rounded-2xl shadow-lg flex items-center justify-center gap-2 transition-all active:scale-95">
+            <button onClick={async () => {setIsSaving(true); try { const r = await GeminiService.parseCorteText(rawText, fecha); setParsedPreview(r); } catch(e) { setStatus({text: 'Error analizando el texto.', type:'error'})} finally { setIsSaving(false); }}} disabled={isSaving || !rawText} className="w-full py-4 bg-primary text-white font-black rounded-2xl shadow-lg flex items-center justify-center gap-2 transition-all active:scale-95">
               {isSaving ? 'Analizando...' : <><span className="material-symbols-outlined">psychology</span> Analizar con IA</>}
             </button>
             {parsedPreview && (
-              <div className="p-6 bg-white dark:bg-surface-dark border border-primary/20 rounded-[2.5rem] animate-in zoom-in duration-300 shadow-2xl">
-                <p className="text-3xl font-black text-primary tracking-tighter">${parsedPreview.subtotalDespuesEgresos.toLocaleString()}</p>
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-4">Efectivo Calculado</p>
-                <button onClick={() => setParsedPreview(null)} className="w-full py-3.5 bg-emerald-500 text-white font-black rounded-xl active:scale-95 transition-all shadow-lg shadow-emerald-500/20">Confirmar y Guardar</button>
+              <div className="p-6 bg-white dark:bg-surface-dark border border-primary/20 rounded-[2.5rem] animate-in zoom-in duration-300 shadow-2xl space-y-4">
+                <div>
+                  <p className="text-3xl font-black text-primary tracking-tighter">${parsedPreview.subtotalDespuesEgresos?.toLocaleString() || '0'}</p>
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-4">Efectivo Detectado</p>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black uppercase text-slate-500">Cuenta de destino</label>
+                  <select 
+                    value={selectedIncomeAcc} 
+                    onChange={(e) => setSelectedIncomeAcc(e.target.value)} 
+                    className="w-full bg-slate-50 dark:bg-background-dark rounded-xl py-3 px-4 text-xs font-bold border-none"
+                  >
+                    <option value="">Seleccionar cuenta...</option>
+                    {accounts.filter(a => a.type === 'Activo').map(acc => (
+                      <option key={acc.id} value={acc.id}>{acc.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <button 
+                  onClick={() => {
+                    // Mapear datos de IA a manualData para guardar
+                    setManualData({
+                      ...manualData,
+                      ventas: parsedPreview.ventas || 0,
+                      fiesta: parsedPreview.fiesta || 0,
+                      recargas: parsedPreview.recargas || 0,
+                      gastosGenerales: parsedPreview.egresos || 0,
+                      dineroEntregado: parsedPreview.subtotalDespuesEgresos || 0
+                    });
+                    setActiveTab('manual');
+                    setParsedPreview(null);
+                  }} 
+                  className="w-full py-3.5 bg-emerald-500 text-white font-black rounded-xl active:scale-95 transition-all shadow-lg shadow-emerald-500/20"
+                >
+                  Usar estos datos
+                </button>
               </div>
             )}
           </div>

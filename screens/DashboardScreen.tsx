@@ -4,14 +4,62 @@ import { useNavigate } from 'react-router-dom';
 import BottomNav from '../components/BottomNav';
 import Sidebar from '../components/Sidebar';
 import ProfileMenu from '../components/ProfileMenu';
-import { RECENT_CORTES, QUICK_STATS } from '../constants';
+import { RECENT_CORTES } from '../constants';
 import NotificationBell from '../components/NotificationBell';
 import { useAuth } from '../context/AuthContext';
+import { db } from '../services/firebase';
+import { collection, query, onSnapshot, where } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+import { AccountingAccount } from '../types';
 
 const DashboardScreen: React.FC = () => {
   const navigate = useNavigate();
-  const { profile } = useAuth();
+  const { profile, user } = useAuth();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [stats, setStats] = useState({
+    balance: '$0.00',
+    capital: '$0.00',
+    loading: true
+  });
+
+  useEffect(() => {
+    if (!user) return;
+
+    // Escuchar todas las cuentas para cálculos precisos
+    const q = query(collection(db, "users", user.uid, "accounts"));
+    
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const accounts = snapshot.docs.map(doc => doc.data() as AccountingAccount);
+      
+      // Filtrar solo las visibles para el resumen del dashboard
+      const visibleAccounts = accounts.filter(a => a.isVisible !== false);
+
+      const totalAssets = visibleAccounts
+        .filter(a => a.type === 'Activo' || (a as any).type === 'Ahorro')
+        .reduce((sum, a) => sum + (a.balance || 0), 0);
+        
+      const totalLiabilities = visibleAccounts
+        .filter(a => a.type === 'Pasivo')
+        .reduce((sum, a) => sum + (a.balance || 0), 0);
+        
+      const capital = accounts
+        .filter(a => a.type === 'Capital')
+        .reduce((sum, a) => sum + (a.balance || 0), 0);
+
+      const formatter = new Intl.NumberFormat('es-MX', { 
+        style: 'currency', 
+        currency: 'MXN',
+        maximumFractionDigits: 0
+      });
+
+      setStats({
+        balance: formatter.format(totalAssets - totalLiabilities),
+        capital: formatter.format(capital || totalAssets),
+        loading: false
+      });
+    });
+
+    return () => unsubscribe();
+  }, [user]);
 
   return (
     <div className="bg-background-light dark:bg-background-dark font-display text-slate-900 dark:text-white antialiased pb-32 min-h-screen">
@@ -39,17 +87,27 @@ const DashboardScreen: React.FC = () => {
       </header>
       
       <main className="flex flex-col w-full max-w-md mx-auto px-6">
-        {/* QUICK STATS */}
+        {/* QUICK STATS - REAL TIME */}
         <section className="mt-4 grid grid-cols-2 gap-4">
-          {QUICK_STATS.map((stat, idx) => (
-            <div key={idx} className="p-6 rounded-3xl bg-white dark:bg-surface-dark border border-slate-100 dark:border-white/5 shadow-sm hover:shadow-md transition-all">
-              <div className={`size-10 rounded-2xl flex items-center justify-center mb-4 ${stat.color} bg-current/10`}>
-                <span className="material-symbols-outlined">{stat.icon}</span>
-              </div>
-              <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">{stat.label}</p>
-              <p className="text-2xl font-black text-slate-900 dark:text-white tracking-tighter">{stat.value}</p>
+          <div className="p-6 rounded-3xl bg-white dark:bg-surface-dark border border-slate-100 dark:border-white/5 shadow-sm">
+            <div className="size-10 rounded-2xl flex items-center justify-center mb-4 text-emerald-500 bg-emerald-500/10">
+              <span className="material-symbols-outlined">trending_up</span>
             </div>
-          ))}
+            <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Capital Social</p>
+            <p className="text-2xl font-black text-slate-900 dark:text-white tracking-tighter">
+              {stats.loading ? '...' : stats.capital}
+            </p>
+          </div>
+          
+          <div className="p-6 rounded-3xl bg-white dark:bg-surface-dark border border-slate-100 dark:border-white/5 shadow-sm">
+            <div className="size-10 rounded-2xl flex items-center justify-center mb-4 text-blue-500 bg-blue-500/10">
+              <span className="material-symbols-outlined">account_balance_wallet</span>
+            </div>
+            <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Balance Neto</p>
+            <p className="text-2xl font-black text-slate-900 dark:text-white tracking-tighter">
+              {stats.loading ? '...' : stats.balance}
+            </p>
+          </div>
         </section>
 
         {/* ACTION GRID */}
@@ -66,7 +124,7 @@ const DashboardScreen: React.FC = () => {
               <div className="size-14 rounded-2xl bg-primary/10 text-primary flex items-center justify-center group-hover:bg-primary group-hover:text-white transition-colors duration-300">
                 <span className="material-symbols-outlined text-2xl">point_of_sale</span>
               </div>
-              <span className="text-[10px] font-black uppercase tracking-tight text-center leading-none text-slate-600 dark:text-slate-400">Caja</span>
+              <span className="text-[10px] font-black uppercase tracking-tight text-center leading-none text-slate-600 dark:text-slate-400">Cortes</span>
             </button>
             <button 
               onClick={() => navigate('/accounting')}
@@ -75,7 +133,7 @@ const DashboardScreen: React.FC = () => {
               <div className="size-14 rounded-2xl bg-indigo-500/10 text-indigo-500 flex items-center justify-center group-hover:bg-indigo-500 group-hover:text-white transition-colors duration-300">
                 <span className="material-symbols-outlined text-2xl">account_balance</span>
               </div>
-              <span className="text-[10px] font-black uppercase tracking-tight text-center leading-none text-slate-600 dark:text-slate-400">Conta</span>
+              <span className="text-[10px] font-black uppercase tracking-tight text-center leading-none text-slate-600 dark:text-slate-400">Cuentas</span>
             </button>
             <button 
               onClick={() => navigate('/chat')}
@@ -89,10 +147,10 @@ const DashboardScreen: React.FC = () => {
           </div>
         </section>
 
-        {/* RECENT CORTES LIST */}
+        {/* RECENT ACTIVITY */}
         <section className="mt-10 mb-10">
           <div className="flex items-center justify-between mb-6 px-1">
-            <h2 className="text-xl font-black tracking-tight">Cortes Recientes</h2>
+            <h2 className="text-xl font-black tracking-tight">Actividad Reciente</h2>
             <button 
               onClick={() => navigate('/cortes')} 
               className="text-[10px] font-black text-primary uppercase tracking-[0.2em] px-4 py-2 bg-primary/10 rounded-full hover:bg-primary hover:text-white transition-all"
@@ -115,12 +173,12 @@ const DashboardScreen: React.FC = () => {
                   </div>
                   <p className="text-xs font-bold text-slate-400 flex items-center gap-1">
                     <span className="material-symbols-outlined text-[14px]">payments</span>
-                    Efectivo: ${corte.amount.toLocaleString('es-MX', { minimumFractionDigits: 2 })}
+                    Monto: ${corte.amount.toLocaleString('es-MX', { minimumFractionDigits: 2 })}
                   </p>
                 </div>
                 <div className="text-right">
                   <span className={`text-[10px] font-black uppercase tracking-widest px-3 py-1.5 rounded-xl ${corte.status === 'completed' ? 'bg-emerald-500/10 text-emerald-500' : 'bg-red-500/10 text-red-500'}`}>
-                    {corte.status === 'completed' ? 'Cuadrado' : 'Revisar'}
+                    {corte.status === 'completed' ? 'OK' : 'Rev'}
                   </span>
                 </div>
               </div>

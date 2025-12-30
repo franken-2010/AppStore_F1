@@ -8,7 +8,7 @@ import {
   GoogleAuthProvider, 
   signInWithPopup 
 } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
-import { doc, setDoc, getDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+import { doc, setDoc, getDoc, collection, writeBatch, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
 const RegisterScreen: React.FC = () => {
   const navigate = useNavigate();
@@ -17,6 +17,26 @@ const RegisterScreen: React.FC = () => {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+
+  const initializeDefaultAccounts = async (uid: string) => {
+    const batch = writeBatch(db);
+    const accounts = [
+      { name: 'Caja (Efectivo)', code: 'CAJ01', type: 'Activo', balance: 0, order: 0, isVisible: true },
+      { name: 'Banco Principal', code: 'BNK01', type: 'Activo', balance: 0, order: 1, isVisible: true },
+      { name: 'Capital Social', code: 'CAP01', type: 'Capital', balance: 0, order: 2, isVisible: true }
+    ];
+
+    accounts.forEach((acc) => {
+      const newAccRef = doc(collection(db, "users", uid, "accounts"));
+      batch.set(newAccRef, {
+        ...acc,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      });
+    });
+
+    await batch.commit();
+  };
 
   const handleRegister = async () => {
     if (!name || !email || !password) {
@@ -33,14 +53,18 @@ const RegisterScreen: React.FC = () => {
 
       await updateProfile(user, { displayName: name });
 
+      // Crear perfil de usuario
       await setDoc(doc(db, "users", user.uid), {
         uid: user.uid,
         displayName: name,
         email: email,
         photoURL: `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=2563eb&color=fff`,
         role: 'admin',
-        createdAt: new Date().toISOString()
+        createdAt: serverTimestamp()
       });
+
+      // Inicializar base de datos de cuentas
+      await initializeDefaultAccounts(user.uid);
 
       navigate('/dashboard');
     } catch (err: any) {
@@ -61,32 +85,27 @@ const RegisterScreen: React.FC = () => {
       const result = await signInWithPopup(auth, provider);
       const user = result.user;
 
-      try {
-        const userDocRef = doc(db, "users", user.uid);
-        const userDoc = await getDoc(userDocRef);
+      const userDocRef = doc(db, "users", user.uid);
+      const userDoc = await getDoc(userDocRef);
 
-        if (!userDoc.exists()) {
-          await setDoc(userDocRef, {
-            uid: user.uid,
-            displayName: user.displayName || 'Usuario Google',
-            email: user.email,
-            photoURL: user.photoURL || `https://ui-avatars.com/api/?name=${encodeURIComponent(user.displayName || 'U')}&background=2563eb&color=fff`,
-            role: 'admin',
-            createdAt: new Date().toISOString()
-          });
-        }
-        navigate('/dashboard');
-      } catch (fsErr) {
-        console.error("Firestore error after Google Login:", fsErr);
-        navigate('/dashboard');
+      if (!userDoc.exists()) {
+        await setDoc(userDocRef, {
+          uid: user.uid,
+          displayName: user.displayName || 'Usuario Google',
+          email: user.email,
+          photoURL: user.photoURL || `https://ui-avatars.com/api/?name=${encodeURIComponent(user.displayName || 'U')}&background=2563eb&color=fff`,
+          role: 'admin',
+          createdAt: serverTimestamp()
+        });
+
+        // Inicializar cuentas para nuevo usuario de Google
+        await initializeDefaultAccounts(user.uid);
       }
+      
+      navigate('/dashboard');
     } catch (err: any) {
       console.error("Google login error:", err);
-      if (err.code === 'auth/popup-closed-by-user') {
-        setError('Inicio de sesión cancelado.');
-      } else {
-        setError(`Error: ${err.message}`);
-      }
+      setError(`Error: ${err.message}`);
     } finally {
       setLoading(false);
     }
@@ -103,7 +122,7 @@ const RegisterScreen: React.FC = () => {
 
       <div className="flex-1 flex flex-col pb-8">
         <div className="px-6 pt-6 pb-2 text-center">
-          <h1 className="text-gray-900 dark:text-white text-[28px] font-extrabold leading-tight">Únete a DataFlow</h1>
+          <h1 className="text-gray-900 dark:text-white text-[28px] font-extrabold leading-tight">Únete a Miscelánea F1</h1>
           <p className="text-gray-600 dark:text-gray-400 text-sm mt-2">Gestiona tu negocio con inteligencia artificial.</p>
         </div>
 
@@ -147,7 +166,7 @@ const RegisterScreen: React.FC = () => {
             onClick={handleRegister} disabled={loading}
             className="w-full rounded-full bg-primary py-4 text-base font-bold text-white shadow-lg active:scale-[0.98] disabled:opacity-70"
           >
-            {loading ? 'Creando cuenta...' : 'Registrarse'}
+            {loading ? 'Inicializando Sistema...' : 'Registrarse'}
           </button>
 
           <div className="flex items-center gap-4 py-2">

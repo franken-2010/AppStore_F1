@@ -51,7 +51,7 @@ export interface StoreProduct {
   lastUpdated: string;
 }
 
-export type AccountType = 'Activo' | 'Pasivo' | 'Capital' | 'Ingreso' | 'Gasto';
+export type AccountType = 'Activo' | 'Pasivo' | 'Capital' | 'Ingreso' | 'Gasto' | 'Ahorro';
 
 export interface AccountingAccount {
   id?: string;
@@ -62,6 +62,8 @@ export interface AccountingAccount {
   balance: number;
   initialBalance?: number;
   parentId?: string | null;
+  isVisible?: boolean;
+  order?: number;
 }
 
 export interface AccountingProvider {
