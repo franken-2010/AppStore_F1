@@ -36,9 +36,6 @@ const SettingsScreen: React.FC = () => {
   const isIframe = window.self !== window.top;
   const isSecure = window.isSecureContext;
 
-  const [showInstallBtn, setShowInstallBtn] = useState(!!(window as any).deferredPrompt);
-  const isPWA = (window as any).isPWA;
-
   useEffect(() => {
     if (profile) {
       setName(profile.displayName || '');
@@ -48,11 +45,6 @@ const SettingsScreen: React.FC = () => {
       setWebhookCortes(profile.webhookCortes || '');
       setWebhookNotifications(profile.webhookNotifications || '');
     }
-
-    const handlePwaInstallable = () => setShowInstallBtn(true);
-    window.addEventListener('pwa-installable', handlePwaInstallable);
-    
-    return () => window.removeEventListener('pwa-installable', handlePwaInstallable);
   }, [profile]);
 
   const handleLinkBiometrics = async () => {
@@ -75,7 +67,7 @@ const SettingsScreen: React.FC = () => {
       const credential = await navigator.credentials.create({
         publicKey: {
           challenge,
-          rp: { name: "Miscelánea F1 Intelligence" }, // Se eliminó ID explícito para mayor compatibilidad
+          rp: { name: "Miscelánea F1 Intelligence" },
           user: {
             id: new TextEncoder().encode(user.uid),
             name: user.email,
@@ -91,31 +83,12 @@ const SettingsScreen: React.FC = () => {
         const credId = btoa(String.fromCharCode(...new Uint8Array((credential as any).rawId)));
         localStorage.setItem('biometric_credential', credId);
         localStorage.setItem('biometric_email', user.email);
-        // Guardar password temporalmente para el login silencioso si es necesario
-        // Nota: En un entorno real, esto se manejaría con tokens firmados en el servidor.
         setIsBiometricLinked(true);
         addNotification({ title: 'Biometría Vinculada', message: 'Ahora puedes entrar con tu huella.', type: 'system' });
       }
     } catch (err: any) {
       console.error("Link biometric error:", err);
-      if (err.name === 'SecurityError' || err.message.includes('Permissions Policy')) {
-        alert("🔒 Error de Seguridad: El navegador bloquea el acceso a la huella digital en este entorno. Intenta abrir la app en una pestaña nueva del navegador.");
-      } else if (err.name === 'NotAllowedError') {
-        alert("Operación cancelada o permiso denegado por el usuario.");
-      } else {
-        alert("No se pudo vincular la biometría: " + err.message);
-      }
-    }
-  };
-
-  const handleInstallApp = async () => {
-    const prompt = (window as any).deferredPrompt;
-    if (!prompt) return;
-    prompt.prompt();
-    const { outcome } = await prompt.userChoice;
-    if (outcome === 'accepted') {
-      (window as any).deferredPrompt = null;
-      setShowInstallBtn(false);
+      alert("No se pudo vincular la biometría. Asegúrate de tener activa una huella en tu celular.");
     }
   };
 
@@ -274,6 +247,21 @@ const SettingsScreen: React.FC = () => {
                 <p className="font-black text-xl text-slate-900 dark:text-white">{profile?.displayName}</p>
                 <p className="text-xs font-bold text-slate-500">{profile?.email}</p>
               </div>
+            </div>
+
+            {/* Acceso a Instalación Local */}
+            <div 
+              onClick={() => navigate('/install')}
+              className="p-6 bg-gradient-to-r from-primary to-indigo-600 rounded-[2rem] text-white shadow-xl shadow-primary/20 active:scale-[0.98] transition-all flex items-center gap-4 cursor-pointer"
+            >
+              <div className="size-14 bg-white/20 rounded-2xl flex items-center justify-center">
+                <span className="material-symbols-outlined text-3xl">get_app</span>
+              </div>
+              <div className="flex-1">
+                <h3 className="font-black text-sm uppercase tracking-tight leading-none">Descargar App Nativa</h3>
+                <p className="text-[10px] font-bold text-white/70 mt-1 uppercase tracking-widest">Instalación Local (Alternativa APK)</p>
+              </div>
+              <span className="material-symbols-outlined opacity-50">chevron_right</span>
             </div>
 
             <div className="p-5 rounded-3xl bg-white dark:bg-surface-dark border border-slate-100 dark:border-white/5 shadow-sm space-y-4">

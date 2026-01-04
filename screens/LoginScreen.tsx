@@ -24,28 +24,21 @@ const LoginScreen: React.FC = () => {
   const [isForgotMode, setIsForgotMode] = useState(false);
   const [resetEmail, setResetEmail] = useState('');
   const [isBiometricSupported, setIsBiometricSupported] = useState(false);
+  const [showInstallModal, setShowInstallModal] = useState(false);
   
   const isIframe = window.self !== window.top;
-
-  const [showInstallBtn, setShowInstallBtn] = useState(!!(window as any).deferredPrompt);
   const isPWA = (window as any).isPWA;
 
   useEffect(() => {
-    // Cargar correo recordado
     const savedEmail = localStorage.getItem('f1_remembered_email');
     if (savedEmail) {
       setEmail(savedEmail);
     }
 
-    // Verificar soporte biométrico (solo si no es un iframe o tiene HTTPS)
     if (window.PublicKeyCredential && !isIframe && window.isSecureContext) {
       (window.PublicKeyCredential as any).isUserVerifyingPlatformAuthenticatorAvailable()
         .then((available: boolean) => setIsBiometricSupported(available));
     }
-
-    const handlePwaInstallable = () => setShowInstallBtn(true);
-    window.addEventListener('pwa-installable', handlePwaInstallable);
-    return () => window.removeEventListener('pwa-installable', handlePwaInstallable);
   }, [isIframe]);
 
   const handleBiometricLogin = async () => {
@@ -91,27 +84,16 @@ const LoginScreen: React.FC = () => {
       }
     } catch (err: any) {
       console.error("Biometric login error:", err);
-      if (err.name === 'SecurityError' || err.message.includes('Permissions Policy')) {
-        setError({ message: '🔒 Bloqueo de Seguridad: Abre la app en una pestaña nueva para usar biometría.' });
-      } else if (err.name === 'NotAllowedError') {
-        setError({ message: 'Autenticación biométrica cancelada.' });
-      } else {
-        setError({ message: 'Error biométrico: ' + err.message });
-      }
+      setError({ message: 'Error biométrico: ' + err.message });
     } finally {
       setLoading(false);
     }
   };
 
-  const handleInstallClick = async () => {
-    const prompt = (window as any).deferredPrompt;
-    if (!prompt) return;
-    prompt.prompt();
-    const { outcome } = await prompt.userChoice;
-    if (outcome === 'accepted') {
-      (window as any).deferredPrompt = null;
-      setShowInstallBtn(false);
-    }
+  const handleInstallPWA = () => {
+    // Siempre redirigimos a la guía de instalación para asegurar que el usuario
+    // entienda cómo hacerlo fuera del iframe
+    navigate('/install');
   };
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -123,7 +105,6 @@ const LoginScreen: React.FC = () => {
       await setPersistence(auth, rememberMe ? browserLocalPersistence : browserSessionPersistence);
       await signInWithEmailAndPassword(auth, email, password);
       
-      // Persistir correo si rememberMe está activo
       if (rememberMe) {
         localStorage.setItem('f1_remembered_email', email);
       } else {
@@ -143,21 +124,7 @@ const LoginScreen: React.FC = () => {
     setError({ message: '' });
     try {
       const provider = new GoogleAuthProvider();
-      provider.setCustomParameters({ prompt: 'select_account' });
-      const result = await signInWithPopup(auth, provider);
-      const user = result.user;
-      const userDocRef = doc(db, "users", user.uid);
-      const userDoc = await getDoc(userDocRef);
-      if (!userDoc.exists()) {
-        await setDoc(userDocRef, {
-          uid: user.uid,
-          displayName: user.displayName || 'Usuario Google',
-          email: user.email,
-          photoURL: user.photoURL || `https://ui-avatars.com/api/?name=${encodeURIComponent(user.displayName || 'U')}&background=2563eb&color=fff`,
-          role: 'admin',
-          createdAt: new Date().toISOString()
-        });
-      }
+      await signInWithPopup(auth, provider);
       navigate('/dashboard');
     } catch (err: any) {
       setError({ message: `Error: ${err.message}` });
@@ -168,7 +135,39 @@ const LoginScreen: React.FC = () => {
 
   return (
     <div className="relative flex min-h-screen w-full flex-col overflow-hidden max-w-md mx-auto shadow-2xl bg-background-light dark:bg-background-dark font-display text-slate-900 dark:text-white transition-colors duration-200 antialiased">
+      
+      {/* MODAL DE INSTALACIÓN */}
+      {showInstallModal && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-black/60 backdrop-blur-md animate-in fade-in duration-300">
+          <div className="w-full max-w-xs bg-white dark:bg-surface-dark rounded-[2.5rem] p-8 shadow-2xl border border-slate-100 dark:border-white/5 animate-in zoom-in duration-300">
+            <div className="size-20 bg-primary/10 text-primary rounded-[1.5rem] flex items-center justify-center mx-auto mb-6">
+              <span className="material-symbols-outlined text-4xl">install_mobile</span>
+            </div>
+            <h3 className="text-xl font-black text-center mb-2">Instalar F1 App</h3>
+            <p className="text-xs text-slate-500 dark:text-slate-400 text-center mb-8 leading-relaxed font-medium">
+              Para instalar la app como un APK nativo y activar la huella digital, pulsa el botón de abajo y sigue la guía.
+            </p>
+            <div className="flex flex-col gap-3">
+              <button 
+                onClick={handleInstallPWA}
+                className="w-full py-4 bg-primary text-white font-black rounded-2xl shadow-xl shadow-primary/20 active:scale-95 transition-all flex items-center justify-center gap-2"
+              >
+                <span className="material-symbols-outlined">rocket_launch</span>
+                Comenzar Instalación
+              </button>
+              <button 
+                onClick={() => setShowInstallModal(false)}
+                className="w-full py-2 text-slate-400 font-bold text-[10px] uppercase tracking-tighter"
+              >
+                Cerrar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="absolute top-0 left-0 w-full h-[400px] bg-gradient-to-b from-primary/20 via-primary/5 to-transparent pointer-events-none opacity-50"></div>
+      
       <div className="flex-1 flex flex-col px-6 pt-16 pb-8 relative z-10">
         {!isForgotMode ? (
           <>
@@ -282,7 +281,7 @@ const LoginScreen: React.FC = () => {
                   </p>
 
                   <button 
-                    onClick={handleInstallClick}
+                    onClick={() => setShowInstallModal(true)}
                     className="w-full bg-white text-slate-900 font-black rounded-2xl py-4 flex items-center justify-center gap-3 active:scale-95 shadow-lg transition-all"
                   >
                     <span className="material-symbols-outlined">install_mobile</span>

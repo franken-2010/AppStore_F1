@@ -2,15 +2,22 @@
 {
   "name": "Miscelánea F1 Intelligence",
   "short_name": "Abarrotes F1",
-  "description": "Gestión inteligente para Abarrotes F1 con inteligencia artificial.",
+  "description": "Sistema inteligente de gestión para Abarrotes F1 con análisis de IA y control financiero.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait",
   "background_color": "#0f172a",
   "theme_color": "#2563eb",
-  "categories": ["business", "productivity", "finance"],
+  "lang": "es-MX",
+  "categories": ["business", "finance", "productivity"],
   "icons": [
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/3759/3759521.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
     {
       "src": "https://cdn-icons-png.flaticon.com/512/3759/3759521.png",
       "sizes": "512x512",
@@ -22,6 +29,15 @@
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&q=80&w=1000",
+      "sizes": "1000x600",
+      "type": "image/webp",
+      "form_factor": "wide",
+      "label": "Gestión de Inventario F1"
     }
   ]
 }

@@ -3,19 +3,23 @@
 <html lang="es" class="dark">
 <head>
     <meta charset="utf-8"/>
-    <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+    <meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" name="viewport"/>
     <title>Miscelánea F1 Intelligence</title>
     <link rel="manifest" href="./manifest.json">
     <meta name="theme-color" content="#2563eb">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Abarrotes F1">
     <link rel="apple-touch-icon" href="https://cdn-icons-png.flaticon.com/512/3759/3759521.png">
     
     <script>
-      // Captura inmediata del evento de instalación
+      // Captura global y persistente del evento de instalación
       window.deferredPrompt = null;
       window.addEventListener('beforeinstallprompt', (e) => {
         e.preventDefault();
         window.deferredPrompt = e;
-        window.dispatchEvent(new CustomEvent('pwa-installable'));
+        console.log('✅ PWA: Evento de instalación capturado y listo.');
+        window.dispatchEvent(new CustomEvent('pwa-ready'));
       });
 
       window.isPWA = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
@@ -71,6 +75,7 @@
         body {
             min-height: 100vh;
             background-color: #f8fafc;
+            -webkit-tap-highlight-color: transparent;
         }
         .dark body {
             background-color: #0f172a;
@@ -90,12 +95,13 @@
 </head>
 <body class="bg-background-light dark:bg-background-dark font-display text-slate-900 dark:text-white transition-colors duration-200 antialiased selection:bg-primary selection:text-white">
     <div id="root"></div>
-    <!-- Nota: En GitHub Pages, asegúrate de que el archivo index.tsx se compile o se cargue correctamente -->
     <script type="module" src="./index.tsx"></script>
     <script>
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
-          navigator.serviceWorker.register('./sw.js').catch(err => console.log('SW registration failed', err));
+          navigator.serviceWorker.register('./sw.js').then(reg => {
+            console.log('SW Registered', reg.scope);
+          }).catch(err => console.log('SW registration failed', err));
         });
       }
     </script>

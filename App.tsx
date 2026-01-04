@@ -24,6 +24,7 @@ import AccountCategorySettingsScreen from './screens/AccountCategorySettingsScre
 import AccountHistoryScreen from './screens/AccountHistoryScreen';
 import AccountChartsScreen from './screens/AccountChartsScreen';
 import AddMovementScreen from './screens/AddMovementScreen';
+import InstallScreen from './screens/InstallScreen';
 
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user, loading } = useAuth();
@@ -39,6 +40,7 @@ const App: React.FC = () => {
           <Routes>
             <Route path="/" element={<LoginScreen />} />
             <Route path="/register" element={<RegisterScreen />} />
+            <Route path="/install" element={<InstallScreen />} />
             <Route path="/dashboard" element={<ProtectedRoute><DashboardScreen /></ProtectedRoute>} />
             <Route path="/cortes" element={<ProtectedRoute><CortesScreen /></ProtectedRoute>} />
             <Route path="/tools" element={<ProtectedRoute><ToolsScreen /></ProtectedRoute>} />
