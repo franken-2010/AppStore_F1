@@ -82,7 +82,7 @@ const CortesScreen: React.FC = () => {
   useEffect(() => {
     if (!user) return;
     
-    // Obtener categorías para filtrar cuentas de gastos
+    // Obtener categorías
     const qCat = query(collection(db, "users", user.uid, "categories"));
     const unsubCat = onSnapshot(qCat, (snap) => {
       setCategories(snap.docs.map(d => ({ id: d.id, ...d.data() } as AccountCategory)));
@@ -94,13 +94,12 @@ const CortesScreen: React.FC = () => {
       const accs = snap.docs.map(d => ({ id: d.id, ...d.data() } as AccountingAccount));
       setAccounts(accs);
       
-      // Identificar cuentas clave
       const vEfectivo = accs.find(a => a.name.toLowerCase().includes('ventas') && a.name.toLowerCase().includes('efectivo'));
       const cxc = accs.find(a => a.name.toLowerCase().includes('cxc') || a.name.toLowerCase().includes('cobrar') || a.name.toLowerCase().includes('clientes'));
       
       if (vEfectivo) {
         setVentasEfectivoAcc(vEfectivo);
-        setSelectedExpenseAccId(vEfectivo.id!); // Por defecto los gastos salen de ventas efectivo
+        setSelectedExpenseAccId(vEfectivo.id!); 
       }
       if (cxc) setCxcAcc(cxc);
     });
@@ -108,7 +107,7 @@ const CortesScreen: React.FC = () => {
     return () => { unsubCat(); unsubAcc(); };
   }, [user]);
 
-  // Filtrar cuentas para el dropdown de gastos (BANCOS y EFECTIVO)
+  // Filtrar cuentas para gastos: Categorías BANCOS/EFECTIVO o nombre específico
   const expenseAccounts = accounts.filter(acc => {
     const category = categories.find(c => c.id === acc.categoryId);
     const catName = category?.name?.toLowerCase() || '';
@@ -125,7 +124,7 @@ const CortesScreen: React.FC = () => {
   const handleSaveManual = async () => {
     if (!user) return;
     if (!ventasEfectivoAcc) {
-      setStatus({ text: 'No se encontró la cuenta "Ventas en efectivo" en la BDD.', type: 'error' });
+      setStatus({ text: 'Error: No se encontró la cuenta "Ventas en efectivo".', type: 'error' });
       return;
     }
     
@@ -135,17 +134,17 @@ const CortesScreen: React.FC = () => {
     try {
       const batch = writeBatch(db);
       
-      // 1. Registro del historial del corte general
+      // 1. Registro del corte
       const corteRef = doc(collection(db, "users", user.uid, "cortes"));
       batch.set(corteRef, {
         fecha,
-        modo: 'manual_v2',
+        modo: 'manual_v3_blocks',
         data: manualData,
         admin: profile?.displayName,
         createdAt: serverTimestamp()
       });
 
-      // 2. Procesar BLOQUE INGRESOS -> Carga a "Ventas en efectivo"
+      // 2. BLOQUE INGRESOS -> Carga a "Ventas en efectivo"
       const totalIngresos = manualData.ventas + manualData.fiesta + manualData.recargas + manualData.estancias + manualData.pagosCxc;
       
       if (totalIngresos > 0) {
@@ -160,13 +159,13 @@ const CortesScreen: React.FC = () => {
           ts: serverTimestamp(),
           amount: totalIngresos,
           direction: 'in',
-          category: 'Ingreso Diario',
-          description: `Ventas, fiesta y recargas del día ${fecha}.`,
+          category: 'Ingreso Diario Manual',
+          description: `Bloque de ingresos (Ventas, Fiesta, Recargas, etc) del día ${fecha}.`,
           balanceAfter: 0
         });
       }
 
-      // 3. Lógica Especial: PAGOS CXC -> Deducción de la cuenta CXC
+      // 3. Lógica PAGOS CXC -> Egreso en la cuenta de CXC (abono al crédito)
       if (manualData.pagosCxc > 0 && cxcAcc) {
         const cxcRef = doc(db, "users", user.uid, "accounts", cxcAcc.id!);
         batch.update(cxcRef, {
@@ -180,12 +179,12 @@ const CortesScreen: React.FC = () => {
           amount: manualData.pagosCxc,
           direction: 'out',
           category: 'Abono de Cliente (CXC)',
-          description: `Pago recibido de cliente en corte ${fecha}.`,
+          description: `Pago a crédito recibido en corte manual del ${fecha}.`,
           balanceAfter: 0
         });
       }
 
-      // 4. Procesar BLOQUE EGRESOS -> Deducción de la cuenta seleccionada
+      // 4. BLOQUE EGRESOS -> Deducción de la cuenta seleccionada (Bancos/Efectivo)
       if (manualData.gastosGenerales > 0 && selectedExpenseAccId) {
         const expenseAccRef = doc(db, "users", user.uid, "accounts", selectedExpenseAccId);
         batch.update(expenseAccRef, {
@@ -198,18 +197,18 @@ const CortesScreen: React.FC = () => {
           ts: serverTimestamp(),
           amount: manualData.gastosGenerales,
           direction: 'out',
-          category: 'Gasto General',
-          description: `Gasto diario registrado el ${fecha}.`,
+          category: 'Egreso Gral.',
+          description: `Gasto general registrado manualmente el ${fecha}.`,
           balanceAfter: 0
         });
       }
 
       await batch.commit();
-      setStatus({ text: '¡Registro manual completado con éxito!', type: 'success' });
+      setStatus({ text: '¡Registro manual finalizado con éxito!', type: 'success' });
       setManualData({ ventas: 0, fiesta: 0, recargas: 0, estancias: 0, pagosCxc: 0, gastosGenerales: 0 });
     } catch (e) {
       console.error(e);
-      setStatus({ text: 'Error al procesar el registro.', type: 'error' });
+      setStatus({ text: 'Error al procesar el registro manual.', type: 'error' });
     } finally {
       setIsSaving(false);
     }
@@ -262,7 +261,7 @@ const CortesScreen: React.FC = () => {
         )}
 
         {activeTab === 'manual' && (
-          <div className="space-y-8 animate-in fade-in">
+          <div className="space-y-10 animate-in fade-in">
             {/* BLOQUE DE INGRESOS */}
             <section className="space-y-4">
               <div className="flex items-center gap-2 px-1">
@@ -271,16 +270,19 @@ const CortesScreen: React.FC = () => {
                 </div>
                 <div>
                   <h3 className="text-xs font-black uppercase tracking-widest text-slate-500 leading-none">Ingresos</h3>
-                  <p className="text-[9px] font-bold text-slate-400 mt-0.5">Destino: {ventasEfectivoAcc?.name || 'Ventas efectivo'}</p>
+                  <p className="text-[9px] font-bold text-slate-400 mt-0.5 italic">Se cargarán a: {ventasEfectivoAcc?.name || 'Ventas efectivo'}</p>
                 </div>
               </div>
               
-              <div className="grid grid-cols-2 gap-4 bg-white dark:bg-[#1a2235] p-5 rounded-[2rem] border border-slate-100 dark:border-white/5 shadow-sm">
+              <div className="grid grid-cols-2 gap-4 bg-white dark:bg-[#1a2235] p-5 rounded-[2.5rem] border border-slate-100 dark:border-white/5 shadow-sm">
                 <InputRow label="Ventas" field="ventas" icon="shopping_bag" value={manualData.ventas} onChange={handleInputChange} />
                 <InputRow label="Fiesta" field="fiesta" icon="celebration" value={manualData.fiesta} onChange={handleInputChange} />
                 <InputRow label="Recargas" field="recargas" icon="bolt" value={manualData.recargas} onChange={handleInputChange} />
                 <InputRow label="Estancias" field="estancias" icon="hotel" value={manualData.estancias} onChange={handleInputChange} />
-                <InputRow label="Pagos CXC" field="pagosCxc" icon="payments" value={manualData.pagosCxc} onChange={handleInputChange} />
+                <div className="col-span-2 mt-2 pt-2 border-t border-slate-100 dark:border-white/5">
+                  <InputRow label="Pagos CXC" field="pagosCxc" icon="payments" value={manualData.pagosCxc} onChange={handleInputChange} />
+                  <p className="text-[9px] text-slate-400 font-bold mt-1 px-1">* Reduce saldo de {cxcAcc?.name || 'Cuentas por cobrar'}</p>
+                </div>
               </div>
             </section>
 
@@ -293,21 +295,21 @@ const CortesScreen: React.FC = () => {
                 <h3 className="text-xs font-black uppercase tracking-widest text-slate-500">Egresos</h3>
               </div>
               
-              <div className="bg-white dark:bg-[#1a2235] p-6 rounded-[2rem] border border-slate-100 dark:border-white/5 shadow-sm space-y-6">
+              <div className="bg-white dark:bg-[#1a2235] p-6 rounded-[2.5rem] border border-slate-100 dark:border-white/5 shadow-sm space-y-6">
                 <InputRow label="Gastos Generales" field="gastosGenerales" icon="receipt_long" value={manualData.gastosGenerales} onChange={handleInputChange} />
                 
-                <div className="flex flex-col gap-2 pt-2">
+                <div className="flex flex-col gap-2 pt-2 border-t border-slate-100 dark:border-white/5">
                   <label className="text-[10px] font-black uppercase text-slate-500 tracking-widest ml-1 flex items-center gap-1">
                     <span className="material-symbols-outlined text-xs text-primary">account_balance_wallet</span>
-                    Cargar gasto a:
+                    Cargar gasto a: (Bancos/Efectivo)
                   </label>
                   <div className="relative">
                     <select 
                       value={selectedExpenseAccId} 
                       onChange={(e) => setSelectedExpenseAccId(e.target.value)} 
-                      className="w-full bg-slate-50 dark:bg-[#111827] border-2 border-slate-200 dark:border-white/10 rounded-2xl py-3 px-5 text-sm font-bold dark:text-white appearance-none outline-none focus:border-primary transition-all pr-12"
+                      className="w-full bg-slate-50 dark:bg-[#111827] border-2 border-slate-200 dark:border-white/10 rounded-2xl py-3.5 px-5 text-sm font-bold dark:text-white appearance-none outline-none focus:border-primary transition-all pr-12"
                     >
-                      <option value="">Seleccionar cuenta...</option>
+                      <option value="">Seleccionar cuenta origen...</option>
                       {expenseAccounts.map(acc => (
                         <option key={acc.id} value={acc.id}>
                           {acc.name} (${acc.balance?.toLocaleString()})
