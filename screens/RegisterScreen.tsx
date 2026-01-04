@@ -18,12 +18,28 @@ const RegisterScreen: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const initializeDefaultAccounts = async (uid: string) => {
+  const initializeDefaultData = async (uid: string) => {
     const batch = writeBatch(db);
+    
+    // 1. Categorías por defecto
+    const categories = [
+      { name: 'EFECTIVO', accountingType: 'Activo', order: 0 },
+      { name: 'CUENTAS', accountingType: 'Pasivo', order: 1 },
+      { name: 'AHORROS', accountingType: 'Ahorro', order: 2 }
+    ];
+
+    const categoryRefs: string[] = [];
+    categories.forEach((cat) => {
+      const catRef = doc(collection(db, "users", uid, "categories"));
+      batch.set(catRef, { ...cat, createdAt: serverTimestamp() });
+      categoryRefs.push(catRef.id);
+    });
+
+    // 2. Cuentas iniciales vinculadas a categorías
     const accounts = [
-      { name: 'Caja (Efectivo)', code: 'CAJ01', type: 'Activo', balance: 0, order: 0, isVisible: true },
-      { name: 'Banco Principal', code: 'BNK01', type: 'Activo', balance: 0, order: 1, isVisible: true },
-      { name: 'Capital Social', code: 'CAP01', type: 'Capital', balance: 0, order: 2, isVisible: true }
+      { name: 'Caja Principal', code: 'CAJ01', type: 'Activo', categoryId: categoryRefs[0], balance: 0, order: 0, isVisible: true },
+      { name: 'Banco Santander', code: 'BNK01', type: 'Activo', categoryId: categoryRefs[0], balance: 0, order: 1, isVisible: true },
+      { name: 'Capital Social', code: 'CAP01', type: 'Capital', categoryId: null, balance: 0, order: 2, isVisible: true }
     ];
 
     accounts.forEach((acc) => {
@@ -53,7 +69,6 @@ const RegisterScreen: React.FC = () => {
 
       await updateProfile(user, { displayName: name });
 
-      // Crear perfil de usuario
       await setDoc(doc(db, "users", user.uid), {
         uid: user.uid,
         displayName: name,
@@ -63,9 +78,7 @@ const RegisterScreen: React.FC = () => {
         createdAt: serverTimestamp()
       });
 
-      // Inicializar base de datos de cuentas
-      await initializeDefaultAccounts(user.uid);
-
+      await initializeDefaultData(user.uid);
       navigate('/dashboard');
     } catch (err: any) {
       setError(err.message || 'Error al crear la cuenta');
@@ -98,13 +111,11 @@ const RegisterScreen: React.FC = () => {
           createdAt: serverTimestamp()
         });
 
-        // Inicializar cuentas para nuevo usuario de Google
-        await initializeDefaultAccounts(user.uid);
+        await initializeDefaultData(user.uid);
       }
       
       navigate('/dashboard');
     } catch (err: any) {
-      console.error("Google login error:", err);
       setError(`Error: ${err.message}`);
     } finally {
       setLoading(false);
@@ -112,7 +123,7 @@ const RegisterScreen: React.FC = () => {
   };
 
   return (
-    <div className="relative flex h-full min-h-screen w-full flex-col overflow-x-hidden max-w-md mx-auto shadow-2xl bg-background-light dark:bg-background-dark">
+    <div className="relative flex h-full min-h-screen w-full flex-col overflow-x-hidden max-w-md mx-auto shadow-2xl bg-background-light dark:bg-background-dark font-display">
       <div className="flex items-center px-4 py-4 justify-between sticky top-0 z-10 bg-background-light/90 dark:bg-background-dark/90 backdrop-blur-sm">
         <button onClick={() => navigate('/')} className="text-gray-900 dark:text-white flex size-10 items-center justify-center rounded-full hover:bg-gray-200 dark:hover:bg-surface-dark">
           <span className="material-symbols-outlined text-2xl">arrow_back</span>

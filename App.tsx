@@ -20,20 +20,16 @@ import AccountVisibilityScreen from './screens/AccountVisibilityScreen';
 import AccountDeleteScreen from './screens/AccountDeleteScreen';
 import AccountReorderScreen from './screens/AccountReorderScreen';
 import FinanceStatsTotalsScreen from './screens/FinanceStatsTotalsScreen';
+import AccountCategorySettingsScreen from './screens/AccountCategorySettingsScreen';
+import AccountHistoryScreen from './screens/AccountHistoryScreen';
+import AccountChartsScreen from './screens/AccountChartsScreen';
+import AddMovementScreen from './screens/AddMovementScreen';
 
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user, loading } = useAuth();
   if (loading) return <div className="min-h-screen bg-background-dark flex items-center justify-center"><span className="material-symbols-outlined animate-spin text-primary text-4xl">sync</span></div>;
   return user ? <>{children}</> : <Navigate to="/" />;
 };
-
-const PlaceholderScreen: React.FC<{ title: string }> = ({ title }) => (
-  <div className="min-h-screen flex flex-col items-center justify-center bg-background-light dark:bg-background-dark p-6 text-center">
-    <h1 className="text-2xl font-bold mb-4">{title}</h1>
-    <p className="text-slate-500 mb-8">Esta funcionalidad estará disponible pronto.</p>
-    <button onClick={() => window.history.back()} className="px-6 py-2 bg-primary text-white rounded-xl">Regresar</button>
-  </div>
-);
 
 const App: React.FC = () => {
   return (
@@ -50,7 +46,6 @@ const App: React.FC = () => {
             <Route path="/tools/product-add" element={<ProtectedRoute><ProductAddScreen /></ProtectedRoute>} />
             <Route path="/tools/price-verification" element={<ProtectedRoute><PriceVerificationScreen /></ProtectedRoute>} />
             
-            {/* Sustitución de Contabilidad por Cuentas */}
             <Route path="/accounting" element={<ProtectedRoute><FinanceAccountsScreen /></ProtectedRoute>} />
             <Route path="/finance-accounts" element={<ProtectedRoute><FinanceAccountsScreen /></ProtectedRoute>} />
             <Route path="/finance-stats" element={<ProtectedRoute><FinanceStatsTotalsScreen /></ProtectedRoute>} />
@@ -58,10 +53,13 @@ const App: React.FC = () => {
             <Route path="/chat" element={<ProtectedRoute><ChatScreen /></ProtectedRoute>} />
             <Route path="/settings" element={<ProtectedRoute><SettingsScreen /></ProtectedRoute>} />
             <Route path="/settings/bdd" element={<ProtectedRoute><DatabaseUploadScreen /></ProtectedRoute>} />
+            <Route path="/settings/account-categories" element={<ProtectedRoute><AccountCategorySettingsScreen /></ProtectedRoute>} />
             
-            {/* Rutas de gestión de cuentas */}
             <Route path="/account/upsert" element={<ProtectedRoute><AccountUpsertScreen /></ProtectedRoute>} />
             <Route path="/account/edit/:accountId" element={<ProtectedRoute><AccountUpsertScreen /></ProtectedRoute>} />
+            <Route path="/account/history/:accountId" element={<ProtectedRoute><AccountHistoryScreen /></ProtectedRoute>} />
+            <Route path="/account/charts/:accountId" element={<ProtectedRoute><AccountChartsScreen /></ProtectedRoute>} />
+            <Route path="/account/add-movement/:accountId" element={<ProtectedRoute><AddMovementScreen /></ProtectedRoute>} />
             <Route path="/account/visibility" element={<ProtectedRoute><AccountVisibilityScreen /></ProtectedRoute>} />
             <Route path="/account/delete" element={<ProtectedRoute><AccountDeleteScreen /></ProtectedRoute>} />
             <Route path="/account/reorder" element={<ProtectedRoute><AccountReorderScreen /></ProtectedRoute>} />

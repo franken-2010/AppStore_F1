@@ -53,17 +53,38 @@ export interface StoreProduct {
 
 export type AccountType = 'Activo' | 'Pasivo' | 'Capital' | 'Ingreso' | 'Gasto' | 'Ahorro';
 
+export interface AccountCategory {
+  id?: string;
+  name: string;
+  accountingType: AccountType;
+  order: number;
+  color?: string;
+}
+
 export interface AccountingAccount {
   id?: string;
   code: string;
   name: string;
-  type: AccountType;
+  type: AccountType; // Mantenido para lógica contable interna
+  categoryId?: string; // ID de la categoría dinámica
   description: string;
   balance: number;
   initialBalance?: number;
   parentId?: string | null;
   isVisible?: boolean;
   order?: number;
+}
+
+export interface AccountMovement {
+  id?: string;
+  ts: any; // firebase timestamp
+  amount: number;
+  direction: 'in' | 'out';
+  category: string;
+  description: string;
+  fromAccountId?: string;
+  toAccountId?: string;
+  balanceAfter?: number;
 }
 
 export interface AccountingProvider {

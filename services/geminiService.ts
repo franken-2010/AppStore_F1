@@ -24,10 +24,8 @@ export class GeminiService {
 
   static async chatWithContext(messages: ChatMessage[], userName: string): Promise<string> {
     try {
-      // Convertir el historial a partes que Gemini entienda (incluyendo adjuntos)
       const formattedContents = messages.map(m => {
         const parts: any[] = [{ text: m.text }];
-        
         if (m.attachments) {
           m.attachments.forEach(att => {
             if (att.type === 'image') {
@@ -41,11 +39,7 @@ export class GeminiService {
             }
           });
         }
-        
-        return {
-          role: m.role,
-          parts: parts
-        };
+        return { role: m.role, parts: parts };
       });
 
       const response = await this.ai.models.generateContent({
@@ -67,7 +61,6 @@ export class GeminiService {
         }
       });
 
-      // Manejo de Function Calling
       if (response.functionCalls && response.functionCalls.length > 0) {
         const results: any[] = [];
         for (const fc of response.functionCalls) {
@@ -82,7 +75,6 @@ export class GeminiService {
           }
         }
 
-        // Enviar resultados de vuelta a Gemini para la respuesta final
         const finalResponse = await this.ai.models.generateContent({
           model: 'gemini-3-pro-preview',
           contents: [
@@ -118,11 +110,9 @@ export class GeminiService {
     }
   }
 
-  // Otros métodos se mantienen igual...
   static async findProductsSemantic(userQuery: string, productsInDb: any[]): Promise<any[]> {
     try {
       if (productsInDb.length === 0) return [];
-
       const productsContext = productsInDb.map(p => ({
         name: p.nombreCompleto,
         price: p.precioSugRed,
@@ -133,7 +123,7 @@ export class GeminiService {
         model: 'gemini-3-flash-preview',
         contents: `Consulta del usuario: "${userQuery}".\nProductos disponibles en la base de datos:\n${JSON.stringify(productsContext)}`,
         config: {
-          systemInstruction: "Eres un buscador inteligente de inventario. Tu tarea es encontrar los productos que más coincidan con la búsqueda del usuario basándote en el nombre. Devuelve un máximo de 5 resultados en formato JSON. El JSON debe ser un array de objetos con las propiedades: 'name' (que sea el nombreCompleto) y 'price' (que sea el precioSugRed).",
+          systemInstruction: "Eres un buscador inteligente de inventario. Tu tarea es encontrar los productos que más coincidan con la búsqueda del usuario basándote en el nombre. Devuelve un máximo de 5 resultados en formato JSON.",
           responseMimeType: "application/json",
           responseSchema: {
             type: Type.ARRAY,
@@ -148,7 +138,6 @@ export class GeminiService {
           }
         }
       });
-
       return JSON.parse(response.text || '[]');
     } catch (error) {
       console.error("Error in semantic search:", error);
@@ -162,15 +151,8 @@ export class GeminiService {
         model: 'gemini-3-pro-preview',
         contents: {
           parts: [
-            {
-              inlineData: {
-                mimeType: 'image/jpeg',
-                data: base64Image,
-              },
-            },
-            {
-              text: "Analyze this business receipt or cash report. Extract the total cash amount, total card/terminal payments, and any expenses listed. Return the result in the specified JSON format."
-            },
+            { inlineData: { mimeType: 'image/jpeg', data: base64Image } },
+            { text: "Analyze this business receipt or cash report. Extract data into JSON." },
           ],
         },
         config: {
@@ -178,16 +160,15 @@ export class GeminiService {
           responseSchema: {
             type: Type.OBJECT,
             properties: {
-              cashAmount: { type: Type.NUMBER, description: "Total cash listed" },
-              terminalAmount: { type: Type.NUMBER, description: "Total card/terminal payments" },
-              expenses: { type: Type.NUMBER, description: "Total expenses or cash outs" },
-              summary: { type: Type.STRING, description: "A brief summary of the findings" }
+              cashAmount: { type: Type.NUMBER },
+              terminalAmount: { type: Type.NUMBER },
+              expenses: { type: Type.NUMBER },
+              summary: { type: Type.STRING }
             },
             required: ["cashAmount", "terminalAmount", "expenses", "summary"]
           }
         }
       });
-
       const text = response.text;
       if (!text) return null;
       return JSON.parse(text) as ReceiptAnalysis;
@@ -201,10 +182,76 @@ export class GeminiService {
     try {
       const response = await this.ai.models.generateContent({
         model: 'gemini-3-flash-preview',
-        contents: `Fecha: ${fecha}\nTexto:\n${rawText}`,
+        contents: `Fecha del corte: ${fecha}\nContenido del reporte:\n${rawText}`,
         config: {
-          systemInstruction: `Devuelve SOLO JSON válido. Sin texto extra.`,
+          systemInstruction: `Eres un asistente especializado en validación y análisis de cortes diarios (texto plano) para una tienda.
+          REGLAS DE FORMATO:
+          1. Debe incluir "Corte del día".
+          2. Secciones obligatorias: Ventas, Fiesta, Recargas, Total general, Estancias, Pagos CxC, Subtotal ingresos, Consumo personal, Gastos generales, Subtotal después de egresos, Dinero entregado, Diferencia, Resultado (Sobrante/Faltante), Ingresos CXC (aparte).
+          
+          REGLAS DE EXTRACCIÓN:
+          - Extraer montos precedidos o seguidos de "$".
+          - Normalizar montos quitando comas y manejando decimales.
+          - Gastos generales: Clasificar en 'abarrotes', 'fiesta' o 'otros'.
+
+          VALIDACIONES MATEMÁTICAS:
+          1. Ventas + Fiesta + Recargas = Total general.
+          2. Total general + Estancias + Pagos CxC = Subtotal ingresos.
+          3. Subtotal ingresos - (Consumo personal + Gastos generales_total) = Subtotal después de egresos.
+          4. Dinero entregado - Subtotal después de egresos = Diferencia.
+          
+          Si Diferencia > 0 -> Resultado: Sobrante. Si < 0 -> Faltante.
+          
+          Si format_valid=false o calculations_valid=false, explica el error en 'warnings'.`,
           responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              format_valid: { type: Type.BOOLEAN },
+              calculations_valid: { type: Type.BOOLEAN },
+              cash_income: {
+                type: Type.OBJECT,
+                properties: {
+                  ventas: { type: Type.NUMBER },
+                  fiesta: { type: Type.NUMBER },
+                  recargas: { type: Type.NUMBER },
+                  estancias: { type: Type.NUMBER },
+                  sobrantes: { type: Type.NUMBER },
+                  pagos_cxc: { type: Type.NUMBER }
+                }
+              },
+              credit_income: {
+                type: Type.OBJECT,
+                properties: {
+                  cxc_aparte: { type: Type.NUMBER }
+                }
+              },
+              expenses: {
+                type: Type.OBJECT,
+                properties: {
+                  abarrotes: { type: Type.NUMBER },
+                  fiesta: { type: Type.NUMBER },
+                  consumo_personal: { type: Type.NUMBER },
+                  otros: { type: Type.NUMBER }
+                }
+              },
+              totals: {
+                type: Type.OBJECT,
+                properties: {
+                  total_general: { type: Type.NUMBER },
+                  subtotal_ingresos: { type: Type.NUMBER },
+                  subtotal_despues_egresos: { type: Type.NUMBER },
+                  dinero_entregado: { type: Type.NUMBER },
+                  diferencia: { type: Type.NUMBER }
+                }
+              },
+              result_type: { type: Type.STRING },
+              warnings: { type: Type.ARRAY, items: { type: Type.STRING } },
+              ready_for_confirmation: { type: Type.BOOLEAN },
+              human_summary: { type: Type.STRING }
+            },
+            required: ["format_valid", "calculations_valid", "cash_income", "expenses", "ready_for_confirmation", "human_summary"]
+          }
         }
       });
       return JSON.parse(response.text || '{}');
