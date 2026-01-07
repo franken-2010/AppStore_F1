@@ -22,6 +22,34 @@ const searchStoreProductsFunction: FunctionDeclaration = {
 export class GeminiService {
   private static ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
+  /**
+   * Limpia un objeto de datos de Firestore para asegurar que sea serializable por JSON.
+   * Elimina referencias circulares y convierte Timestamps a strings.
+   */
+  private static sanitizeData(data: any): any {
+    if (data === null || typeof data !== 'object') return data;
+    
+    if (Array.isArray(data)) {
+      return data.map(item => this.sanitizeData(item));
+    }
+
+    const sanitized: any = {};
+    for (const [key, value] of Object.entries(data)) {
+      if (value && typeof (value as any).toDate === 'function') {
+        // Es un Timestamp de Firestore
+        sanitized[key] = (value as any).toDate().toISOString();
+      } else if (value && typeof (value as any).id === 'string' && typeof (value as any).path === 'string') {
+        // Es un DocumentReference de Firestore, lo simplificamos para evitar circularidad
+        sanitized[key] = { id: (value as any).id, path: (value as any).path };
+      } else if (typeof value === 'object') {
+        sanitized[key] = this.sanitizeData(value);
+      } else {
+        sanitized[key] = value;
+      }
+    }
+    return sanitized;
+  }
+
   static async chatWithContext(messages: ChatMessage[], userName: string): Promise<string> {
     try {
       const formattedContents = messages.map(m => {
@@ -66,7 +94,10 @@ export class GeminiService {
         for (const fc of response.functionCalls) {
           if (fc.name === 'searchStoreProducts') {
             const searchTerm = (fc.args as any).searchTerm;
-            const products = await this.executeProductSearch(searchTerm);
+            const rawProducts = await this.executeProductSearch(searchTerm);
+            // Sanitizamos los productos para evitar el error de estructura circular
+            const products = this.sanitizeData(rawProducts);
+            
             results.push({
               id: fc.id,
               name: fc.name,

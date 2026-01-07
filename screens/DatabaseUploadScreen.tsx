@@ -3,161 +3,216 @@ import React, { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import BottomNav from '../components/BottomNav';
 import { db } from '../services/firebase';
-import { collection, writeBatch, doc, getDocs, deleteDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
-import { StoreProduct } from '../types';
+import { collection, writeBatch, doc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+
+type UploadContext = 'products' | 'providers' | 'costs';
 
 const DatabaseUploadScreen: React.FC = () => {
   const navigate = useNavigate();
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  
+  const productsInputRef = useRef<HTMLInputElement>(null);
+  const providersInputRef = useRef<HTMLInputElement>(null);
+  const costsInputRef = useRef<HTMLInputElement>(null);
   
   const [activeSubTab, setActiveSubTab] = useState<'upload' | 'apk'>('upload');
-  const [file, setFile] = useState<File | null>(null);
-  const [parsedData, setParsedData] = useState<StoreProduct[]>([]);
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [uploadStatus, setUploadStatus] = useState<{ text: string, type: 'success' | 'error' | 'info' } | null>(null);
-  const [isUploading, setIsUploading] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState(0);
+  
+  const [parsedProducts, setParsedProducts] = useState<any[]>([]);
+  const [parsedProviders, setParsedProviders] = useState<any[]>([]);
+  const [parsedCosts, setParsedCosts] = useState<any[]>([]);
 
-  const cleanCurrency = (val: string) => {
-    if (!val) return 0;
-    return parseFloat(val.replace(/[$,]/g, '').trim()) || 0;
+  const [isUploading, setIsUploading] = useState<UploadContext | null>(null);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [status, setStatus] = useState<{ text: string, type: 'success' | 'error' | 'info', context: UploadContext | 'all' } | null>(null);
+
+  const sanitizeId = (id: any): string => {
+    if (id === undefined || id === null || id === '') return Math.random().toString(36).substr(2, 9);
+    return id.toString()
+      .replace(/\//g, '-') 
+      .replace(/[#.$\[\]]/g, '') 
+      .trim() || Math.random().toString(36).substr(2, 9);
   };
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const selectedFile = e.target.files?.[0];
-    if (selectedFile && (selectedFile.type === "text/csv" || selectedFile.name.endsWith('.csv'))) {
-      setFile(selectedFile);
-      processCSV(selectedFile);
+  const getDocId = (item: any): string => {
+    // Prioridad absoluta a "Product Key" como identificador del documento
+    const priorityKeys = ['product key', 'productkey', 'clave producto', 'id', 'identificador'];
+    const itemKeys = Object.keys(item);
+    
+    const foundKey = itemKeys.find(k => 
+      priorityKeys.includes(k.toLowerCase().trim())
+    );
+    
+    if (foundKey && item[foundKey]) {
+      return sanitizeId(item[foundKey]);
+    }
+    
+    // Fallback al primer campo si no se encuentra el Key específico
+    return sanitizeId(item[itemKeys[0]]);
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>, context: UploadContext) => {
+    const file = e.target.files?.[0];
+    if (file && (file.type === "text/csv" || file.name.endsWith('.csv'))) {
+      processCSV(file, context);
     } else {
-      setUploadStatus({ text: "Por favor selecciona un archivo CSV válido.", type: "error" });
+      setStatus({ text: "Error: El archivo debe ser un CSV válido.", type: "error", context });
     }
   };
 
-  const processCSV = (file: File) => {
-    setIsProcessing(true);
+  const processCSV = (file: File, context: UploadContext) => {
     const reader = new FileReader();
-    
     reader.onload = (e) => {
       const text = e.target?.result as string;
-      const lines = text.split('\n');
-      const result: StoreProduct[] = [];
-      const now = new Date().toISOString();
-
-      for (let i = 1; i < lines.length; i++) {
-        const line = lines[i].trim();
-        if (!line) continue;
-        
-        const parts = line.split(',').map(p => p.trim());
-        if (parts.length >= 9) {
-          result.push({
-            productoID: parseInt(parts[0]) || 0,
-            nombreCompleto: parts[1],
-            costoBasePrincipal: cleanCurrency(parts[2]),
-            uniPorCaja: parseInt(parts[3]) || 0,
-            costoUnidad: cleanCurrency(parts[4]),
-            utilidadPorcentaje: parseFloat(parts[5].replace('%', '')) || 0,
-            precioSugerido: cleanCurrency(parts[6]),
-            precioSugRed: cleanCurrency(parts[7]),
-            margenPesos: cleanCurrency(parts[8]),
-            lastUpdated: now
-          });
-        }
-      }
-      
-      setParsedData(result);
-      setIsProcessing(false);
-      if (result.length > 0) {
-        setUploadStatus({ text: `Se han detectado ${result.length} productos listos para procesar.`, type: "info" });
-      } else {
-        setUploadStatus({ text: "El formato del CSV no es correcto. Se requieren las 9 columnas técnicas.", type: "error" });
-      }
-    };
-
-    reader.readAsText(file);
-  };
-
-  const handleDeleteAllProducts = async () => {
-    const confirmed = window.confirm("⚠️ ATENCIÓN: ACCIÓN IRREVERSIBLE\n\n¿Realmente desea eliminar TODOS los productos de la base de datos?\n\nEsto borrará cada registro en la colección 'products' de Firebase.");
-    
-    if (!confirmed) return;
-
-    setIsUploading(true);
-    setUploadStatus({ text: "Borrando catálogo completo...", type: "info" });
-    setUploadProgress(0);
-    
-    try {
-      const productsRef = collection(db, "products");
-      const snapshot = await getDocs(productsRef);
-      
-      const total = snapshot.docs.length;
-      if (total === 0) {
-        setUploadStatus({ text: "No hay productos que eliminar.", type: "info" });
-        setIsUploading(false);
+      const lines = text.split(/\r?\n/).filter(l => l.trim() !== '');
+      if (lines.length < 2) {
+        setStatus({ text: "El archivo no contiene datos o encabezados.", type: 'error', context });
         return;
       }
 
-      let deleted = 0;
-      const chunkSize = 400; // Firebase limit is 500
+      // Obtener encabezados dinámicos (primera fila)
+      const headers = lines[0].split(',').map(h => h.trim().replace(/^"|"$/g, ''));
+      const dataLines = lines.slice(1);
 
-      for (let i = 0; i < snapshot.docs.length; i += chunkSize) {
-        const batch = writeBatch(db);
-        const chunk = snapshot.docs.slice(i, i + chunkSize);
-        
-        chunk.forEach(doc => batch.delete(doc.ref));
-        await batch.commit();
-        
-        deleted += chunk.length;
-        setUploadProgress(Math.min(100, Math.round((deleted / total) * 100)));
+      try {
+        const result = dataLines.map(line => {
+          const values = line.split(',').map(val => val.trim().replace(/^"|"$/g, ''));
+          const entry: any = {};
+          
+          headers.forEach((header, index) => {
+            let val: any = values[index] || "";
+            // Conversión automática de números
+            if (val !== "" && !isNaN(val as any)) {
+              val = val.includes('.') ? parseFloat(val) : parseInt(val);
+            }
+            entry[header] = val;
+          });
+          
+          return entry;
+        });
+
+        if (context === 'products') setParsedProducts(result);
+        else if (context === 'providers') setParsedProviders(result);
+        else if (context === 'costs') setParsedCosts(result);
+
+        setStatus({ text: `CSV Procesado: ${result.length} filas listas.`, type: 'info', context });
+      } catch (err) {
+        setStatus({ text: "Error procesando columnas dinámicas.", type: 'error', context });
       }
-
-      setUploadStatus({ text: `✅ Catálogo eliminado con éxito (${deleted} registros borrados).`, type: "success" });
-      alert(`Se han borrado ${deleted} productos correctamente.`);
-    } catch (error) {
-      console.error("Error al borrar productos:", error);
-      setUploadStatus({ text: "❌ Error crítico al intentar borrar el catálogo.", type: "error" });
-      alert("Error al intentar borrar la base de datos. Verifique su conexión.");
-    } finally {
-      setIsUploading(false);
-      setUploadProgress(0);
-    }
+    };
+    reader.readAsText(file);
   };
 
-  const handleUploadToFirebase = async () => {
-    if (parsedData.length === 0) return;
-    
-    setIsUploading(true);
-    setUploadStatus({ text: "Sincronizando BDD con Firebase...", type: "info" });
+  const syncWithFirestore = async (context: UploadContext) => {
+    let dataToUpload: any[] = [];
+    let collectionName = "";
+
+    if (context === 'products') { dataToUpload = parsedProducts; collectionName = "products"; }
+    else if (context === 'providers') { dataToUpload = parsedProviders; collectionName = "providers"; }
+    else if (context === 'costs') { dataToUpload = parsedCosts; collectionName = "costs_catalog"; }
+
+    if (dataToUpload.length === 0) return;
+
+    setIsUploading(context);
     setUploadProgress(0);
+    const batchSize = 450; 
 
     try {
-      const productsRef = collection(db, "products");
-      const total = parsedData.length;
-      const chunkSize = 400; 
+      const colRef = collection(db, collectionName);
       
-      for (let i = 0; i < total; i += chunkSize) {
+      for (let i = 0; i < dataToUpload.length; i += batchSize) {
         const batch = writeBatch(db);
-        const chunk = parsedData.slice(i, i + chunkSize);
+        const chunk = dataToUpload.slice(i, i + batchSize);
         
-        chunk.forEach((product) => {
-          const docId = product.productoID.toString();
-          const docRef = doc(productsRef, docId);
-          batch.set(docRef, product);
+        chunk.forEach(item => {
+          const docId = getDocId(item);
+          const docRef = doc(colRef, docId);
+          // Se sube el objeto completo con todos sus campos dinámicos
+          batch.set(docRef, { 
+            ...item, 
+            _importDate: serverTimestamp() 
+          });
         });
 
         await batch.commit();
-        setUploadProgress(Math.min(100, Math.round(((i + chunk.length) / total) * 100)));
+        setUploadProgress(Math.round(((i + chunk.length) / dataToUpload.length) * 100));
       }
+
+      setStatus({ text: `Importación exitosa en "${collectionName}"`, type: 'success', context });
+      if (context === 'products') setParsedProducts([]);
+      if (context === 'providers') setParsedProviders([]);
+      if (context === 'costs') setParsedCosts([]);
       
-      setUploadStatus({ text: `¡Sincronización masiva completada! ${total} productos actualizados.`, type: "success" });
-      setParsedData([]);
-      setFile(null);
-    } catch (error) {
-      console.error("Error uploading BDD:", error);
-      setUploadStatus({ text: "Error crítico al actualizar Firebase.", type: "error" });
+    } catch (err: any) {
+      setStatus({ text: `Error en Firestore: ${err.message}`, type: 'error', context });
     } finally {
-      setIsUploading(false);
+      setIsUploading(null);
     }
   };
+
+  const CategoryCard = ({ title, icon, context, count, inputRef, onUpload }: { 
+    title: string, icon: string, context: UploadContext, count: number, inputRef: React.RefObject<HTMLInputElement>, onUpload: () => void 
+  }) => (
+    <div className="bg-white dark:bg-surface-dark rounded-[2.5rem] p-6 shadow-sm border border-slate-100 dark:border-white/5 space-y-4">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-4">
+          <div className="size-12 rounded-2xl bg-primary/10 text-primary flex items-center justify-center">
+            <span className="material-symbols-outlined text-2xl">{icon}</span>
+          </div>
+          <div>
+            <h3 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-tight">{title}</h3>
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">ID: Product Key</p>
+          </div>
+        </div>
+        {count > 0 && (
+          <div className="px-3 py-1 bg-emerald-500/10 text-emerald-500 rounded-full text-[10px] font-black animate-pulse">
+            {count} PENDIENTES
+          </div>
+        )}
+      </div>
+
+      {isUploading === context && (
+        <div className="space-y-1.5">
+          <div className="flex justify-between text-[9px] font-black uppercase text-primary">
+            <span>Subiendo datos...</span>
+            <span>{uploadProgress}%</span>
+          </div>
+          <div className="w-full h-2 bg-slate-100 dark:bg-white/5 rounded-full overflow-hidden">
+            <div className="h-full bg-primary transition-all duration-300" style={{ width: `${uploadProgress}%` }}></div>
+          </div>
+        </div>
+      )}
+
+      {status?.context === context && (
+        <div className={`text-[10px] font-bold px-3 py-2.5 rounded-2xl flex items-center gap-2 ${
+          status.type === 'success' ? 'bg-emerald-50 text-emerald-600' : 
+          status.type === 'error' ? 'bg-red-50 text-red-600' : 'bg-blue-50 text-blue-600'
+        }`}>
+          <span className="material-symbols-outlined text-sm">
+            {status.type === 'success' ? 'check_circle' : status.type === 'error' ? 'error' : 'info'}
+          </span>
+          {status.text}
+        </div>
+      )}
+
+      <div className="grid grid-cols-2 gap-3">
+        <button 
+          onClick={() => inputRef.current?.click()}
+          className="py-3.5 bg-slate-50 dark:bg-white/5 text-slate-600 dark:text-slate-400 font-black text-[10px] rounded-xl uppercase tracking-widest border border-slate-100 dark:border-white/5 active:scale-95 transition-all flex items-center justify-center gap-2"
+        >
+          <span className="material-symbols-outlined text-sm">attach_file</span>
+          Cargar CSV
+        </button>
+        <button 
+          disabled={count === 0 || isUploading !== null}
+          onClick={onUpload}
+          className="py-3.5 bg-primary text-white font-black text-[10px] rounded-xl uppercase tracking-widest shadow-lg shadow-primary/20 active:scale-95 transition-all disabled:opacity-30 flex items-center justify-center gap-2"
+        >
+          <span className="material-symbols-outlined text-sm">publish</span>
+          Importar
+        </button>
+      </div>
+      <input type="file" ref={inputRef} onChange={(e) => handleFileChange(e, context)} accept=".csv" className="hidden" />
+    </div>
+  );
 
   return (
     <div className="relative flex flex-col h-screen w-full max-w-md mx-auto bg-background-light dark:bg-background-dark shadow-2xl overflow-hidden pb-32 font-display">
@@ -169,112 +224,82 @@ const DatabaseUploadScreen: React.FC = () => {
       </header>
 
       <div className="flex px-6 pt-2 gap-4">
-        <button onClick={() => setActiveSubTab('upload')} className={`pb-2 text-xs font-black uppercase tracking-widest border-b-2 transition-colors ${activeSubTab === 'upload' ? 'border-primary text-primary' : 'border-transparent text-slate-400'}`}>Carga CSV</button>
-        <button onClick={() => setActiveSubTab('apk')} className={`pb-2 text-xs font-black uppercase tracking-widest border-b-2 transition-colors ${activeSubTab === 'apk' ? 'border-primary text-primary' : 'border-transparent text-slate-400'}`}>Generar APK</button>
+        <button onClick={() => setActiveSubTab('upload')} className={`pb-2 text-xs font-black uppercase tracking-widest border-b-2 transition-colors ${activeSubTab === 'upload' ? 'border-primary text-primary' : 'border-transparent text-slate-400'}`}>Cargas CSV</button>
+        <button onClick={() => setActiveSubTab('apk')} className={`pb-2 text-xs font-black uppercase tracking-widest border-b-2 transition-colors ${activeSubTab === 'apk' ? 'border-primary text-primary' : 'border-transparent text-slate-400'}`}>Instalación</button>
       </div>
 
-      <main className="flex-1 overflow-y-auto p-6 space-y-6 no-scrollbar">
+      <main className="flex-1 overflow-y-auto p-6 space-y-6 no-scrollbar pb-10">
         {activeSubTab === 'upload' ? (
           <>
-            <div className="bg-primary/10 border border-primary/20 rounded-[2.5rem] p-8 text-center space-y-4">
-              <div className="size-20 bg-primary text-white rounded-3xl flex items-center justify-center mx-auto shadow-xl">
-                <span className="material-symbols-outlined text-4xl">database</span>
+            <div className="bg-gradient-to-br from-primary to-indigo-600 p-8 rounded-[2.5rem] text-white shadow-xl relative overflow-hidden mb-2">
+              <div className="relative z-10">
+                <h2 className="text-2xl font-black">Importación Dinámica</h2>
+                <p className="text-white/70 text-[10px] font-bold uppercase tracking-[0.2em] mt-1">Firestore Document Integration</p>
               </div>
-              <h2 className="text-2xl font-black text-slate-900 dark:text-white">Actualización Total</h2>
+              <span className="material-symbols-outlined absolute -right-4 -bottom-4 text-9xl opacity-10">storage</span>
             </div>
 
-            {uploadStatus && (
-              <div className={`p-5 rounded-2xl flex items-start gap-4 border ${
-                uploadStatus.type === 'success' ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 
-                uploadStatus.type === 'error' ? 'bg-red-50 border-red-200 text-red-700' :
-                'bg-blue-50 border-blue-200 text-blue-700'
-              }`}>
-                <span className="material-symbols-outlined mt-0.5">
-                  {uploadStatus.type === 'success' ? 'verified' : 'report'}
-                </span>
-                <p className="text-sm font-bold leading-tight">{uploadStatus.text}</p>
-              </div>
-            )}
+            <CategoryCard 
+              title="Base de Productos" 
+              icon="inventory_2" 
+              context="products" 
+              count={parsedProducts.length} 
+              inputRef={productsInputRef} 
+              onUpload={() => syncWithFirestore('products')} 
+            />
 
-            <div 
-              onClick={() => !isUploading && fileInputRef.current?.click()}
-              className={`border-2 border-dashed rounded-[2.5rem] p-12 flex flex-col items-center justify-center gap-6 cursor-pointer ${file ? 'border-primary bg-primary/5' : 'border-slate-300 dark:border-white/10'}`}
-            >
-              <input type="file" ref={fileInputRef} onChange={handleFileChange} accept=".csv" className="hidden" />
-              <span className={`material-symbols-outlined text-7xl ${file ? 'text-primary' : 'text-slate-300'}`}>upload_file</span>
-              <p className="font-black text-lg">{file ? file.name : 'Adjuntar CSV'}</p>
-            </div>
+            <CategoryCard 
+              title="Base de Proveedores" 
+              icon="local_shipping" 
+              context="providers" 
+              count={parsedProviders.length} 
+              inputRef={providersInputRef} 
+              onUpload={() => syncWithFirestore('providers')} 
+            />
 
-            {isUploading && (
-              <div className="w-full h-3 bg-slate-100 rounded-full overflow-hidden">
-                <div className="h-full bg-primary transition-all" style={{ width: `${uploadProgress}%` }}></div>
-              </div>
-            )}
+            <CategoryCard 
+              title="Base de Precios / Costos" 
+              icon="payments" 
+              context="costs" 
+              count={parsedCosts.length} 
+              inputRef={costsInputRef} 
+              onUpload={() => syncWithFirestore('costs')} 
+            />
 
-            <div className="mt-12 p-6 bg-red-500/5 border border-red-500/20 rounded-3xl space-y-4">
-              <div className="flex items-center gap-2 text-red-500">
-                <span className="material-symbols-outlined text-xl">warning</span>
-                <h3 className="text-xs font-black uppercase tracking-widest">Zona de Peligro</h3>
-              </div>
-              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest leading-tight">
-                Si deseas reiniciar el catálogo por completo antes de subir un nuevo CSV, usa esta opción.
-              </p>
-              <button 
-                onClick={handleDeleteAllProducts}
-                disabled={isUploading}
-                className="w-full py-3.5 bg-red-500 text-white font-black rounded-xl text-xs uppercase tracking-widest shadow-lg shadow-red-500/20 active:scale-95 disabled:opacity-50 transition-all"
-              >
-                Borrar Todo el Catálogo
-              </button>
+            <div className="p-5 bg-blue-500/5 border border-blue-500/10 rounded-3xl space-y-3">
+               <div className="flex items-center gap-2 text-blue-500">
+                 <span className="material-symbols-outlined text-lg">info</span>
+                 <h4 className="text-[10px] font-black uppercase tracking-widest">Manual de Importación</h4>
+               </div>
+               <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 leading-relaxed uppercase">
+                 1. Asegúrate de que el CSV tenga una columna llamada <span className="text-primary font-black">"Product Key"</span> para identificar cada registro.<br/>
+                 2. Todos los campos de las columnas restantes se crearán automáticamente en la base de datos.<br/>
+                 3. La subida es por lotes para optimizar el rendimiento de Firebase.
+               </p>
             </div>
           </>
         ) : (
           <div className="space-y-6 animate-in fade-in">
-            <div className="bg-amber-500/10 border border-amber-500/20 p-6 rounded-3xl">
+             <div className="bg-amber-500/10 border border-amber-500/20 p-6 rounded-3xl">
               <div className="flex items-center gap-3 mb-4 text-amber-500">
-                <span className="material-symbols-outlined text-4xl">terminal</span>
-                <h3 className="text-lg font-black leading-tight">Guía Técnica para Compilar APK</h3>
+                <span className="material-symbols-outlined text-4xl">smartphone</span>
+                <h3 className="text-lg font-black leading-tight">Acceso Local APK</h3>
               </div>
-              <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed mb-4">
-                Si necesitas un archivo <span className="text-primary font-bold">.apk</span> físico para instalar de manera local sin usar la web, debes compilar el código fuente con estas herramientas:
+              <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed mb-4 font-bold">
+                Para instalar esta herramienta como una aplicación independiente en tu dispositivo Android:
               </p>
-
               <div className="space-y-4">
                 <div className="p-4 bg-black/5 rounded-2xl border border-black/5">
-                  <p className="text-[10px] font-black uppercase text-slate-400 mb-2">Opción 1: Bubblewrap (Más fácil)</p>
-                  <p className="text-xs font-mono text-primary bg-primary/5 p-2 rounded">npx @bubblewrap/cli init --manifest=manifest.json</p>
-                  <p className="text-[10px] text-slate-400 mt-2">Esto genera el APK directamente desde el manifiesto de la web.</p>
-                </div>
-
-                <div className="p-4 bg-black/5 rounded-2xl border border-black/5">
-                  <p className="text-[10px] font-black uppercase text-slate-400 mb-2">Opción 2: Capacitor (Nativo total)</p>
-                  <p className="text-xs font-mono text-primary bg-primary/5 p-2 rounded">npm install @capacitor/android && npx cap add android</p>
-                  <p className="text-[10px] text-slate-400 mt-2">Usa el archivo <span className="font-bold">capacitor.config.json</span> que ya incluimos en el proyecto.</p>
+                  <p className="text-[10px] font-black uppercase text-slate-400 mb-2">Paso 1: Compilación</p>
+                  <p className="text-xs text-slate-600 dark:text-slate-300">
+                    Utilice el comando <span className="text-primary font-bold">npx cap add android</span> para generar el proyecto nativo.
+                  </p>
                 </div>
               </div>
-            </div>
-
-            <div className="p-6 bg-slate-100 dark:bg-surface-dark rounded-3xl">
-              <h4 className="text-sm font-black mb-2">¿Por qué no hay un botón de descarga APK?</h4>
-              <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-                Un APK es un archivo compilado para Android. Las aplicaciones modernas se instalan vía <span className="font-bold">PWA</span> (Web App Progresiva) para no ocupar espacio y actualizarse solas. Al pulsar "Instalar" en el Login, el sistema registra la app en tu celular como si fuera un APK instalado localmente.
-              </p>
             </div>
           </div>
         )}
       </main>
-
-      {parsedData.length > 0 && !isUploading && activeSubTab === 'upload' && (
-        <div className="fixed bottom-[88px] left-0 right-0 px-6 max-w-md mx-auto z-40">
-          <button 
-            onClick={handleUploadToFirebase}
-            className="w-full bg-primary text-white font-black py-5 rounded-2xl shadow-2xl flex items-center justify-center gap-3"
-          >
-            <span className="material-symbols-outlined">publish</span>
-            Actualizar {parsedData.length} Productos
-          </button>
-        </div>
-      )}
 
       <BottomNav />
     </div>
