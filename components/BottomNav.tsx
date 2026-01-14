@@ -8,33 +8,44 @@ const BottomNav: React.FC = () => {
   const isActive = (path: string) => location.pathname === path;
 
   const navItems = [
-    { label: 'Trans.', icon: 'description', path: '/dashboard' },
-    { label: 'Estad.', icon: 'bar_chart', path: '/finance-stats' },
-    { label: 'Cuentas', icon: 'payments', path: '/finance-accounts' },
-    { label: 'Más', icon: 'more_horiz', path: '/settings' }
+    { label: 'Cuentas', icon: 'account_balance_wallet', path: '/finance-accounts' },
+    { label: 'Reportes', icon: 'analytics', path: '/finance-stats' },
+    { label: 'Inicio', icon: 'grid_view', path: '/dashboard', isCenter: true },
+    { label: 'Cortes', icon: 'point_of_sale', path: '/cortes' },
+    { label: 'Ajustes', icon: 'more_horiz', path: '/settings' }
   ];
 
   return (
-    <div className="fixed bottom-0 left-0 right-0 z-50 bg-[#121212] border-t border-white/5 pb-safe">
-      <div className="flex items-center justify-around h-16 max-w-md mx-auto">
+    <nav className="fixed bottom-0 left-0 right-0 z-[1000] bg-[#121212]/95 backdrop-blur-lg border-t border-white/5 pb-safe">
+      <div className="flex items-center justify-around h-18 max-w-md mx-auto px-2 py-3">
         {navItems.map((item) => (
           <Link 
             key={item.path} 
             to={item.path} 
-            className={`flex flex-col items-center justify-center gap-1 transition-colors ${
+            className={`flex flex-col items-center justify-center gap-1 transition-all duration-200 ${
+              item.isCenter ? 'relative -top-1' : ''
+            } ${
               isActive(item.path) 
-                ? 'text-[#f87171]' 
+                ? 'text-primary' 
                 : 'text-slate-500 hover:text-slate-300'
             }`}
           >
-            <span className={`material-symbols-outlined text-[24px] ${isActive(item.path) ? 'fill-1' : ''}`}>
-              {item.icon}
+            <div className={`flex items-center justify-center transition-transform ${
+              item.isCenter ? 'scale-125 bg-primary/10 rounded-2xl p-2 shadow-lg shadow-primary/10' : ''
+            } ${isActive(item.path) && item.isCenter ? 'bg-primary text-white scale-125' : ''}`}>
+              <span className={`material-symbols-outlined text-[26px] ${isActive(item.path) ? 'fill-1' : ''}`}>
+                {item.icon}
+              </span>
+            </div>
+            <span className={`text-[9px] font-black uppercase tracking-tighter transition-opacity ${
+              isActive(item.path) ? 'opacity-100' : 'opacity-60'
+            }`}>
+              {item.label}
             </span>
-            <span className="text-[10px] font-medium tracking-tight">{item.label}</span>
           </Link>
         ))}
       </div>
-    </div>
+    </nav>
   );
 };
 

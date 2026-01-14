@@ -3,13 +3,15 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { db } from '../services/firebase';
+// Fixed: Added serverTimestamp to the imports from firestore
 import { 
   collection, 
   query, 
   onSnapshot, 
   doc, 
   writeBatch,
-  orderBy
+  orderBy,
+  serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 import { AccountingAccount, AccountCategory } from '../types';
 
@@ -22,7 +24,7 @@ const AccountDeleteScreen: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [isDeleting, setIsDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set()); // Document IDs de 'accounts'
   const [showConfirm, setShowConfirm] = useState(false);
 
   useEffect(() => {
@@ -68,10 +70,26 @@ const AccountDeleteScreen: React.FC = () => {
 
     try {
       const batch = writeBatch(db);
+      
       selectedIds.forEach(id => {
-        const docRef = doc(db, "users", user.uid, "accounts", id);
-        batch.delete(docRef);
+        // 1. Eliminar documento de 'accounts'
+        const accountDocRef = doc(db, "users", user.uid, "accounts", id);
+        
+        // Buscar el accountId estable para actualizar el índice
+        const accountData = accounts.find(a => a.id === id);
+        if (accountData?.accountId) {
+          // 2. Marcar como INACTIVO en 'accountIndex' (No eliminar para historial)
+          const indexDocRef = doc(db, "users", user.uid, "accountIndex", accountData.accountId);
+          // Fixed: using serverTimestamp() which is now imported
+          batch.update(indexDocRef, {
+            isActive: false,
+            updatedAt: serverTimestamp()
+          });
+        }
+        
+        batch.delete(accountDocRef);
       });
+
       await batch.commit();
       navigate('/finance-accounts');
     } catch (err) {
@@ -99,8 +117,8 @@ const AccountDeleteScreen: React.FC = () => {
           {isSelected && <span className="material-symbols-outlined text-white text-[16px] font-bold">check</span>}
         </div>
         <div className="flex flex-col flex-1 gap-0.5">
-          <span className="text-[15px] font-medium text-slate-100">{account.name}</span>
-          <span className="text-[10px] font-medium text-slate-500 tracking-wider uppercase">{account.code}</span>
+          <span className="text-[15px] font-medium text-slate-200">{account.name}</span>
+          <span className="text-[10px] font-medium text-slate-500 tracking-wider uppercase">{account.accountId}</span>
         </div>
       </div>
     );
@@ -128,7 +146,6 @@ const AccountDeleteScreen: React.FC = () => {
 
   return (
     <div className="relative flex flex-col h-screen w-full max-w-md mx-auto bg-[#0f172a] font-display antialiased overflow-hidden">
-      {/* Confirm Modal */}
       {showConfirm && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
           <div className="w-full max-w-xs bg-surface-dark rounded-[2.5rem] p-8 shadow-2xl border border-white/10 animate-in zoom-in duration-300">
@@ -137,13 +154,13 @@ const AccountDeleteScreen: React.FC = () => {
             </div>
             <h3 className="text-xl font-bold text-center text-white mb-2">¿Confirmar?</h3>
             <p className="text-sm text-slate-400 text-center mb-8 leading-relaxed">
-              ¿Eliminar {selectedIds.size} cuenta(s) permanentemente?
+              ¿Eliminar {selectedIds.size} cuenta(s) permanentemente? El índice canónico se marcará como inactivo.
             </p>
             <div className="flex flex-col gap-3">
               <button 
                 onClick={handleDelete}
                 disabled={isDeleting}
-                className="w-full py-4 bg-red-500 text-white font-bold rounded-2xl shadow-xl active:scale-95 transition-all"
+                className="w-full py-4 bg-red-500 text-white font-black rounded-2xl shadow-xl active:scale-95 transition-all"
               >
                 {isDeleting ? 'Eliminando...' : 'Sí, Eliminar'}
               </button>
@@ -158,7 +175,6 @@ const AccountDeleteScreen: React.FC = () => {
         </div>
       )}
 
-      {/* Header idéntico a la imagen */}
       <header className="sticky top-0 z-50 bg-[#0f172a] pt-12 px-4 pb-4 flex items-center justify-between">
         <div className="flex items-center gap-4">
           <button onClick={() => navigate(-1)} className="p-2 rounded-full hover:bg-white/10 transition-colors text-white">
@@ -179,10 +195,9 @@ const AccountDeleteScreen: React.FC = () => {
         </button>
       </header>
 
-      {/* Descripción técnica */}
       <div className="px-5 py-4 bg-[#0f172a]">
         <p className="text-[13px] font-medium text-slate-400 italic leading-relaxed">
-          Selecciona las cuentas que deseas remover permanentemente de tu registro financiero.
+          Selecciona las cuentas que deseas remover de tu registro financiero. El historial contable se mantendrá vía índice.
         </p>
       </div>
 
@@ -198,7 +213,6 @@ const AccountDeleteScreen: React.FC = () => {
           </div>
         ) : (
           <div className="animate-in fade-in duration-500 pb-20">
-            {/* Secciones Dinámicas */}
             {categories.map(cat => {
               const catAccs = accounts.filter(a => a.categoryId === cat.id);
               if (catAccs.length === 0) return null;
@@ -209,8 +223,6 @@ const AccountDeleteScreen: React.FC = () => {
                 </section>
               );
             })}
-
-            {/* Cuentas sin categoría asignada */}
             {accounts.filter(a => !a.categoryId).length > 0 && (
               <section>
                 <SectionHeader title="SIN CATEGORÍA / OTROS" />

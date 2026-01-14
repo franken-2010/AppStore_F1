@@ -23,8 +23,8 @@ const RegisterScreen: React.FC = () => {
     
     // 1. Categorías por defecto
     const categories = [
-      { name: 'EFECTIVO', accountingType: 'Activo', order: 0 },
-      { name: 'CUENTAS', accountingType: 'Pasivo', order: 1 },
+      { name: 'OPERACIÓN', accountingType: 'Capital', order: 0 },
+      { name: 'EFECTIVO', accountingType: 'Activo', order: 1 },
       { name: 'AHORROS', accountingType: 'Ahorro', order: 2 }
     ];
 
@@ -35,17 +35,36 @@ const RegisterScreen: React.FC = () => {
       categoryRefs.push(catRef.id);
     });
 
-    // 2. Cuentas iniciales vinculadas a categorías
-    const accounts = [
-      { name: 'Caja Principal', code: 'CAJ01', type: 'Activo', categoryId: categoryRefs[0], balance: 0, order: 0, isVisible: true },
-      { name: 'Banco Santander', code: 'BNK01', type: 'Activo', categoryId: categoryRefs[0], balance: 0, order: 1, isVisible: true },
-      { name: 'Capital Social', code: 'CAP01', type: 'Capital', categoryId: null, balance: 0, order: 2, isVisible: true }
+    // 2. Cuentas base con accountId estable
+    const defaultAccounts = [
+      { accountId: 'ventas', name: 'Ventas', code: 'VEN_PRINCIPAL', type: 'Capital', categoryId: categoryRefs[0], balance: 0, order: 0, isVisible: true, description: 'Caja principal de ventas' },
+      { accountId: 'fiesta', name: 'Fiesta', code: 'VEN_FIESTA', type: 'Capital', categoryId: categoryRefs[0], balance: 0, order: 1, isVisible: true, description: 'Ingresos y egresos rubro fiestas' },
+      { accountId: 'estancias', name: 'Estancias', code: 'VEN_ESTANCIAS', type: 'Capital', categoryId: categoryRefs[0], balance: 0, order: 2, isVisible: true, description: 'Ingresos rubro estancias' },
+      { accountId: 'recargas', name: 'Recargas', code: 'VEN_RECARGAS', type: 'Capital', categoryId: categoryRefs[0], balance: 0, order: 3, isVisible: true, description: 'Venta de tiempo aire' },
+      { accountId: 'inventarios', name: 'Inventarios', code: 'INV01', type: 'Activo', categoryId: categoryRefs[1], balance: 0, order: 4, isVisible: true, description: 'Valor total del inventario' },
+      { accountId: 'caja_santander', name: 'Caja Santander', code: 'BNK01', type: 'Activo', categoryId: categoryRefs[1], balance: 0, order: 5, isVisible: true, description: 'Cuenta bancaria operativa' },
+      { accountId: 'cxc', name: 'CxC Clientes', code: 'CXC01', type: 'Pasivo', categoryId: null, balance: 0, order: 6, isVisible: true, description: 'Cuentas por cobrar' }
     ];
 
-    accounts.forEach((acc) => {
-      const newAccRef = doc(collection(db, "users", uid, "accounts"));
-      batch.set(newAccRef, {
+    defaultAccounts.forEach((acc) => {
+      // Documento en colección 'accounts' (Datos operativos)
+      const accDocRef = doc(collection(db, "users", uid, "accounts"));
+      batch.set(accDocRef, {
         ...acc,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      });
+
+      // Documento en colección 'accountIndex' (Índice canónico)
+      // Document ID = accountId
+      const indexDocRef = doc(db, "users", uid, "accountIndex", acc.accountId);
+      batch.set(indexDocRef, {
+        accountId: acc.accountId,
+        accountDocId: accDocRef.id,
+        name: acc.name,
+        type: acc.type,
+        categoryId: acc.categoryId,
+        isActive: true,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp()
       });

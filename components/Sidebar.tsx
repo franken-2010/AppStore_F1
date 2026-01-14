@@ -17,15 +17,17 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
 
   const menuItems = [
     { label: 'Dashboard', icon: 'dashboard', path: '/dashboard' },
+    { label: 'Cuentas', icon: 'account_balance_wallet', path: '/finance-accounts' },
+    { label: 'Reportes', icon: 'analytics', path: '/finance-stats' },
     { label: 'Cortes de Caja', icon: 'point_of_sale', path: '/cortes' },
-    { label: 'Contabilidad', icon: 'account_balance', path: '/accounting' },
+    { label: 'Directorio', icon: 'contact_phone', path: '/directorio' },
     { label: 'Herramientas', icon: 'build', path: '/tools' },
     { label: 'Configuración', icon: 'settings', path: '/settings' },
   ];
 
   const handleLogout = async () => {
     await signOut(auth);
-    navigate('/');
+    navigate('/login');
   };
 
   const goTo = (path: string) => {
@@ -48,13 +50,13 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
             <div className="flex items-center gap-3 mb-4">
               <div className="size-12 rounded-full border-2 border-white/50 bg-cover bg-center" style={{backgroundImage: `url('${profile?.photoURL}')`}}></div>
               <div>
-                <p className="text-white font-bold">{profile?.displayName}</p>
-                <p className="text-white/70 text-xs">{profile?.email}</p>
+                <p className="text-white font-bold">{profile?.displayName || 'Usuario F1'}</p>
+                <p className="text-white/70 text-xs truncate max-w-[180px]">{profile?.email}</p>
               </div>
             </div>
           </div>
 
-          <div className="flex-1 py-4 overflow-y-auto">
+          <div className="flex-1 py-4 overflow-y-auto no-scrollbar">
             {menuItems.map((item) => (
               <button
                 key={item.path}
@@ -73,7 +75,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
               className="flex items-center gap-4 w-full text-red-500 font-bold hover:bg-red-50 dark:hover:bg-red-500/10 p-2 rounded-lg transition-colors"
             >
               <span className="material-symbols-outlined">logout</span>
-              Cerrar Sesión
+              Cerrar Sesión F1
             </button>
           </div>
         </div>

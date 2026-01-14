@@ -13,6 +13,7 @@ import ProductAddScreen from './screens/ProductAddScreen';
 import SettingsScreen from './screens/SettingsScreen';
 import DatabaseUploadScreen from './screens/DatabaseUploadScreen';
 import PriceVerificationScreen from './screens/PriceVerificationScreen';
+import EditProductScreen from './screens/EditProductScreen';
 import ChatScreen from './screens/ChatScreen';
 import FinanceAccountsScreen from './screens/FinanceAccountsScreen';
 import AccountUpsertScreen from './screens/AccountUpsertScreen';
@@ -24,12 +25,17 @@ import AccountCategorySettingsScreen from './screens/AccountCategorySettingsScre
 import AccountHistoryScreen from './screens/AccountHistoryScreen';
 import AccountChartsScreen from './screens/AccountChartsScreen';
 import AddMovementScreen from './screens/AddMovementScreen';
+import EditMovementScreen from './screens/EditMovementScreen';
 import InstallScreen from './screens/InstallScreen';
+import DirectoryScreen from './screens/DirectoryScreen';
+import ProviderDetailScreen from './screens/ProviderDetailScreen';
+import EditProviderContactScreen from './screens/EditProviderContactScreen';
+import AddProviderScreen from './screens/AddProviderScreen';
 
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user, loading } = useAuth();
   if (loading) return <div className="min-h-screen bg-background-dark flex items-center justify-center"><span className="material-symbols-outlined animate-spin text-primary text-4xl">sync</span></div>;
-  return user ? <>{children}</> : <Navigate to="/" />;
+  return user ? <>{children}</> : <Navigate to="/login" />;
 };
 
 const App: React.FC = () => {
@@ -38,7 +44,8 @@ const App: React.FC = () => {
       <NotificationProvider>
         <Router>
           <Routes>
-            <Route path="/" element={<LoginScreen />} />
+            <Route path="/" element={<ProtectedRoute><DashboardScreen /></ProtectedRoute>} />
+            <Route path="/login" element={<LoginScreen />} />
             <Route path="/register" element={<RegisterScreen />} />
             <Route path="/install" element={<InstallScreen />} />
             <Route path="/dashboard" element={<ProtectedRoute><DashboardScreen /></ProtectedRoute>} />
@@ -47,6 +54,7 @@ const App: React.FC = () => {
             <Route path="/tools/price-update" element={<ProtectedRoute><PriceUpdateScreen /></ProtectedRoute>} />
             <Route path="/tools/product-add" element={<ProtectedRoute><ProductAddScreen /></ProtectedRoute>} />
             <Route path="/tools/price-verification" element={<ProtectedRoute><PriceVerificationScreen /></ProtectedRoute>} />
+            <Route path="/tools/product-edit/:productKey" element={<ProtectedRoute><EditProductScreen /></ProtectedRoute>} />
             
             <Route path="/accounting" element={<ProtectedRoute><FinanceAccountsScreen /></ProtectedRoute>} />
             <Route path="/finance-accounts" element={<ProtectedRoute><FinanceAccountsScreen /></ProtectedRoute>} />
@@ -62,9 +70,15 @@ const App: React.FC = () => {
             <Route path="/account/history/:accountId" element={<ProtectedRoute><AccountHistoryScreen /></ProtectedRoute>} />
             <Route path="/account/charts/:accountId" element={<ProtectedRoute><AccountChartsScreen /></ProtectedRoute>} />
             <Route path="/account/add-movement/:accountId" element={<ProtectedRoute><AddMovementScreen /></ProtectedRoute>} />
+            <Route path="/account/edit-movement/:accountId/:movementId" element={<ProtectedRoute><EditMovementScreen /></ProtectedRoute>} />
             <Route path="/account/visibility" element={<ProtectedRoute><AccountVisibilityScreen /></ProtectedRoute>} />
             <Route path="/account/delete" element={<ProtectedRoute><AccountDeleteScreen /></ProtectedRoute>} />
             <Route path="/account/reorder" element={<ProtectedRoute><AccountReorderScreen /></ProtectedRoute>} />
+
+            <Route path="/directorio" element={<ProtectedRoute><DirectoryScreen /></ProtectedRoute>} />
+            <Route path="/directorio/new" element={<ProtectedRoute><AddProviderScreen /></ProtectedRoute>} />
+            <Route path="/directorio/:providerId" element={<ProtectedRoute><ProviderDetailScreen /></ProtectedRoute>} />
+            <Route path="/directorio/edit/:providerId" element={<ProtectedRoute><EditProviderContactScreen /></ProtectedRoute>} />
           </Routes>
         </Router>
       </NotificationProvider>

@@ -38,19 +38,6 @@ export interface HistoryItem {
   status: 'completed' | 'revision';
 }
 
-export interface StoreProduct {
-  productoID: number;
-  nombreCompleto: string;
-  costoBasePrincipal: number;
-  uniPorCaja: number;
-  costoUnidad: number;
-  utilidadPorcentaje: number;
-  precioSugerido: number;
-  precioSugRed: number;
-  margenPesos: number;
-  lastUpdated: string;
-}
-
 export type AccountType = 'Activo' | 'Pasivo' | 'Capital' | 'Ingreso' | 'Gasto' | 'Ahorro';
 
 export interface AccountCategory {
@@ -61,37 +48,53 @@ export interface AccountCategory {
   color?: string;
 }
 
+export interface AccountIndex {
+  accountId: string;
+  accountDocId: string;
+  name: string;
+  type: AccountType;
+  categoryId?: string | null;
+  isActive: boolean;
+  isContable?: boolean;
+  inventoryMin?: number;
+  inventoryMax?: number;
+  createdAt: any;
+  updatedAt: any;
+}
+
 export interface AccountingAccount {
   id?: string;
-  code: string;
+  accountId: string;
   name: string;
-  type: AccountType; // Mantenido para lógica contable interna
-  categoryId?: string; // ID de la categoría dinámica
-  description: string;
+  type: AccountType;
+  categoryId?: string | null;
   balance: number;
-  initialBalance?: number;
-  parentId?: string | null;
   isVisible?: boolean;
+  isContable?: boolean;
+  inventoryMin?: number;
+  inventoryMax?: number;
   order?: number;
+  createdAt?: any;
+  updatedAt?: any;
+  code?: string;
+  description?: string;
 }
 
 export interface AccountMovement {
   id?: string;
-  ts: any; // firebase timestamp
+  uid: string;
+  accountId: string; 
   amount: number;
-  direction: 'in' | 'out';
-  category: string;
-  description: string;
-  fromAccountId?: string;
-  toAccountId?: string;
-  balanceAfter?: number;
-}
-
-export interface AccountingProvider {
-  id?: string;
-  name: string;
-  contactName?: string;
-  whatsapp?: string;
+  type: 'INCOME' | 'EXPENSE' | 'TRANSFER';
+  conceptTitle: string;
+  conceptSubtitle: string;
+  source: string;
+  status?: 'ACTIVE' | 'DELETED' | 'MOVED' | 'VOID';
+  createdAt: any; 
+  effectiveAt: any; 
+  notes?: string;
+  groupId?: string;
+  movedTo?: { accountDocId: string; movementId: string };
 }
 
 export interface UserProfile {
@@ -100,8 +103,4 @@ export interface UserProfile {
   displayName: string;
   photoURL: string;
   role: string;
-  webhookPriceUpdate?: string;
-  webhookAddProduct?: string;
-  webhookCortes?: string;
-  webhookNotifications?: string;
 }

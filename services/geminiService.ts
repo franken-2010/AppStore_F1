@@ -1,291 +1,117 @@
 
-import { GoogleGenAI, Type, FunctionDeclaration } from "@google/genai";
-import { ReceiptAnalysis, ChatMessage, ChatAttachment } from "../types";
-import { db } from "./firebase";
-import { collection, query, where, getDocs, limit } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
-
-const searchStoreProductsFunction: FunctionDeclaration = {
-  name: 'searchStoreProducts',
-  parameters: {
-    type: Type.OBJECT,
-    description: 'Busca productos en el inventario de la miscelánea por nombre o SKU.',
-    properties: {
-      searchTerm: {
-        type: Type.STRING,
-        description: 'El nombre del producto o parte del nombre para buscar.',
-      },
-    },
-    required: ['searchTerm'],
-  },
-};
+import { GoogleGenAI, Type } from "@google/genai";
+import { ChatMessage } from "../types";
 
 export class GeminiService {
-  private static ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-
   /**
-   * Limpia un objeto de datos de Firestore para asegurar que sea serializable por JSON.
-   * Elimina referencias circulares y convierte Timestamps a strings.
+   * Procesa el chat con el modelo Gemini asegurando que la estructura sea plana 
+   * y compatible con los tipos esperados por el SDK.
    */
-  private static sanitizeData(data: any): any {
-    if (data === null || typeof data !== 'object') return data;
-    
-    if (Array.isArray(data)) {
-      return data.map(item => this.sanitizeData(item));
-    }
-
-    const sanitized: any = {};
-    for (const [key, value] of Object.entries(data)) {
-      if (value && typeof (value as any).toDate === 'function') {
-        // Es un Timestamp de Firestore
-        sanitized[key] = (value as any).toDate().toISOString();
-      } else if (value && typeof (value as any).id === 'string' && typeof (value as any).path === 'string') {
-        // Es un DocumentReference de Firestore, lo simplificamos para evitar circularidad
-        sanitized[key] = { id: (value as any).id, path: (value as any).path };
-      } else if (typeof value === 'object') {
-        sanitized[key] = this.sanitizeData(value);
-      } else {
-        sanitized[key] = value;
-      }
-    }
-    return sanitized;
-  }
-
   static async chatWithContext(messages: ChatMessage[], userName: string): Promise<string> {
     try {
-      const formattedContents = messages.map(m => {
-        const parts: any[] = [{ text: m.text }];
-        if (m.attachments) {
-          m.attachments.forEach(att => {
-            if (att.type === 'image') {
-              const base64Data = att.url.split(',')[1];
-              parts.push({
-                inlineData: {
-                  data: base64Data,
-                  mimeType: att.mimeType
-                }
-              });
-            }
-          });
-        }
-        return { role: m.role, parts: parts };
-      });
+      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+      
+      const history = messages
+        .filter(m => m.role === 'user' || m.role === 'model')
+        .map(m => ({
+          role: m.role as 'user' | 'model',
+          parts: [{ text: String(m.text || '') }]
+        }));
 
-      const response = await this.ai.models.generateContent({
-        model: 'gemini-3-pro-preview',
-        contents: formattedContents,
-        config: {
-          systemInstruction: `Eres F1-AI, el asistente experto de "Abarrotes F1".
-          Administrador: ${userName}.
-          Capacidades:
-          - Analizar imágenes de estantes, productos o recibos.
-          - Consultar el inventario real de Firebase usando la herramienta 'searchStoreProducts'.
-          - Ayudar con cálculos de utilidad y precios sugeridos.
-          
-          Reglas:
-          1. Si te preguntan por un precio, DEBES usar 'searchStoreProducts' para dar el dato real de la tienda.
-          2. Si ves una imagen, descríbela y relaciónala con el negocio.
-          3. Sé breve y profesional.`,
-          tools: [{ functionDeclarations: [searchStoreProductsFunction] }],
-        }
-      });
-
-      if (response.functionCalls && response.functionCalls.length > 0) {
-        const results: any[] = [];
-        for (const fc of response.functionCalls) {
-          if (fc.name === 'searchStoreProducts') {
-            const searchTerm = (fc.args as any).searchTerm;
-            const rawProducts = await this.executeProductSearch(searchTerm);
-            // Sanitizamos los productos para evitar el error de estructura circular
-            const products = this.sanitizeData(rawProducts);
-            
-            results.push({
-              id: fc.id,
-              name: fc.name,
-              response: { result: products },
-            });
-          }
-        }
-
-        const finalResponse = await this.ai.models.generateContent({
-          model: 'gemini-3-pro-preview',
-          contents: [
-            ...formattedContents,
-            { role: 'model', parts: response.candidates[0].content.parts },
-            { role: 'user', parts: [{ text: "Aquí tienes los resultados de la base de datos: " + JSON.stringify(results) }] }
-          ]
-        });
-
-        return finalResponse.text || "He consultado la base de datos pero no obtuve una respuesta clara.";
+      while (history.length > 0 && history[0].role !== 'user') {
+        history.shift();
       }
+
+      if (history.length === 0) return "No hay historial válido para procesar.";
+
+      const response = await ai.models.generateContent({
+        model: 'gemini-3-pro-preview',
+        contents: history,
+        config: {
+          systemInstruction: `Eres F1-AI, asistente de "Abarrotes F1". Admin: ${userName}. Ayuda con el inventario y finanzas de la tienda. Sé conciso y profesional.`,
+        }
+      });
 
       return response.text || "Lo siento, no pude procesar tu solicitud.";
     } catch (error) {
       console.error("Error in AI Chat:", error);
-      return "Hubo un error al conectar con F1-AI. Verifica tu conexión.";
+      return "Error al conectar con F1-AI.";
     }
   }
 
-  private static async executeProductSearch(term: string) {
-    try {
-      const q = query(
-        collection(db, "products"),
-        where("nombreCompleto", ">=", term.toUpperCase()),
-        where("nombreCompleto", "<=", term.toUpperCase() + "\uf8ff"),
-        limit(5)
-      );
-      const snap = await getDocs(q);
-      return snap.docs.map(doc => doc.data());
-    } catch (e) {
-      console.error("Firebase Search Error:", e);
-      return [];
-    }
-  }
-
-  static async findProductsSemantic(userQuery: string, productsInDb: any[]): Promise<any[]> {
-    try {
-      if (productsInDb.length === 0) return [];
-      const productsContext = productsInDb.map(p => ({
-        name: p.nombreCompleto,
-        price: p.precioSugRed,
-        id: p.productoID
-      }));
-
-      const response = await this.ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
-        contents: `Consulta del usuario: "${userQuery}".\nProductos disponibles en la base de datos:\n${JSON.stringify(productsContext)}`,
-        config: {
-          systemInstruction: "Eres un buscador inteligente de inventario. Tu tarea es encontrar los productos que más coincidan con la búsqueda del usuario basándote en el nombre. Devuelve un máximo de 5 resultados en formato JSON.",
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.ARRAY,
-            items: {
-              type: Type.OBJECT,
-              properties: {
-                name: { type: Type.STRING },
-                price: { type: Type.NUMBER }
-              },
-              required: ["name", "price"]
-            }
-          }
-        }
-      });
-      return JSON.parse(response.text || '[]');
-    } catch (error) {
-      console.error("Error in semantic search:", error);
-      return [];
-    }
-  }
-
-  static async analyzeReceiptImage(base64Image: string): Promise<ReceiptAnalysis | null> {
-    try {
-      const response = await this.ai.models.generateContent({
-        model: 'gemini-3-pro-preview',
-        contents: {
-          parts: [
-            { inlineData: { mimeType: 'image/jpeg', data: base64Image } },
-            { text: "Analyze this business receipt or cash report. Extract data into JSON." },
-          ],
-        },
-        config: {
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              cashAmount: { type: Type.NUMBER },
-              terminalAmount: { type: Type.NUMBER },
-              expenses: { type: Type.NUMBER },
-              summary: { type: Type.STRING }
-            },
-            required: ["cashAmount", "terminalAmount", "expenses", "summary"]
-          }
-        }
-      });
-      const text = response.text;
-      if (!text) return null;
-      return JSON.parse(text) as ReceiptAnalysis;
-    } catch (error) {
-      console.error("Error analyzing receipt:", error);
-      return null;
-    }
-  }
-
+  /**
+   * Analiza el texto de un corte de caja y extrae montos estructurados.
+   */
   static async parseCorteText(rawText: string, fecha: string): Promise<any> {
     try {
-      const response = await this.ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
-        contents: `Fecha del corte: ${fecha}\nContenido del reporte:\n${rawText}`,
-        config: {
-          systemInstruction: `Eres un asistente especializado en validación y análisis de cortes diarios (texto plano) para una tienda.
-          REGLAS DE FORMATO:
-          1. Debe incluir "Corte del día".
-          2. Secciones obligatorias: Ventas, Fiesta, Recargas, Total general, Estancias, Pagos CxC, Subtotal ingresos, Consumo personal, Gastos generales, Subtotal después de egresos, Dinero entregado, Diferencia, Resultado (Sobrante/Faltante), Ingresos CXC (aparte).
-          
-          REGLAS DE EXTRACCIÓN:
-          - Extraer montos precedidos o seguidos de "$".
-          - Normalizar montos quitando comas y manejando decimales.
-          - Gastos generales: Clasificar en 'abarrotes', 'fiesta' o 'otros'.
+      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+      const promptText = `Reporte de Corte ${fecha}: ${rawText}`;
 
-          VALIDACIONES MATEMÁTICAS:
-          1. Ventas + Fiesta + Recargas = Total general.
-          2. Total general + Estancias + Pagos CxC = Subtotal ingresos.
-          3. Subtotal ingresos - (Consumo personal + Gastos generales_total) = Subtotal después de egresos.
-          4. Dinero entregado - Subtotal después de egresos = Diferencia.
+      const response = await ai.models.generateContent({
+        model: 'gemini-3-flash-preview',
+        contents: [{
+          role: 'user',
+          parts: [{ text: promptText }]
+        }],
+        config: {
+          systemInstruction: `Analiza el reporte de ventas y gastos de la tienda. 
+          Extrae los montos para los siguientes rubros (usa 0 si no se menciona):
           
-          Si Diferencia > 0 -> Resultado: Sobrante. Si < 0 -> Faltante.
+          INGRESOS:
+          - ventas, fiesta, recargas, estancias.
           
-          Si format_valid=false o calculations_valid=false, explica el error en 'warnings'.`,
+          RUBROS CRÍTICOS DE CUENTAS POR COBRAR (CxC):
+          - pagos_clientes_cxc = COBRANZA: Dinero que ENTRA físicamente hoy por créditos otorgados en días anteriores. Keywords: "pago clientes", "pagos cxc", "cobranza", "abonos", "cobrado".
+          - ventas_a_credito_cxc = VENTA A CRÉDITO: Venta realizada hoy pero que NO entró dinero en efectivo; incrementa la deuda de clientes. Keywords: "ventas a crédito", "crédito", "cxc generado", "por cobrar".
+
+          REGLA DE ORO: 
+          - Si el texto dice "Pagos CxC: 200", mapear 200 a pagos_clientes_cxc y 0 a ventas_a_credito_cxc.
+          - Si el texto dice "Crédito: 150", mapear 150 a ventas_a_credito_cxc y 0 a pagos_clientes_cxc.
+
+          EGRESOS:
+          - gastos_empleados (sueldos), renta, consumo_personal, gastos_abarrotes (compras), gastos_fiesta, gastos_recargas, otros_gastos.
+          
+          CIERRE:
+          - dinero_entregado: El monto final en efectivo que el cajero entrega físicamente.
+
+          Devuelve un JSON estrictamente estructurado.`,
           responseMimeType: "application/json",
           responseSchema: {
             type: Type.OBJECT,
             properties: {
-              format_valid: { type: Type.BOOLEAN },
-              calculations_valid: { type: Type.BOOLEAN },
-              cash_income: {
-                type: Type.OBJECT,
-                properties: {
-                  ventas: { type: Type.NUMBER },
-                  fiesta: { type: Type.NUMBER },
-                  recargas: { type: Type.NUMBER },
-                  estancias: { type: Type.NUMBER },
-                  sobrantes: { type: Type.NUMBER },
-                  pagos_cxc: { type: Type.NUMBER }
-                }
+              ingresos: { 
+                type: Type.OBJECT, 
+                properties: { 
+                  ventas: { type: Type.NUMBER }, 
+                  fiesta: { type: Type.NUMBER }, 
+                  recargas: { type: Type.NUMBER }, 
+                  estancias: { type: Type.NUMBER }, 
+                  pagos_clientes_cxc: { type: Type.NUMBER }, 
+                  ventas_a_credito_cxc: { type: Type.NUMBER }
+                } 
               },
-              credit_income: {
-                type: Type.OBJECT,
-                properties: {
-                  cxc_aparte: { type: Type.NUMBER }
-                }
+              egresos: { 
+                type: Type.OBJECT, 
+                properties: { 
+                  gastos_empleados: { type: Type.NUMBER }, 
+                  renta: { type: Type.NUMBER }, 
+                  consumo_personal: { type: Type.NUMBER }, 
+                  gastos_abarrotes: { type: Type.NUMBER }, 
+                  gastos_fiesta: { type: Type.NUMBER }, 
+                  gastos_recargas: { type: Type.NUMBER }, 
+                  otros_gastos: { type: Type.NUMBER } 
+                } 
               },
-              expenses: {
-                type: Type.OBJECT,
-                properties: {
-                  abarrotes: { type: Type.NUMBER },
-                  fiesta: { type: Type.NUMBER },
-                  consumo_personal: { type: Type.NUMBER },
-                  otros: { type: Type.NUMBER }
-                }
-              },
-              totals: {
-                type: Type.OBJECT,
-                properties: {
-                  total_general: { type: Type.NUMBER },
-                  subtotal_ingresos: { type: Type.NUMBER },
-                  subtotal_despues_egresos: { type: Type.NUMBER },
-                  dinero_entregado: { type: Type.NUMBER },
-                  diferencia: { type: Type.NUMBER }
-                }
-              },
-              result_type: { type: Type.STRING },
-              warnings: { type: Type.ARRAY, items: { type: Type.STRING } },
-              ready_for_confirmation: { type: Type.BOOLEAN },
+              dinero_entregado: { type: Type.NUMBER },
               human_summary: { type: Type.STRING }
             },
-            required: ["format_valid", "calculations_valid", "cash_income", "expenses", "ready_for_confirmation", "human_summary"]
+            required: ["ingresos", "egresos", "dinero_entregado", "human_summary"]
           }
         }
       });
-      return JSON.parse(response.text || '{}');
+      
+      const responseText = response.text || '{}';
+      return JSON.parse(responseText);
     } catch (error) {
       console.error("Error parsing corte text:", error);
       throw error;

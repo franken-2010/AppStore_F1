@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { db } from '../services/firebase';
@@ -28,7 +28,7 @@ const FinanceAccountsScreen: React.FC = () => {
       setCategories(snap.docs.map(d => ({ id: d.id, ...d.data() } as AccountCategory)));
     });
 
-    // Escuchar cuentas
+    // Escuchar cuentas (Fuente única de verdad)
     const qAcc = query(collection(db, "users", user.uid, "accounts"), orderBy("order", "asc"));
     const unsubAcc = onSnapshot(qAcc, (snap) => {
       setAccounts(snap.docs.map(d => ({ id: d.id, ...d.data() } as AccountingAccount)));
@@ -38,7 +38,14 @@ const FinanceAccountsScreen: React.FC = () => {
     return () => { unsubCat(); unsubAcc(); };
   }, [user]);
 
-  const visibleAccounts = accounts.filter(a => a.isVisible !== false);
+  // 1. Filtrar solo cuentas visibles (default true si el campo no existe)
+  const visibleAccounts = useMemo(() => {
+    return accounts
+      .filter(a => a.isVisible !== false)
+      .sort((a, b) => (a.order ?? 999) - (b.order ?? 999));
+  }, [accounts]);
+
+  // Totales
   const capital = visibleAccounts.filter(a => a.type === 'Capital').reduce((sum, a) => sum + (a.balance || 0), 0);
   const aDeber = visibleAccounts.filter(a => a.type === 'Pasivo').reduce((sum, a) => sum + (a.balance || 0), 0);
   const totalActivos = visibleAccounts.filter(a => a.type === 'Activo' || a.type === 'Ahorro').reduce((sum, a) => sum + (a.balance || 0), 0);
@@ -50,13 +57,18 @@ const FinanceAccountsScreen: React.FC = () => {
 
   const AccountRow: React.FC<{ account: AccountingAccount }> = ({ account }) => {
     const isNegative = account.type === 'Pasivo';
+    // 4. Normalización de accountId para lógica (opcional para debug aquí)
+    const normalizedId = (account.accountId || account.id || '').toLowerCase().trim().replace(/\s+/g, '_');
+    
     return (
       <div 
         onClick={() => navigate(`/account/history/${account.id}`)}
         className="flex items-center justify-between py-4 px-5 border-b border-white/5 active:bg-white/5 transition-colors cursor-pointer"
+        data-account-id={normalizedId}
       >
         <div className="flex flex-col gap-0.5">
           <span className="text-[15px] font-medium text-slate-200">{account.name}</span>
+          <span className="text-[9px] text-slate-500 font-bold uppercase tracking-widest">{account.type}</span>
         </div>
         <span className={`text-[15px] font-medium ${isNegative ? 'text-red-400' : 'text-blue-400'}`}>
           $ {formatValue(account.balance || 0)}
@@ -70,6 +82,43 @@ const FinanceAccountsScreen: React.FC = () => {
       <h3 className="text-[11px] font-bold uppercase tracking-widest text-slate-500">{title}</h3>
     </div>
   );
+
+  // 5. Renderizado data-driven
+  const renderCategorizedAccounts = () => {
+    const renderedIds = new Set<string>();
+    const sections: React.ReactNode[] = [];
+
+    // Cuentas por categoría existente
+    categories.forEach(cat => {
+      const catAccs = visibleAccounts.filter(a => a.categoryId === cat.id);
+      if (catAccs.length > 0) {
+        sections.push(
+          <section key={cat.id}>
+            <SectionHeader title={cat.name} />
+            {catAccs.map(acc => {
+              renderedIds.add(acc.id!);
+              return <AccountRow key={acc.id} account={acc} />;
+            })}
+          </section>
+        );
+      }
+    });
+
+    // Cuentas sin categoría o con categoría inexistente (incluyendo "Fiesta")
+    const remainingAccs = visibleAccounts.filter(a => !renderedIds.has(a.id!));
+    if (remainingAccs.length > 0) {
+      sections.push(
+        <section key="others">
+          <SectionHeader title="OTROS / NO CATEGORIZADOS" />
+          {remainingAccs.map(acc => <AccountRow key={acc.id} account={acc} />)}
+        </section>
+      );
+    }
+
+    return { sections, renderedCount: visibleAccounts.length };
+  };
+
+  const { sections, renderedCount } = useMemo(() => renderCategorizedAccounts(), [visibleAccounts, categories]);
 
   return (
     <div className="relative flex flex-col h-screen w-full max-w-md mx-auto bg-[#0f172a] font-display antialiased overflow-hidden pb-16">
@@ -105,6 +154,14 @@ const FinanceAccountsScreen: React.FC = () => {
         </div>
       </header>
 
+      {/* 6. Diagnóstico de discrepancias */}
+      {!loading && renderedCount !== visibleAccounts.length && (
+        <div className="bg-red-500/20 px-5 py-2 flex items-center gap-2">
+          <span className="material-symbols-outlined text-red-400 text-sm">warning</span>
+          <span className="text-[10px] font-bold text-red-200 uppercase">Error de renderizado: {visibleAccounts.length - renderedCount} cuenta(s) ocultas.</span>
+        </div>
+      )}
+
       <div className="px-5 py-6 grid grid-cols-3 gap-1 bg-[#0f172a] border-b border-white/5">
         <div className="text-center">
           <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Capital</p>
@@ -125,24 +182,7 @@ const FinanceAccountsScreen: React.FC = () => {
           <div className="p-10 flex justify-center"><span className="material-symbols-outlined animate-spin text-slate-600">sync</span></div>
         ) : (
           <div className="pb-24">
-            {categories.map(cat => {
-              const catAccs = accounts.filter(a => a.categoryId === cat.id);
-              if (catAccs.length === 0) return null;
-              return (
-                <section key={cat.id}>
-                  <SectionHeader title={cat.name} />
-                  {catAccs.map(acc => <AccountRow key={acc.id} account={acc} />)}
-                </section>
-              );
-            })}
-
-            {/* Cuentas sin categoría asignada o especiales (ej. Capital) */}
-            {accounts.filter(a => !a.categoryId).length > 0 && (
-              <section>
-                <SectionHeader title="OTROS / CAPITAL" />
-                {accounts.filter(a => !a.categoryId).map(acc => <AccountRow key={acc.id} account={acc} />)}
-              </section>
-            )}
+            {sections}
           </div>
         )}
       </main>

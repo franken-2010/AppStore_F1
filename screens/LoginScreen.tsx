@@ -30,6 +30,11 @@ const LoginScreen: React.FC = () => {
   const isPWA = (window as any).isPWA;
 
   useEffect(() => {
+    // Si ya hay una sesión, redirigir al Dashboard
+    const unsub = auth.onAuthStateChanged(user => {
+      if (user) navigate('/dashboard');
+    });
+
     const savedEmail = localStorage.getItem('f1_remembered_email');
     if (savedEmail) {
       setEmail(savedEmail);
@@ -39,7 +44,8 @@ const LoginScreen: React.FC = () => {
       (window.PublicKeyCredential as any).isUserVerifyingPlatformAuthenticatorAvailable()
         .then((available: boolean) => setIsBiometricSupported(available));
     }
-  }, [isIframe]);
+    return () => unsub();
+  }, [isIframe, navigate]);
 
   const handleBiometricLogin = async () => {
     const biometricData = localStorage.getItem('biometric_credential');
@@ -91,8 +97,6 @@ const LoginScreen: React.FC = () => {
   };
 
   const handleInstallPWA = () => {
-    // Siempre redirigimos a la guía de instalación para asegurar que el usuario
-    // entienda cómo hacerlo fuera del iframe
     navigate('/install');
   };
 
