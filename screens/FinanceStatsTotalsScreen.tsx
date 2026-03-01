@@ -201,7 +201,7 @@ const FinanceStatsTotalsScreen: React.FC = () => {
           <div className="space-y-8 animate-in fade-in duration-500 slide-in-from-bottom-4">
             {activeTab === 'resumen' ? (
               <>
-                <div className="p-8 bg-gradient-to-br from-indigo-600 via-indigo-700 to-blue-700 rounded-[3rem] text-white shadow-2xl shadow-indigo-500/30 relative overflow-hidden group">
+                <div className="p-8 bg-gradient-to-br from-indigo-500 via-indigo-600 to-blue-600 rounded-[3rem] text-white shadow-2xl shadow-indigo-500/30 relative overflow-hidden group">
                    <div className="relative z-10">
                     <p className="text-[10px] font-black uppercase tracking-widest text-indigo-100/70 mb-2">Resultado Operativo</p>
                     <h2 className="text-4xl font-black tracking-tighter mb-4 group-hover:scale-105 transition-transform origin-left duration-500">
@@ -233,7 +233,7 @@ const FinanceStatsTotalsScreen: React.FC = () => {
                 <div className="space-y-6">
                   <div className="flex items-center justify-between px-1">
                     <h3 className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-400">Comparativa por Rubro</h3>
-                    <span className="text-[9px] font-bold text-indigo-500 bg-indigo-500/10 px-3 py-1 rounded-full uppercase">Flujo Neto</span>
+                    <span className="text-[9px] font-bold text-indigo-400 bg-indigo-400/10 px-3 py-1 rounded-full uppercase">Flujo Neto</span>
                   </div>
                   
                   {(Object.entries(statsByAccount) as [string, AccountStats][]).sort((a, b) => b[1].income - a[1].income).map(([id, data]) => {
@@ -249,11 +249,11 @@ const FinanceStatsTotalsScreen: React.FC = () => {
                             <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-1">ID: {id}</p>
                           </div>
                           <div className="text-right">
-                            <p className={`text-lg font-black tracking-tighter ${data.net >= 0 ? 'text-slate-900 dark:text-white' : 'text-red-500'}`}>
+                            <p className={`text-lg font-black tracking-tighter ${data.net >= 0 ? 'text-slate-900 dark:text-white' : 'text-rose-500 dark:text-rose-400'}`}>
                               {formatMXN(data.net)}
                             </p>
                             <div className="flex items-center justify-end gap-1 mt-0.5">
-                               <span className={`size-1.5 rounded-full ${data.net >= 0 ? 'bg-emerald-500' : 'bg-red-500'}`}></span>
+                               <span className={`size-1.5 rounded-full ${data.net >= 0 ? 'bg-emerald-500' : 'bg-rose-500 dark:bg-rose-400'}`}></span>
                                <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">Resultado</p>
                             </div>
                           </div>
@@ -295,11 +295,11 @@ const FinanceStatsTotalsScreen: React.FC = () => {
                 <div className="bg-white dark:bg-surface-dark rounded-[3rem] p-8 shadow-sm border border-slate-100 dark:border-white/5 relative overflow-hidden">
                   <div className="relative z-10 text-center space-y-2 mb-10">
                     <p className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-400">Total {activeTab}</p>
-                    <p className={`text-5xl font-black tracking-tighter ${activeTab === 'ingresos' ? 'text-emerald-500' : 'text-red-500'}`}>
+                    <p className={`text-5xl font-black tracking-tighter ${activeTab === 'ingresos' ? 'text-emerald-500 dark:text-emerald-400' : 'text-rose-500 dark:text-rose-400'}`}>
                       {formatMXN(activeTab === 'ingresos' ? totals.income : totals.expense)}
                     </p>
                     <div className="flex justify-center pt-2">
-                       <span className={`px-4 py-1.5 rounded-full text-[9px] font-black uppercase tracking-widest ${activeTab === 'ingresos' ? 'bg-emerald-500/10 text-emerald-500' : 'bg-red-500/10 text-red-500'}`}>
+                       <span className={`px-4 py-1.5 rounded-full text-[9px] font-black uppercase tracking-widest ${activeTab === 'ingresos' ? 'bg-emerald-500/10 text-emerald-500 dark:text-emerald-400' : 'bg-rose-500/10 text-rose-500 dark:text-rose-400'}`}>
                          {movements.filter(m => {
                             const type = (m.type as any);
                             return activeTab === 'ingresos' ? (type === 'INCOME' || type === 'INGRESO') : (type === 'EXPENSE' || type === 'EGRESO');
@@ -314,7 +314,7 @@ const FinanceStatsTotalsScreen: React.FC = () => {
                       .map(([id, data]) => (
                       <div key={id} className="space-y-6">
                         <div className="flex items-center gap-4">
-                          <div className={`size-10 rounded-2xl flex items-center justify-center ${activeTab === 'ingresos' ? 'bg-emerald-500/10 text-emerald-500' : 'bg-red-500/10 text-red-500'}`}>
+                          <div className={`size-10 rounded-2xl flex items-center justify-center ${activeTab === 'ingresos' ? 'bg-emerald-500/10 text-emerald-500 dark:text-emerald-400' : 'bg-rose-500/10 text-rose-500 dark:text-rose-400'}`}>
                             <span className="material-symbols-outlined text-xl">{activeTab === 'ingresos' ? 'call_received' : 'call_made'}</span>
                           </div>
                           <div className="flex-1">

@@ -14,8 +14,8 @@ const AddProviderScreen: React.FC = () => {
   
   const [saving, setSaving] = useState(false);
   const [formData, setFormData] = useState({
-    name: '',        // Empresa
-    contactName: '', // Persona
+    name: '',        // Empresa/Proveedor
+    contactName: '', // Persona de contacto
     whatsapp: ''
   });
 
@@ -24,7 +24,7 @@ const AddProviderScreen: React.FC = () => {
     return text
       .toLowerCase()
       .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g, "") // Quita diacríticos
+      .replace(/[\u0300-\u036f]/g, "")
       .replace(/ñ/g, "n")
       .replace(/[^a-z0-9\s]/g, '')
       .replace(/\s+/g, ' ')
@@ -34,49 +34,45 @@ const AddProviderScreen: React.FC = () => {
   const handleSave = async () => {
     if (!user) return;
     
-    if (!formData.contactName.trim()) {
-      alert("El nombre del contacto es obligatorio");
-      return;
-    }
-
-    if (!formData.name.trim()) {
-      alert("El nombre de la empresa/proveedor es obligatorio");
+    if (!formData.contactName.trim() || !formData.name.trim()) {
+      alert("Nombre de contacto y empresa son obligatorios.");
       return;
     }
 
     setSaving(true);
 
     try {
-      const contactNameNorm = normalizeText(formData.contactName);
-      const nameNorm = normalizeText(formData.name);
+      const searchName = normalizeText(formData.name);
       
-      // Limpiar teléfono: solo números y el signo + al inicio si existe
-      let cleanTel = formData.whatsapp.trim();
-      const hasPlus = cleanTel.startsWith('+');
-      cleanTel = cleanTel.replace(/\D/g, '');
-      if (hasPlus) cleanTel = '+' + cleanTel;
+      // Normalización de Teléfono (Regla F1: 521 + 10 dígitos)
+      let cleanDigits = formData.whatsapp.replace(/\D/g, '');
+      let whatsappPhone = cleanDigits;
       
-      // Convención México si tiene 10 dígitos y no tiene prefijo
-      if (!hasPlus && cleanTel.length === 10) {
-        cleanTel = '52' + cleanTel;
+      if (cleanDigits.length === 10) {
+        whatsappPhone = '521' + cleanDigits;
+      } else if (whatsappPhone.length > 0 && !whatsappPhone.startsWith('521')) {
+        // Si ya tiene algún formato pero no el ideal, intentamos corregir
+        if (whatsappPhone.startsWith('52') && whatsappPhone.length === 12) {
+          whatsappPhone = '521' + whatsappPhone.substring(2);
+        }
       }
 
-      const providersRef = collection(db, "users", user.uid, "providers");
-      const docRef = await addDoc(providersRef, {
-        name: formData.name.trim(),
-        name_norm: nameNorm,
-        contact_name: formData.contactName.trim(),
-        contact_name_norm: contactNameNorm,
-        whatsapp: cleanTel,
+      const directoryRef = collection(db, "suppliers_directory");
+      await addDoc(directoryRef, {
+        uid: user.uid,
+        contactName: formData.contactName.trim(),
+        supplierName: formData.name.trim(),
+        whatsappPhone: whatsappPhone,
+        phoneRaw: formData.whatsapp.trim(),
+        searchName: searchName,
+        isActive: true,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp()
       });
 
-      console.log("PROVIDER_CREATE", docRef.id);
-
       addNotification({
         title: 'Proveedor Guardado',
-        message: `${formData.contactName} ha sido agregado al directorio ✅`,
+        message: `${formData.contactName} (${formData.name}) añadido al directorio ✅`,
         type: 'system'
       });
 
@@ -115,35 +111,38 @@ const AddProviderScreen: React.FC = () => {
           </div>
 
           <div className="flex flex-col gap-2">
-            <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Empresa / Proveedor</label>
+            <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Empresa / Distribuidora</label>
             <input 
               type="text"
               value={formData.name}
               onChange={(e) => setFormData({...formData, name: e.target.value})}
-              placeholder="Ej: Bimbo, Coca-Cola..."
+              placeholder="Ej: Sabritas, Coca-Cola, Local..."
               className="w-full bg-white dark:bg-surface-dark border border-slate-200 dark:border-white/5 rounded-2xl py-4 px-6 text-sm font-bold outline-none focus:ring-2 focus:ring-primary shadow-sm dark:text-white"
             />
           </div>
 
           <div className="flex flex-col gap-2">
-            <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">WhatsApp / Teléfono</label>
+            <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">WhatsApp (10 dígitos)</label>
             <div className="relative">
               <input 
                 type="tel"
                 value={formData.whatsapp}
                 onChange={(e) => setFormData({...formData, whatsapp: e.target.value})}
-                placeholder="Ej: 55 1234 5678"
+                placeholder="999 123 4567"
                 className="w-full bg-white dark:bg-surface-dark border border-slate-200 dark:border-white/5 rounded-2xl py-4 px-6 pl-12 text-sm font-bold outline-none focus:ring-2 focus:ring-primary shadow-sm dark:text-white"
               />
               <span className="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-emerald-500">chat</span>
             </div>
+            <p className="text-[9px] font-bold text-slate-400 uppercase tracking-tighter px-1">
+              Se guardará automáticamente con prefijo México (521).
+            </p>
           </div>
         </div>
 
         <div className="pt-10">
           <button 
             onClick={handleSave}
-            disabled={saving || !formData.contactName.trim() || !formData.name.trim()}
+            disabled={saving}
             className="w-full py-5 bg-primary hover:bg-primary-dark text-white font-black rounded-3xl shadow-xl shadow-primary/20 active:scale-95 transition-all flex items-center justify-center gap-3 disabled:opacity-50"
           >
             {saving ? <span className="material-symbols-outlined animate-spin">sync</span> : <span className="material-symbols-outlined">save</span>}

@@ -6,13 +6,8 @@ import { db } from '../services/firebase';
 import { 
   doc, 
   getDoc, 
-  writeBatch, 
-  increment, 
   serverTimestamp, 
   Timestamp,
-  collectionGroup,
-  query,
-  where,
   getDocs,
   collection,
   runTransaction
@@ -84,27 +79,21 @@ const EditMovementScreen: React.FC = () => {
       const oldMovRef = doc(db, "users", user.uid, "accounts", docId, "movements", movementId);
 
       await runTransaction(db, async (transaction) => {
-        // 1. Obtener datos actuales de la base
         const currentMovSnap = await transaction.get(oldMovRef);
         if (!currentMovSnap.exists()) throw new Error("El movimiento ya no existe.");
         const currentMov = currentMovSnap.data() as AccountMovement;
 
-        // 2. Calcular Impacto Anterior
-        // Solo impactó si era ACTIVE. Si ya era VOID, el impacto previo era 0.
         let oldImpact = 0;
         if (currentMov.status !== 'VOID') {
           const isOldIncome = currentMov.type === 'INCOME' || (currentMov.type as any) === 'INGRESO';
           oldImpact = isOldIncome ? currentMov.amount : -currentMov.amount;
         }
 
-        // 3. Calcular Impacto Nuevo
-        // Solo impactará si el nuevo estado es ACTIVE.
         let newImpact = 0;
         if (formData.status === 'ACTIVE') {
           newImpact = formData.type === 'INCOME' ? formData.amount : -formData.amount;
         }
 
-        // 4. Actualizar Balances
         if (!isAccountChanged) {
           const delta = newImpact - oldImpact;
           if (delta !== 0) {
@@ -113,7 +102,6 @@ const EditMovementScreen: React.FC = () => {
             transaction.update(oldAccRef, { balance: currentBal + delta, updatedAt: serverTimestamp() });
           }
           
-          // Actualizar movimiento existente
           transaction.update(oldMovRef, {
             amount: Number(formData.amount),
             type: formData.type,
@@ -126,21 +114,18 @@ const EditMovementScreen: React.FC = () => {
             ...(formData.status === 'VOID' && currentMov.status !== 'VOID' ? { voidedAt: serverTimestamp(), voidedBy: user.uid } : {})
           });
         } else {
-          // Cambio de cuenta: Revertir en vieja, aplicar en nueva
           const oldAccSnap = await transaction.get(oldAccRef);
           transaction.update(oldAccRef, { balance: (oldAccSnap.data()?.balance || 0) - oldImpact, updatedAt: serverTimestamp() });
 
           const newAccSnap = await transaction.get(newAccRef);
           transaction.update(newAccRef, { balance: (newAccSnap.data()?.balance || 0) + newImpact, updatedAt: serverTimestamp() });
 
-          // Marcar original como MOVED
           transaction.update(oldMovRef, { 
             status: 'MOVED', 
             movedTo: { accountDocId: formData.targetAccountDocId, movementId: movementId },
             updatedAt: serverTimestamp() 
           });
 
-          // Crear nuevo movimiento en cuenta destino
           const newMovRef = doc(collection(db, "users", user.uid, "accounts", formData.targetAccountDocId, "movements"));
           transaction.set(newMovRef, {
             uid: user.uid,
@@ -169,118 +154,117 @@ const EditMovementScreen: React.FC = () => {
     }
   };
 
-  if (fetching) return <div className="min-h-screen bg-background-dark flex items-center justify-center"><span className="material-symbols-outlined animate-spin text-primary">sync</span></div>;
+  if (fetching) return <div className="min-h-screen bg-[#0a0f1d] flex items-center justify-center"><span className="material-symbols-outlined animate-spin text-blue-400">sync</span></div>;
 
   return (
-    <div className="relative flex flex-col h-screen w-full max-w-md mx-auto bg-background-dark font-display text-white overflow-hidden">
-      <header className="pt-12 px-6 pb-6 border-b border-white/5 flex justify-between items-center bg-background-dark/95 backdrop-blur-md sticky top-0 z-50">
-        <button onClick={() => navigate(-1)} className="p-2 -ml-2 text-white active:scale-90"><span className="material-symbols-outlined text-[28px]">close</span></button>
-        <h1 className="text-xl font-black tracking-tight">Editar Movimiento</h1>
-        <div className="w-10"></div>
+    <div className="relative flex flex-col h-screen w-full max-w-md mx-auto bg-[#0a0f1d] font-display text-white overflow-hidden">
+      <header className="pt-12 px-6 pb-3 flex justify-between items-center bg-[#0a0f1d] border-b border-white/5 shrink-0">
+        <button onClick={() => navigate(-1)} className="p-1 -ml-1 text-slate-400 active:text-white active:scale-90 transition-all">
+          <span className="material-symbols-outlined text-[28px]">close</span>
+        </button>
+        <h1 className="text-sm font-black tracking-[0.15em] uppercase text-white">Editar Operación</h1>
+        <div className="w-8"></div>
       </header>
 
-      <main className="flex-1 p-6 space-y-7 overflow-y-auto no-scrollbar pb-40">
-        <div className="p-1 bg-white/5 rounded-2xl flex border border-white/5 shadow-inner">
-          <button 
-            type="button"
-            onClick={() => setFormData({...formData, type: 'INCOME'})} 
-            className={`flex-1 py-3.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${formData.type === 'INCOME' ? 'bg-primary text-white shadow-lg shadow-primary/20' : 'text-slate-500 hover:text-slate-300'}`}
-          >
-            Ingreso
-          </button>
-          <button 
-            type="button"
-            onClick={() => setFormData({...formData, type: 'EXPENSE'})} 
-            className={`flex-1 py-3.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${formData.type === 'EXPENSE' ? 'bg-red-500 text-white shadow-lg shadow-red-500/20' : 'text-slate-500 hover:text-slate-300'}`}
-          >
-            Egreso
-          </button>
-        </div>
-
-        <MoneyInputWithCalculator 
-          label="Monto" 
-          field="amount" 
-          value={formData.amount} 
-          onChange={(_, v) => setFormData({...formData, amount: parseFloat(v) || 0})} 
-        />
-
-        <div className="space-y-2">
-          <label className="text-[10px] font-black uppercase text-slate-500 tracking-widest ml-1">Cuenta de Origen</label>
-          <select 
-            value={formData.targetAccountDocId} 
-            onChange={e => setFormData({...formData, targetAccountDocId: e.target.value})}
-            className="w-full bg-white/5 border border-white/5 rounded-2xl py-4.5 px-6 font-bold text-white outline-none focus:ring-2 focus:ring-primary/20 appearance-none shadow-sm"
-          >
-            {accounts.map(acc => (
-              <option key={acc.id} value={acc.id} className="bg-surface-dark">{acc.name} ({acc.type})</option>
-            ))}
-          </select>
-        </div>
-
-        <div className="space-y-2">
-          <label className="text-[10px] font-black uppercase text-slate-500 tracking-widest ml-1">Estatus del Movimiento</label>
-          <div className="grid grid-cols-2 gap-3">
-             <button 
-               type="button"
-               onClick={() => setFormData({...formData, status: 'ACTIVE'})}
-               className={`py-4 rounded-2xl text-[11px] font-black uppercase tracking-widest border transition-all ${formData.status === 'ACTIVE' ? 'bg-emerald-500/10 border-emerald-500 text-emerald-500 shadow-lg' : 'bg-white/5 border-white/5 text-slate-500'}`}
-             >
-               Activo
-             </button>
-             <button 
-               type="button"
-               onClick={() => setFormData({...formData, status: 'VOID'})}
-               className={`py-4 rounded-2xl text-[11px] font-black uppercase tracking-widest border transition-all ${formData.status === 'VOID' ? 'bg-red-500/10 border-red-500 text-red-500 shadow-lg' : 'bg-white/5 border-white/5 text-slate-500'}`}
-             >
-               Anulado (VOID)
-             </button>
+      <main className="flex-1 p-5 space-y-4 flex flex-col justify-between overflow-hidden">
+        <div className="space-y-4">
+          {/* Switch de Tipo Compacto */}
+          <div className="p-1 bg-white/5 rounded-2xl flex border border-white/5 shadow-inner shrink-0">
+            <button 
+              type="button"
+              onClick={() => setFormData({...formData, type: 'INCOME'})} 
+              className={`flex-1 py-3 rounded-[14px] text-[10px] font-black uppercase tracking-widest transition-all ${formData.type === 'INCOME' ? 'bg-blue-500 text-white shadow-lg shadow-primary/20' : 'text-slate-500'}`}
+            >
+              Entrada
+            </button>
+            <button 
+              type="button"
+              onClick={() => setFormData({...formData, type: 'EXPENSE'})} 
+              className={`flex-1 py-3 rounded-[14px] text-[10px] font-black uppercase tracking-widest transition-all ${formData.type === 'EXPENSE' ? 'bg-rose-400 text-white shadow-lg shadow-rose-500/20' : 'text-slate-500'}`}
+            >
+              Salida
+            </button>
           </div>
-          {formData.status === 'VOID' && (
-            <p className="text-[9px] font-bold text-red-400 uppercase text-center mt-2 animate-pulse tracking-tighter">
-              ⚠️ Al guardar como VOID, el balance se ajustará automáticamente.
-            </p>
-          )}
-        </div>
 
-        <div className="space-y-2">
-          <label className="text-[10px] font-black uppercase text-slate-500 tracking-widest ml-1">Concepto</label>
-          <input 
-            value={formData.title} 
-            onChange={e => setFormData({...formData, title: e.target.value})} 
-            className="w-full bg-white/5 border border-white/5 rounded-2xl py-4.5 px-6 font-bold text-white outline-none focus:ring-2 focus:ring-primary/20 shadow-sm"
-            placeholder="Título del movimiento"
+          <MoneyInputWithCalculator 
+            label="Monto de la Operación" 
+            field="amount" 
+            value={formData.amount} 
+            onChange={(_, v) => setFormData({...formData, amount: parseFloat(v) || 0})} 
           />
+
+          <div className="grid grid-cols-2 gap-3 shrink-0">
+            <div className="space-y-1">
+              <label className="text-[9px] font-black uppercase text-slate-500 tracking-widest ml-1">Cuenta Destino</label>
+              <div className="relative">
+                <select 
+                  value={formData.targetAccountDocId} 
+                  onChange={e => setFormData({...formData, targetAccountDocId: e.target.value})}
+                  className="w-full bg-white/5 border border-white/5 rounded-xl py-3 px-4 font-bold text-[12px] text-white outline-none appearance-none pr-8"
+                >
+                  {accounts.map(acc => (
+                    <option key={acc.id} value={acc.id} className="bg-[#1a1f2e]">{acc.name}</option>
+                  ))}
+                </select>
+                <span className="material-symbols-outlined absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none text-sm">expand_more</span>
+              </div>
+            </div>
+            <div className="space-y-1">
+              <label className="text-[9px] font-black uppercase text-slate-500 tracking-widest ml-1">Estatus</label>
+              <div className="relative">
+                <select 
+                  value={formData.status} 
+                  onChange={e => setFormData({...formData, status: e.target.value as any})}
+                  className={`w-full border rounded-xl py-3 px-4 font-bold text-[12px] outline-none appearance-none pr-8 ${formData.status === 'ACTIVE' ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400' : 'bg-rose-500/10 border-rose-500/30 text-rose-400'}`}
+                >
+                  <option value="ACTIVE" className="bg-[#1a1f2e]">ACTIVO</option>
+                  <option value="VOID" className="bg-[#1a1f2e]">ANULADO</option>
+                </select>
+                <span className="material-symbols-outlined absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none text-sm">expand_more</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="space-y-1 shrink-0">
+            <label className="text-[9px] font-black uppercase text-slate-500 tracking-widest ml-1">Concepto o Título</label>
+            <input 
+              value={formData.title} 
+              onChange={e => setFormData({...formData, title: e.target.value})} 
+              className="w-full bg-white/5 border border-white/5 rounded-xl py-3.5 px-4 font-bold text-sm text-white outline-none focus:ring-1 focus:ring-blue-400/40"
+              placeholder="Ej. VENTA MAYORISTA..."
+            />
+          </div>
+
+          <div className="space-y-1 shrink-0">
+            <label className="text-[9px] font-black uppercase text-slate-500 tracking-widest ml-1">Fecha de Registro</label>
+            <input 
+              type="datetime-local" 
+              value={new Date(formData.effectiveAt.getTime() - formData.effectiveAt.getTimezoneOffset() * 60000).toISOString().slice(0, 16)} 
+              onChange={e => setFormData({...formData, effectiveAt: new Date(e.target.value)})} 
+              className="w-full bg-white/5 border border-white/5 rounded-xl py-3 px-4 font-bold text-xs text-white outline-none" 
+            />
+          </div>
+
+          <div className="space-y-1 shrink-0">
+            <label className="text-[9px] font-black uppercase text-slate-500 tracking-widest ml-1">Notas (Opcional)</label>
+            <textarea 
+              value={formData.notes} 
+              onChange={e => setFormData({...formData, notes: e.target.value})} 
+              className="w-full bg-white/5 border border-white/5 rounded-xl py-3 px-4 font-bold text-xs text-white outline-none h-16 resize-none no-scrollbar" 
+              placeholder="Detalles de la transacción..."
+            />
+          </div>
         </div>
 
-        <div className="space-y-2">
-          <label className="text-[10px] font-black uppercase text-slate-500 tracking-widest ml-1">Fecha Contable</label>
-          <input 
-            type="datetime-local" 
-            value={new Date(formData.effectiveAt.getTime() - formData.effectiveAt.getTimezoneOffset() * 60000).toISOString().slice(0, 16)} 
-            onChange={e => setFormData({...formData, effectiveAt: new Date(e.target.value)})} 
-            className="w-full bg-white/5 border border-white/5 rounded-2xl py-4.5 px-6 font-bold text-white outline-none focus:ring-2 focus:ring-primary/20 shadow-sm" 
-          />
-        </div>
-
-        <div className="space-y-2">
-          <label className="text-[10px] font-black uppercase text-slate-500 tracking-widest ml-1">Notas Internas</label>
-          <textarea 
-            value={formData.notes} 
-            onChange={e => setFormData({...formData, notes: e.target.value})} 
-            className="w-full bg-white/5 border border-white/5 rounded-2xl py-4.5 px-6 font-bold text-white outline-none min-h-[120px] resize-none focus:ring-2 focus:ring-primary/20 shadow-sm" 
-            placeholder="Escribe detalles adicionales aquí..."
-          />
-        </div>
-
-        <div className="pt-4 pb-12">
+        <div className="pt-2 pb-6">
            <button 
              type="button"
              onClick={handleSave} 
              disabled={loading || !formData.amount || !formData.title} 
-             className="w-full py-5 bg-primary text-white font-black rounded-3xl shadow-xl shadow-primary/30 active:scale-95 disabled:opacity-50 transition-all flex items-center justify-center gap-3"
+             className="w-full py-5 bg-blue-500 text-white font-black rounded-2xl shadow-xl shadow-primary/20 active:scale-95 disabled:opacity-50 transition-all flex items-center justify-center gap-3 text-xs uppercase tracking-widest"
            >
-             {loading ? <span className="material-symbols-outlined animate-spin text-xl">sync</span> : <span className="material-symbols-outlined text-xl">verified</span>}
-             {loading ? 'Sincronizando...' : 'Guardar Cambios F1'}
+             {loading ? <span className="material-symbols-outlined animate-spin">sync</span> : <span className="material-symbols-outlined">verified</span>}
+             {loading ? 'Sincronizando...' : 'Confirmar Cambios'}
            </button>
         </div>
       </main>

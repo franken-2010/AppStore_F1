@@ -44,17 +44,41 @@ const AccountChartsScreen: React.FC = () => {
       try {
         const accSnap = await getDoc(doc(db, "users", user.uid, "accounts", docId));
         if (accSnap.exists()) {
-          const accData = accSnap.data() as AccountingAccount;
-          setAccount({ id: accSnap.id, ...accData });
+          const accData = accSnap.data();
+          setAccount({ 
+            id: accSnap.id, 
+            accountId: String(accData.accountId || ''),
+            name: String(accData.name || ''),
+            balance: Number(accData.balance || 0),
+            type: accData.type
+          } as AccountingAccount);
 
           const q = query(
             collection(db, "users", user.uid, "accounts", docId, "movements"),
-            where("effectiveAt", ">=", Timestamp.fromDate(dateRange.start)),
-            where("effectiveAt", "<=", Timestamp.fromDate(dateRange.end)),
-            orderBy("effectiveAt", "asc")
+            where("createdAt", ">=", Timestamp.fromDate(dateRange.start)),
+            where("createdAt", "<=", Timestamp.fromDate(dateRange.end)),
+            orderBy("createdAt", "asc")
           );
           const movSnap = await getDocs(q);
-          setMovements(movSnap.docs.map(d => ({ id: d.id, ...d.data() } as AccountMovement)).filter(m => m.status === 'ACTIVE' || !m.status));
+          
+          // Scrubbing manual para evitar estructuras circulares
+          const list = movSnap.docs.map(d => {
+            const data = d.data();
+            return {
+              id: d.id,
+              uid: user.uid,
+              accountId: String(data.accountId || ''),
+              amount: Number(data.amount || 0),
+              type: data.type,
+              conceptTitle: String(data.conceptTitle || ''),
+              conceptSubtitle: String(data.conceptSubtitle || ''),
+              source: String(data.source || ''),
+              status: String(data.status || 'ACTIVE'),
+              createdAt: data.createdAt?.toMillis ? data.createdAt.toMillis() : Date.now()
+            } as any;
+          }).filter(m => m.status === 'ACTIVE' || !m.status);
+
+          setMovements(list);
         }
       } catch (e) {
         console.error("Error fetching charts data:", e);
@@ -75,7 +99,7 @@ const AccountChartsScreen: React.FC = () => {
   const selectedMovements = useMemo(() => {
     if (!selectedDay) return [];
     return movements.filter(m => {
-      const mDate = m.effectiveAt?.toDate().toISOString().split('T')[0];
+      const mDate = new Date(m.createdAt as any).toISOString().split('T')[0];
       return mDate === selectedDay;
     });
   }, [movements, selectedDay]);
@@ -132,7 +156,7 @@ const AccountChartsScreen: React.FC = () => {
         </div>
       </header>
 
-      <div className="flex items-center justify-between py-6 px-7 bg-[#111827] border-b border-white/5">
+      <div className="flex items-center justify-between py-5 px-7 bg-[#111827] border-b border-white/5">
         <button onClick={() => changePeriod(-1)} className="p-2 text-slate-500 active:text-white"><span className="material-symbols-outlined">chevron_left</span></button>
         <div className="text-center">
           <span className="text-sm font-black uppercase tracking-[0.2em] text-white">{months[currentDate.getMonth()]} {currentDate.getFullYear()}</span>
@@ -141,13 +165,13 @@ const AccountChartsScreen: React.FC = () => {
         <button onClick={() => changePeriod(1)} className="p-2 text-slate-500 active:text-white"><span className="material-symbols-outlined">chevron_right</span></button>
       </div>
 
-      <main className="flex-1 overflow-y-auto no-scrollbar p-6 space-y-10">
+      <main className="flex-1 overflow-y-auto no-scrollbar p-6 space-y-10 pb-32">
         <section className="animate-in fade-in slide-in-from-top-4 duration-500">
           <div className="flex items-center justify-between mb-2">
             <h3 className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-500">Volumen Diario</h3>
             <div className="flex gap-3">
-              <div className="flex items-center gap-1"><div className="size-2 bg-blue-500 rounded-full"></div><span className="text-[8px] font-black text-slate-500 uppercase">Ingresos</span></div>
-              <div className="flex items-center gap-1"><div className="size-2 bg-red-500 rounded-full"></div><span className="text-[8px] font-black text-slate-500 uppercase">Egresos</span></div>
+              <div className="flex items-center gap-1"><div className="size-2 bg-blue-500 rounded-full"></div><span className="text-[8px] font-black text-slate-500 uppercase">IN</span></div>
+              <div className="flex items-center gap-1"><div className="size-2 bg-red-500 rounded-full"></div><span className="text-[8px] font-black text-slate-500 uppercase">OUT</span></div>
             </div>
           </div>
           <div className="bg-white/5 p-6 rounded-[2.5rem] border border-white/5 shadow-inner">
@@ -156,45 +180,44 @@ const AccountChartsScreen: React.FC = () => {
                 <BarChart />
                 <div className="flex justify-between mt-4">
                   <span className="text-[8px] font-black text-slate-600 uppercase">01 {months[currentDate.getMonth()]}</span>
-                  <p className="text-[9px] font-black text-primary uppercase">Toca una barra para filtrar</p>
+                  <p className="text-[9px] font-black text-primary uppercase">Toca una barra</p>
                   <span className="text-[8px] font-black text-slate-600 uppercase">{dailyHistory.length} {months[currentDate.getMonth()]}</span>
                 </div>
               </>
             ) : (
               <div className="h-48 flex flex-col items-center justify-center space-y-3">
                 <span className="material-symbols-outlined text-4xl text-slate-700">query_stats</span>
-                <p className="text-xs text-slate-600 font-black uppercase tracking-widest">Sin datos este mes</p>
+                <p className="text-xs text-slate-600 font-black uppercase tracking-widest">Sin datos registrados</p>
               </div>
             )}
           </div>
         </section>
 
-        {/* Detalle Dinámico */}
-        <section className="pb-32 animate-in slide-in-from-bottom-6 duration-700">
+        <section className="animate-in slide-in-from-bottom-6 duration-700">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-500">
-              {selectedDay ? `Movimientos: ${new Date(selectedDay + 'T00:00:00').toLocaleDateString('es-MX', { day: '2-digit', month: 'long' })}` : 'Resumen del Periodo'}
+              {selectedDay ? `Movimientos: ${new Date(selectedDay + 'T00:00:00').toLocaleDateString('es-MX', { day: '2-digit', month: 'long' })}` : 'Resumen Estructural'}
             </h3>
             {selectedDay && (
-              <button onClick={() => setSelectedDay(null)} className="text-[9px] font-black text-primary uppercase border-b border-primary/30">Ver todo</button>
+              <button onClick={() => setSelectedDay(null)} className="text-[9px] font-black text-primary uppercase border-b border-primary/30">Limpiar</button>
             )}
           </div>
 
-          <div className="space-y-4">
+          <div className="space-y-3">
             {selectedDay ? (
               selectedMovements.length > 0 ? (
                 selectedMovements.map((m, i) => (
                   <div 
                     key={m.id || i}
                     onClick={() => navigate(`/account/history/${docId}`)}
-                    className="p-5 bg-white/5 rounded-3xl border border-white/5 flex items-center justify-between active:bg-white/10 transition-colors cursor-pointer group"
+                    className="p-4 bg-white/5 rounded-[1.5rem] border border-white/5 flex items-center justify-between active:bg-white/10 transition-colors cursor-pointer group"
                   >
-                    <div className="flex-1 pr-4">
-                      <p className="text-[13px] font-black text-slate-200 uppercase group-hover:text-primary transition-colors">{m.conceptTitle}</p>
-                      <p className="text-[9px] font-bold text-slate-500 uppercase tracking-widest mt-0.5">{m.conceptSubtitle || m.source}</p>
+                    <div className="flex-1 min-w-0 pr-4">
+                      <p className="text-[12px] font-black text-slate-200 uppercase truncate group-hover:text-primary transition-colors">{m.conceptTitle}</p>
+                      <p className="text-[9px] font-bold text-slate-500 uppercase tracking-tight mt-0.5 truncate">{m.conceptSubtitle || m.source}</p>
                     </div>
-                    <div className="text-right">
-                      <p className={`text-[15px] font-black ${(m.type === 'INCOME' || (m.type as any) === 'INGRESO') ? 'text-blue-400' : 'text-red-400'}`}>
+                    <div className="text-right shrink-0">
+                      <p className={`text-[14px] font-black ${(m.type === 'INCOME' || (m.type as any) === 'INGRESO') ? 'text-blue-400' : 'text-red-400'}`}>
                         {(m.type === 'INCOME' || (m.type as any) === 'INGRESO') ? '+' : '-'} {formatCurrency(m.amount)}
                       </p>
                     </div>
@@ -202,23 +225,23 @@ const AccountChartsScreen: React.FC = () => {
                 ))
               ) : (
                 <div className="p-10 text-center bg-white/5 rounded-3xl border border-dashed border-white/10 opacity-40">
-                  <p className="text-[10px] font-black uppercase tracking-widest">Sin movimientos este día</p>
+                  <p className="text-[10px] font-black uppercase tracking-widest">Sin transacciones este día</p>
                 </div>
               )
             ) : (
               <div className="grid grid-cols-2 gap-4">
-                <div className="p-6 bg-blue-500/10 border border-blue-500/20 rounded-[2rem] flex flex-col justify-between h-32">
+                <div className="p-5 bg-blue-500/10 border border-blue-500/20 rounded-[2rem] flex flex-col justify-between h-28">
                   <span className="material-symbols-outlined text-blue-400 text-xl">trending_up</span>
                   <div>
-                    <p className="text-[9px] font-black text-blue-400 uppercase mb-1">Total Ingresos</p>
-                    <p className="text-xl font-black text-white">{formatCurrency(totals.income)}</p>
+                    <p className="text-[8px] font-black text-blue-400 uppercase mb-0.5">Ingresos</p>
+                    <p className="text-lg font-black text-white">{formatCurrency(totals.income)}</p>
                   </div>
                 </div>
-                <div className="p-6 bg-red-500/10 border border-red-500/20 rounded-[2rem] flex flex-col justify-between h-32">
+                <div className="p-5 bg-red-500/10 border border-red-500/20 rounded-[2rem] flex flex-col justify-between h-28">
                   <span className="material-symbols-outlined text-red-400 text-xl">trending_down</span>
                   <div>
-                    <p className="text-[9px] font-black text-red-400 uppercase mb-1">Total Egresos</p>
-                    <p className="text-xl font-black text-white">{formatCurrency(totals.expense)}</p>
+                    <p className="text-[8px] font-black text-red-400 uppercase mb-0.5">Egresos</p>
+                    <p className="text-lg font-black text-white">{formatCurrency(totals.expense)}</p>
                   </div>
                 </div>
               </div>

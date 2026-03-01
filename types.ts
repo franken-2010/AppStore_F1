@@ -95,6 +95,12 @@ export interface AccountMovement {
   notes?: string;
   groupId?: string;
   movedTo?: { accountDocId: string; movementId: string };
+  // Standardized Fields for F1 Intelligence
+  direction?: 'IN' | 'OUT';
+  signedAmount?: number;
+  rubro?: string;
+  cutId?: string;
+  dateKey?: string; // Campo YYYY-MM-DD para consultas rápidas
 }
 
 export interface UserProfile {

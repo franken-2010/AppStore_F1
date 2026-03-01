@@ -35,7 +35,6 @@ const SettingsScreen: React.FC = () => {
   const [isGeneratingIA, setIsGeneratingIA] = useState(false);
   const [isBiometricLinked, setIsBiometricLinked] = useState(!!localStorage.getItem('biometric_credential'));
   
-  // Inventory Config State
   const [invAccountDocId, setInvAccountDocId] = useState<string | null>(null);
   const [invMin, setInvMin] = useState<number | null>(null);
   const [invMax, setInvMax] = useState<number | null>(null);
@@ -51,7 +50,6 @@ const SettingsScreen: React.FC = () => {
     }
   }, [profile]);
 
-  // Cargar configuración de inventarios al entrar a la pestaña
   useEffect(() => {
     if (activeTab === 'inventarios' && user) {
       const fetchInv = async () => {
@@ -81,7 +79,7 @@ const SettingsScreen: React.FC = () => {
       await updateDoc(doc(db, "users", user.uid, "accounts", invAccountDocId), {
         inventoryMin: invMin,
         inventoryMax: invMax,
-        isContable: false, // Asegurar que sea no contable
+        isContable: false,
         updatedAt: serverTimestamp()
       });
       addNotification({ title: 'Rango Guardado', message: 'Límites de inventario actualizados.', type: 'system' });
@@ -154,7 +152,7 @@ const SettingsScreen: React.FC = () => {
       const prompt = `A professional 3D avatar of a retail store manager, wearing a polo shirt with a small 'F1' logo, modern business style, rounded profile, clean lighting.`;
       const response = await ai.models.generateContent({
         model: 'gemini-2.5-flash-image',
-        contents: { parts: [{ text: prompt }] },
+        contents: [{ parts: [{ text: prompt }] }],
       });
       for (const part of response.candidates[0].content.parts) {
         if (part.inlineData) {

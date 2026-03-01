@@ -23,21 +23,30 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setUser(firebaseUser);
       
       if (firebaseUser) {
-        // Escuchar cambios en el documento de perfil en tiempo real (incluyendo webhooks)
         const docRef = doc(db, "users", firebaseUser.uid);
         const unsubProfile = onSnapshot(docRef, (docSnap) => {
           if (docSnap.exists()) {
-            setProfile(docSnap.data() as UserProfile);
-          } else {
-            const defaultProfile: UserProfile = {
+            const data = docSnap.data();
+            // Sanitización estricta para evitar estructuras circulares
+            setProfile({
               uid: firebaseUser.uid,
-              email: firebaseUser.email,
+              email: String(data.email || firebaseUser.email || ''),
+              displayName: String(data.displayName || firebaseUser.displayName || 'Usuario'),
+              photoURL: String(data.photoURL || `https://ui-avatars.com/api/?name=${firebaseUser.email}&background=2563eb&color=fff`),
+              role: String(data.role || 'admin')
+            });
+          } else {
+            setProfile({
+              uid: firebaseUser.uid,
+              email: firebaseUser.email || '',
               displayName: firebaseUser.displayName || 'Usuario',
               photoURL: firebaseUser.photoURL || `https://ui-avatars.com/api/?name=${firebaseUser.email}&background=2563eb&color=fff`,
               role: 'admin'
-            };
-            setProfile(defaultProfile);
+            });
           }
+          setLoading(false);
+        }, (err) => {
+          console.error("Profile sync error:", err.message);
           setLoading(false);
         });
         return () => unsubProfile();

@@ -3,7 +3,6 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { db } from '../services/firebase';
-// Fixed: Added serverTimestamp to the imports from firestore
 import { 
   collection, 
   query, 
@@ -24,23 +23,41 @@ const AccountDeleteScreen: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [isDeleting, setIsDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set()); // Document IDs de 'accounts'
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [showConfirm, setShowConfirm] = useState(false);
 
   useEffect(() => {
     if (!user) return;
     setLoading(true);
     
-    // Escuchar categorías
     const qCat = query(collection(db, "users", user.uid, "categories"), orderBy("order", "asc"));
     const unsubCat = onSnapshot(qCat, (snap) => {
-      setCategories(snap.docs.map(d => ({ id: d.id, ...d.data() } as AccountCategory)));
+      setCategories(snap.docs.map(d => {
+        const data = d.data();
+        return {
+          id: d.id,
+          name: String(data.name || ''),
+          accountingType: data.accountingType as any,
+          order: Number(data.order || 0)
+        } as AccountCategory;
+      }));
     });
 
-    // Escuchar cuentas
     const qAcc = query(collection(db, "users", user.uid, "accounts"), orderBy("order", "asc"));
     const unsubAcc = onSnapshot(qAcc, (snapshot) => {
-      const accs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as AccountingAccount));
+      const accs = snapshot.docs.map(d => {
+        const data = d.data();
+        return {
+          id: d.id,
+          accountId: String(data.accountId || ''),
+          name: String(data.name || ''),
+          type: data.type as any,
+          categoryId: data.categoryId ? String(data.categoryId) : null,
+          balance: Number(data.balance || 0),
+          isVisible: data.isVisible !== false,
+          code: String(data.code || '')
+        } as AccountingAccount;
+      });
       setAccounts(accs);
       setLoading(false);
       setError(null);
@@ -72,21 +89,15 @@ const AccountDeleteScreen: React.FC = () => {
       const batch = writeBatch(db);
       
       selectedIds.forEach(id => {
-        // 1. Eliminar documento de 'accounts'
         const accountDocRef = doc(db, "users", user.uid, "accounts", id);
-        
-        // Buscar el accountId estable para actualizar el índice
         const accountData = accounts.find(a => a.id === id);
         if (accountData?.accountId) {
-          // 2. Marcar como INACTIVO en 'accountIndex' (No eliminar para historial)
           const indexDocRef = doc(db, "users", user.uid, "accountIndex", accountData.accountId);
-          // Fixed: using serverTimestamp() which is now imported
           batch.update(indexDocRef, {
             isActive: false,
             updatedAt: serverTimestamp()
           });
         }
-        
         batch.delete(accountDocRef);
       });
 

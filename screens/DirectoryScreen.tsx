@@ -6,79 +6,70 @@ import { db } from '../services/firebase';
 import { 
   collection, 
   query, 
-  orderBy, 
-  onSnapshot 
+  onSnapshot,
+  where
 } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 import BottomNav from '../components/BottomNav';
 import Sidebar from '../components/Sidebar';
 import ProfileMenu from '../components/ProfileMenu';
 
-interface Provider {
+interface DirectoryContact {
   id: string;
-  name: string;        // Nombre de la compañía/empresa
-  contactName: string; // Nombre de la persona de contacto
-  whatsapp: string;    // Teléfono
+  supplierName: string;
+  contactName: string;
+  whatsappPhone: string;
+  isActive: boolean;
 }
 
 const DirectoryScreen: React.FC = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const [providers, setProviders] = useState<Provider[]>([]);
+  const [contacts, setContacts] = useState<DirectoryContact[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!user) return;
 
-    // Ordenar alfabéticamente por Empresa (name)
     const q = query(
-      collection(db, "users", user.uid, "providers"),
-      orderBy("name", "asc")
+      collection(db, "suppliers_directory"),
+      where("uid", "==", user.uid),
+      where("isActive", "==", true)
     );
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const list = snapshot.docs.map(doc => {
         const data = doc.data();
+        // Scrubbing: Convertir a tipos primitivos planos
         return {
           id: doc.id,
-          name: data.name ?? "",
-          contactName: data.contact_name ?? data.contactName ?? "", // Soporte para ambos nombres de campo
-          whatsapp: data.whatsapp ?? ""
+          supplierName: String(data.supplierName || ''),
+          contactName: String(data.contactName || ''),
+          whatsappPhone: String(data.whatsappPhone || ''),
+          isActive: data.isActive === true
         };
-      }) as Provider[];
-      setProviders(list);
+      }) as DirectoryContact[];
+      
+      list.sort((a, b) => (a.supplierName || '').localeCompare(b.supplierName || ''));
+      setContacts(list);
       setLoading(false);
-    }, (err) => {
-      console.error("Error fetching providers:", err);
-      setError(err.message);
+    }, (error) => {
+      console.error("Error en Directory listener:", error);
       setLoading(false);
     });
 
     return () => unsubscribe();
   }, [user]);
 
-  const normalizeText = (s: string) => {
-    return s.toLowerCase()
-      .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g, "")
-      .replace(/[^a-z0-9\s]/g, ' ')
-      .replace(/\s+/g, ' ')
-      .trim();
-  };
-
-  const filteredProviders = useMemo(() => {
-    const normalizedQuery = normalizeText(searchQuery);
-    if (!normalizedQuery) return providers;
-
-    return providers.filter(p => {
-      const nameMatch = normalizeText(p.name).includes(normalizedQuery);
-      const contactMatch = normalizeText(p.contactName).includes(normalizedQuery);
-      const phoneMatch = p.whatsapp.includes(normalizedQuery);
-      return nameMatch || contactMatch || phoneMatch;
-    });
-  }, [providers, searchQuery]);
+  const filteredContacts = useMemo(() => {
+    const q = searchQuery.toLowerCase().trim();
+    if (!q) return contacts;
+    return contacts.filter(c => 
+      (c.supplierName || '').toLowerCase().includes(q) || 
+      (c.contactName || '').toLowerCase().includes(q)
+    );
+  }, [contacts, searchQuery]);
 
   return (
     <div className="relative flex h-full min-h-screen w-full flex-col overflow-x-hidden max-w-md mx-auto shadow-2xl bg-background-light dark:bg-background-dark pb-32 font-display">
@@ -113,57 +104,43 @@ const DirectoryScreen: React.FC = () => {
             className="w-full bg-white dark:bg-surface-dark border border-slate-200 dark:border-white/5 rounded-2xl py-4 px-12 text-sm font-bold outline-none focus:ring-2 focus:ring-primary shadow-sm dark:text-white"
           />
           <span className="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-slate-400">search</span>
-          {searchQuery && (
-            <button onClick={() => setSearchQuery('')} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400">
-              <span className="material-symbols-outlined text-lg">close</span>
-            </button>
-          )}
         </div>
       </header>
 
-      <main className="px-6 mt-4 flex-1">
+      <main className="px-6 mt-6 flex-1">
         {loading ? (
           <div className="space-y-4">
-            {[1,2,3,4].map(i => (
-              <div key={i} className="h-24 bg-slate-100 dark:bg-white/5 rounded-3xl animate-pulse"></div>
-            ))}
+            {[1,2,3].map(i => <div key={i} className="h-24 bg-slate-100 dark:bg-white/5 rounded-3xl animate-pulse"></div>)}
           </div>
-        ) : error ? (
-          <div className="p-8 text-center bg-red-500/10 rounded-3xl border border-red-500/20">
-            <span className="material-symbols-outlined text-red-500 text-4xl mb-2">error</span>
-            <p className="text-xs font-bold text-red-500 uppercase leading-tight">{error}</p>
-          </div>
-        ) : filteredProviders.length === 0 ? (
+        ) : filteredContacts.length === 0 ? (
           <div className="py-20 text-center opacity-30">
             <span className="material-symbols-outlined text-6xl mb-2">contact_support</span>
             <p className="text-xs font-black uppercase tracking-widest">{searchQuery ? 'Sin coincidencias' : 'No hay proveedores registrados'}</p>
           </div>
         ) : (
           <div className="space-y-3">
-            {filteredProviders.map((p) => (
+            {filteredContacts.map((p) => (
               <button 
                 key={p.id}
                 onClick={() => navigate(`/directorio/${p.id}`)}
-                className="w-full flex flex-col p-5 bg-white dark:bg-surface-dark rounded-3xl border border-slate-100 dark:border-white/5 text-left active:scale-[0.98] transition-all hover:shadow-lg hover:shadow-primary/5 group"
+                className="w-full flex flex-col p-5 bg-white dark:bg-surface-dark rounded-3xl border border-slate-100 dark:border-white/5 text-left active:scale-[0.98] transition-all hover:shadow-lg group"
               >
                 <div className="flex justify-between items-start mb-1">
                   <h3 className="text-lg font-black text-slate-900 dark:text-white uppercase leading-tight group-hover:text-primary transition-colors">
-                    {p.contactName || "Sin contacto"}
+                    {p.contactName}
                   </h3>
                   <span className="material-symbols-outlined text-slate-300 group-hover:text-primary transition-colors">chevron_right</span>
                 </div>
                 
                 <div className="flex items-center gap-1.5 text-slate-500 dark:text-slate-400 mb-2">
                   <span className="material-symbols-outlined text-[14px]">store</span>
-                  <span className="text-[11px] font-bold uppercase tracking-tight">
-                    {p.name || "Proveedor sin nombre"}
-                  </span>
+                  <span className="text-[11px] font-bold uppercase tracking-tight">{p.supplierName}</span>
                 </div>
 
-                {p.whatsapp && (
+                {p.whatsappPhone && (
                   <div className="flex items-center gap-1.5 text-emerald-500 border-t border-slate-50 dark:border-white/5 pt-2 mt-1">
                     <span className="material-symbols-outlined text-[16px]">chat</span>
-                    <span className="text-[12px] font-black tracking-tight">{p.whatsapp}</span>
+                    <span className="text-[12px] font-black tracking-tight">{p.whatsappPhone}</span>
                   </div>
                 )}
               </button>

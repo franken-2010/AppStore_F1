@@ -20,21 +20,41 @@ const PriceVerificationScreen: React.FC = () => {
   const [results, setResults] = useState<any[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [selectedProduct, setSelectedProduct] = useState<any | null>(null);
 
   const normalizeText = (text: string): string => {
     if (!text) return "";
     return text
       .toLowerCase()
       .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g, "") // Quita diacríticos
-      .replace(/[-_.,/\\()]/g, ' ') // Reemplaza separadores por espacio
-      .replace(/[^a-z0-9\s]/g, '') // Solo letras, números y espacios
-      .replace(/\s+/g, ' ') // Colapsa espacios múltiples
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[-_.,/\\()]/g, ' ')
+      .replace(/[^a-z0-9\s]/g, '')
+      .replace(/\s+/g, ' ')
       .trim();
   };
 
   const tokenize = (text: string): string[] => {
     return text.split(' ').filter(t => t.length >= 2 || !isNaN(Number(t)));
+  };
+
+  const scrubDocData = (doc: any) => {
+    const data = doc.data();
+    const rawPrice = data?.Precio_sug_red;
+    const cleanPriceStr = String(rawPrice || '').replace(/[$,\s]/g, '');
+    const price = typeof rawPrice === "number" ? rawPrice : Number(cleanPriceStr);
+    const safePrice = Number.isFinite(price) ? price : null;
+
+    // Solo retornamos campos planos para evitar estructuras circulares de Firebase
+    return {
+      id: doc.id,
+      Nombre_Completo: String(data.Nombre_Completo || ''),
+      searchName: String(data.searchName || ''),
+      searchTokens: Array.isArray(data.searchTokens) ? data.searchTokens.map(String) : [],
+      Precio_sug_red: rawPrice,
+      _safePrice: safePrice,
+      _isPriceMissing: safePrice === null
+    };
   };
 
   const handleSearch = async (e?: React.FormEvent) => {
@@ -55,33 +75,11 @@ const PriceVerificationScreen: React.FC = () => {
       const colRef = collection(db, "costs_catalog");
       let finalResults: any[] = [];
 
-      // ESTRATEGIA PRINCIPAL: Búsqueda por tokens (array-contains)
       const anchorToken = qTokens.reduce((a, b) => a.length > b.length ? a : b);
-      
-      const qMain = query(
-        colRef,
-        where("searchTokens", "array-contains", anchorToken),
-        limit(60)
-      );
-
+      const qMain = query(colRef, where("searchTokens", "array-contains", anchorToken), limit(60));
       const snapMain = await getDocs(qMain);
       
-      let hits = snapMain.docs.map(doc => {
-        const data = doc.data();
-        const rawPrice = data?.Precio_sug_red;
-        
-        // Conversión segura de precio para evitar NaN (limpiando $, comas y espacios)
-        const cleanPriceStr = String(rawPrice || '').replace(/[$,\s]/g, '');
-        const price = typeof rawPrice === "number" ? rawPrice : Number(cleanPriceStr);
-        const safePrice = Number.isFinite(price) ? price : null;
-
-        return { 
-          id: doc.id, // Este es el ProductKey
-          ...data,
-          _safePrice: safePrice,
-          _isPriceMissing: safePrice === null
-        };
-      });
+      let hits = snapMain.docs.map(scrubDocData);
 
       if (hits.length > 0) {
         finalResults = hits.filter((h: any) => {
@@ -91,40 +89,23 @@ const PriceVerificationScreen: React.FC = () => {
           return containsFull || matchedTokens >= Math.ceil(qTokens.length * 0.7);
         });
 
-        // Ranking por relevancia
         finalResults.sort((a, b) => {
           const aName = a.searchName || normalizeText(a.Nombre_Completo || "");
           const bName = b.searchName || normalizeText(b.Nombre_Completo || "");
-          
           const aFull = aName.includes(qNorm) ? 1 : 0;
           const bFull = bName.includes(qNorm) ? 1 : 0;
           if (aFull !== bFull) return bFull - aFull;
-
           const aMatches = qTokens.filter(t => aName.includes(t)).length;
           const bMatches = qTokens.filter(t => bName.includes(t)).length;
           if (aMatches !== bMatches) return bMatches - aMatches;
-
           return aName.length - bName.length;
         });
       }
 
-      // FALLBACK: Si no hay resultados directos
       if (finalResults.length === 0) {
         const qFallback = query(colRef, orderBy("searchName"), limit(100));
         const snapFallback = await getDocs(qFallback);
-        const candidates = snapFallback.docs.map(doc => {
-          const data = doc.data();
-          const rawPrice = data?.Precio_sug_red;
-          const cleanPriceStr = String(rawPrice || '').replace(/[$,\s]/g, '');
-          const price = typeof rawPrice === "number" ? rawPrice : Number(cleanPriceStr);
-          const safePrice = Number.isFinite(price) ? price : null;
-          return { 
-            id: doc.id, 
-            ...data, 
-            _safePrice: safePrice,
-            _isPriceMissing: safePrice === null
-          };
-        });
+        const candidates = snapFallback.docs.map(scrubDocData);
 
         finalResults = candidates.filter((c: any) => {
           const cName = c.searchName || normalizeText(c.Nombre_Completo || "");
@@ -133,9 +114,7 @@ const PriceVerificationScreen: React.FC = () => {
       }
 
       setResults(finalResults.slice(0, 25));
-      if (finalResults.length === 0) {
-        setError("Sin coincidencias en el catálogo.");
-      }
+      if (finalResults.length === 0) setError("Sin coincidencias en el catálogo.");
       
     } catch (err: any) {
       console.error(err);
@@ -145,11 +124,8 @@ const PriceVerificationScreen: React.FC = () => {
     }
   };
 
-  // Re-ejecutar búsqueda al volver si hay query
   useEffect(() => {
-    if (productQuery.length >= 2) {
-      handleSearch();
-    }
+    if (productQuery.length >= 2) handleSearch();
   }, [location.key]);
 
   return (
@@ -198,7 +174,7 @@ const PriceVerificationScreen: React.FC = () => {
           {results.map((product, idx) => (
             <div 
               key={idx} 
-              onClick={() => navigate(`/tools/product-edit/${product.id}`)}
+              onClick={() => setSelectedProduct(product)}
               className="p-5 bg-white dark:bg-surface-dark rounded-3xl shadow-sm flex items-center justify-between border border-slate-100 dark:border-white/5 active:scale-[0.98] transition-all cursor-pointer group"
             >
               <div className="flex-1 pr-4">
@@ -208,11 +184,7 @@ const PriceVerificationScreen: React.FC = () => {
                 <div className="flex flex-wrap items-center gap-2 mt-1.5">
                   <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Sugerido F1</span>
                   {product._isPriceMissing && (
-                    <span 
-                      className="text-[8px] bg-amber-500/10 text-amber-600 px-2 py-0.5 rounded-lg font-black border border-amber-500/20"
-                    >
-                      PRECIO NO DEFINIDO
-                    </span>
+                    <span className="text-[8px] bg-amber-500/10 text-amber-600 px-2 py-0.5 rounded-lg font-black border border-amber-500/20">PRECIO NO DEFINIDO</span>
                   )}
                 </div>
               </div>
@@ -232,6 +204,27 @@ const PriceVerificationScreen: React.FC = () => {
           )}
         </div>
       </main>
+
+      {selectedProduct && (
+        <div className="fixed inset-0 z-[100] flex items-end justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-300">
+          <div className="w-full max-w-md bg-white dark:bg-surface-dark rounded-t-[2.5rem] p-6 shadow-2xl animate-in slide-in-from-bottom duration-300 max-h-[80vh] flex flex-col">
+            <div className="w-12 h-1.5 bg-slate-200 dark:bg-white/10 rounded-full mx-auto mb-6 shrink-0" />
+            <div className="mb-8 shrink-0">
+              <h3 className="text-lg font-black text-slate-900 dark:text-white uppercase leading-tight">{selectedProduct.Nombre_Completo}</h3>
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1">KEY: {selectedProduct.id}</p>
+            </div>
+            <div className="flex-1 overflow-y-auto space-y-3 pb-8 no-scrollbar">
+              <button onClick={() => { const key = selectedProduct.id; setSelectedProduct(null); navigate(`/tools/product-details/${key}`); }} className="w-full py-4.5 bg-primary text-white font-black rounded-2xl shadow-xl shadow-primary/20 flex items-center justify-center gap-3 active:scale-95 transition-all">
+                <span className="material-symbols-outlined">info</span> VER DETALLES
+              </button>
+              <button onClick={() => { const key = selectedProduct.id; setSelectedProduct(null); navigate(`/tools/product-edit/${key}`); }} className="w-full py-4.5 bg-slate-100 dark:bg-white/5 text-slate-700 dark:text-white font-black rounded-2xl flex items-center justify-center gap-3 active:scale-95 transition-all">
+                <span className="material-symbols-outlined">edit</span> EDITAR PRODUCTO
+              </button>
+              <button onClick={() => setSelectedProduct(null)} className="w-full py-4 text-slate-400 font-bold text-[10px] uppercase tracking-widest mt-2">Cerrar</button>
+            </div>
+          </div>
+        </div>
+      )}
       <BottomNav />
     </div>
   );

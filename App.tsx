@@ -14,6 +14,7 @@ import SettingsScreen from './screens/SettingsScreen';
 import DatabaseUploadScreen from './screens/DatabaseUploadScreen';
 import PriceVerificationScreen from './screens/PriceVerificationScreen';
 import EditProductScreen from './screens/EditProductScreen';
+import ProductDetailsScreen from './screens/ProductDetailsScreen';
 import ChatScreen from './screens/ChatScreen';
 import FinanceAccountsScreen from './screens/FinanceAccountsScreen';
 import AccountUpsertScreen from './screens/AccountUpsertScreen';
@@ -31,6 +32,8 @@ import DirectoryScreen from './screens/DirectoryScreen';
 import ProviderDetailScreen from './screens/ProviderDetailScreen';
 import EditProviderContactScreen from './screens/EditProviderContactScreen';
 import AddProviderScreen from './screens/AddProviderScreen';
+import OrdersScreen from './screens/OrdersScreen';
+import PermissionsScreen from './screens/PermissionsScreen';
 
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user, loading } = useAuth();
@@ -48,6 +51,7 @@ const App: React.FC = () => {
             <Route path="/login" element={<LoginScreen />} />
             <Route path="/register" element={<RegisterScreen />} />
             <Route path="/install" element={<InstallScreen />} />
+            <Route path="/permissions" element={<ProtectedRoute><PermissionsScreen /></ProtectedRoute>} />
             <Route path="/dashboard" element={<ProtectedRoute><DashboardScreen /></ProtectedRoute>} />
             <Route path="/cortes" element={<ProtectedRoute><CortesScreen /></ProtectedRoute>} />
             <Route path="/tools" element={<ProtectedRoute><ToolsScreen /></ProtectedRoute>} />
@@ -55,6 +59,8 @@ const App: React.FC = () => {
             <Route path="/tools/product-add" element={<ProtectedRoute><ProductAddScreen /></ProtectedRoute>} />
             <Route path="/tools/price-verification" element={<ProtectedRoute><PriceVerificationScreen /></ProtectedRoute>} />
             <Route path="/tools/product-edit/:productKey" element={<ProtectedRoute><EditProductScreen /></ProtectedRoute>} />
+            <Route path="/tools/product-details/:productKey" element={<ProtectedRoute><ProductDetailsScreen /></ProtectedRoute>} />
+            <Route path="/tools/orders" element={<ProtectedRoute><OrdersScreen /></ProtectedRoute>} />
             
             <Route path="/accounting" element={<ProtectedRoute><FinanceAccountsScreen /></ProtectedRoute>} />
             <Route path="/finance-accounts" element={<ProtectedRoute><FinanceAccountsScreen /></ProtectedRoute>} />

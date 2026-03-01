@@ -31,11 +31,7 @@ const MovementDeleteButton: React.FC<MovementDeleteButtonProps> = ({
     e.stopPropagation();
     e.preventDefault();
 
-    // 1. PRUEBA DE CLICK INMEDIATA (Requerida para validación)
-    console.log("DELETE_CLICK_TRIGGERED", { uid, accountDocId, movementDocId, movementType, amount });
-    alert("DELETE CLICK OK: Iniciando proceso de anulación.");
-
-    // 2. CONFIRMACIÓN
+    // 1. CONFIRMACIÓN
     const confirmed = window.confirm(
       "¿ANULAR MOVIMIENTO?\n\nEl saldo de la cuenta se ajustará automáticamente y este registro dejará de contar en reportes."
     );
@@ -68,8 +64,6 @@ const MovementDeleteButton: React.FC<MovementDeleteButtonProps> = ({
         const impact = isIncome ? Number(movData.amount) : -Number(movData.amount);
         const newBalance = currentBalance - impact;
 
-        console.log(`TRANSACTION: Reinvirtiendo impacto de ${impact}. Nuevo Saldo: ${newBalance}`);
-
         // Actualizar Cuenta
         transaction.update(accountRef, {
           balance: newBalance,
@@ -85,7 +79,6 @@ const MovementDeleteButton: React.FC<MovementDeleteButtonProps> = ({
         });
       });
 
-      console.log("DELETE_SUCCESS: Movimiento anulado correctamente.");
       if (onDone) onDone();
       
     } catch (err: any) {

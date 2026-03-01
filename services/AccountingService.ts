@@ -1,11 +1,15 @@
 
 import { db } from './firebase';
 import { 
-  collectionGroup, 
+  collection, 
   query, 
-  getDocs, 
   onSnapshot,
-  Timestamp
+  where,
+  Timestamp,
+  orderBy,
+  collectionGroup,
+  getDocs,
+  limit
 } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 import { AccountMovement } from '../types';
 
@@ -13,7 +17,7 @@ export interface RegisterRubric {
   id: string;
   accountId: string;
   label: string;
-  type: 'INCOME' | 'EXPENSE';
+  type: 'INCOME' | 'EXPENSE' | 'TRANSFER';
 }
 
 export interface RegisterSchema {
@@ -29,7 +33,7 @@ export class AccountingService {
       { id: 'in_recargas', accountId: 'recargas', label: 'Recargas', type: 'INCOME' },
       { id: 'in_estancias', accountId: 'estancias', label: 'Estancias', type: 'INCOME' },
       { id: 'in_cxc_venta', accountId: 'cxc', label: 'Ventas a crédito (CxC)', type: 'INCOME' },
-      { id: 'in_cxc_pago', accountId: 'cxc_pago', label: 'Pago clientes (Cobranza CxC)', type: 'INCOME' },
+      { id: 'in_cxc_pago', accountId: 'cxc', label: 'Pago clientes (Cobranza CxC)', type: 'INCOME' },
       { id: 'in_sobrante', accountId: 'ventas', label: 'Sobrante de Caja', type: 'INCOME' }
     ];
 
@@ -46,10 +50,6 @@ export class AccountingService {
     return { ingresos, egresos };
   }
 
-  /**
-   * Obtiene el título que debe llevar el movimiento espejo en inventarios
-   * si el rubro seleccionado representa una compra de mercancía.
-   */
   static getInventoryMirrorTitle(rubricId: string): string | null {
     const map: Record<string, string> = {
       'ex_mercancias': 'ENTRADA INV (MERCANCÍA)',
@@ -59,10 +59,6 @@ export class AccountingService {
     return map[rubricId] || null;
   }
 
-  /**
-   * Obtiene listas simplificadas para dropdowns de selección de rubros.
-   * Ahora incluye el ID del rubro para lógica de negocio precisa.
-   */
   static async getMovementPicklists(uid: string) {
     const schema = await this.getDailyRegisterSchema(uid);
     return {
@@ -71,48 +67,88 @@ export class AccountingService {
     };
   }
 
-  /**
-   * REGLA DE FILTRADO CONTABLE (OBLIGATORIA)
-   * Excluye movimientos que no deben afectar la contabilidad financiera (como inventarios).
-   */
   static isMovementContable(m: AccountMovement): boolean {
-    // Excluir VOID o estados inactivos
     if (m.status === 'VOID' || m.status === 'DELETED' || m.status === 'MOVED') return false;
-    
-    // EXCLUIR INVENTARIOS DE LA CONTABILIDAD
     const normalizedId = (m.accountId || '').toLowerCase().trim();
     if (normalizedId === 'inventarios') return false;
-
     return true;
   }
 
-  static subscribeToMovements(uid: string, startDate: Date, endDate: Date, callback: (movements: AccountMovement[]) => void) {
-    const q = query(collectionGroup(db, "movements"));
+  static subscribeToTodayDashboard(uid: string, callback: (movements: AccountMovement[]) => void, onError?: (err: string) => void) {
+    const now = new Date();
+    const start = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
+    const end = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+
+    const startTs = Timestamp.fromDate(start);
+    const endTs = Timestamp.fromDate(end);
+
+    const q = query(
+      collectionGroup(db, "movements"),
+      where("uid", "==", uid),
+      where("createdAt", ">=", startTs),
+      where("createdAt", "<=", endTs),
+      orderBy("createdAt", "desc")
+    );
 
     return onSnapshot(q, (snap) => {
-      const startT = startDate.getTime();
-      const endT = endDate.getTime();
-
-      const movements = snap.docs
-        .map(d => ({ id: d.id, ...d.data() } as AccountMovement))
-        .filter(m => {
-          if (m.uid !== uid) return false;
-          // Aplicar filtrado contable centralizado
-          if (!this.isMovementContable(m)) return false;
-          
-          const effectiveTime = m.effectiveAt?.toMillis?.() || 0;
-          return effectiveTime >= startT && effectiveTime <= endT;
-        });
-      
-      movements.sort((a, b) => {
-        const timeA = a.effectiveAt?.toMillis?.() || 0;
-        const timeB = b.effectiveAt?.toMillis?.() || 0;
-        return timeB - timeA;
+      const movs = snap.docs.map(doc => {
+        const data = doc.data();
+        return {
+          id: doc.id,
+          uid: String(data.uid || uid),
+          accountId: String(data.accountId || ''),
+          amount: Number(data.amount || 0),
+          type: data.type,
+          direction: data.direction || (data.type === 'INCOME' ? 'IN' : 'OUT'),
+          signedAmount: Number(data.signedAmount || 0),
+          conceptTitle: String(data.conceptTitle || ''),
+          conceptSubtitle: String(data.conceptSubtitle || ''),
+          source: String(data.source || ''),
+          status: String(data.status || 'ACTIVE'),
+          createdAt: data.createdAt?.toMillis ? data.createdAt.toMillis() : Date.now()
+        } as any;
       });
-      
-      callback(movements);
+      callback(movs);
     }, (err) => {
-      console.error("Subscription error:", err);
+      const msg = err.message || "Error desconocido en suscripción";
+      console.warn("F1-QUERY-WARNING:", msg);
+      if (onError) onError(msg);
+    });
+  }
+
+  static subscribeToMovements(uid: string, startDate: Date, endDate: Date, callback: (movements: AccountMovement[]) => void, onError?: (err: string) => void) {
+    const startTs = Timestamp.fromDate(startDate);
+    const endTs = Timestamp.fromDate(endDate);
+    
+    const q = query(
+      collectionGroup(db, "movements"),
+      where("uid", "==", uid),
+      where("createdAt", ">=", startTs),
+      where("createdAt", "<=", endTs),
+      orderBy("createdAt", "desc")
+    );
+
+    return onSnapshot(q, (snap) => {
+      const movs = snap.docs.map(doc => {
+        const data = doc.data();
+        return {
+          id: doc.id,
+          uid: String(data.uid || uid),
+          accountId: String(data.accountId || ''),
+          amount: Number(data.amount || 0),
+          type: data.type,
+          direction: data.direction || (data.type === 'INCOME' ? 'IN' : 'OUT'),
+          conceptTitle: String(data.conceptTitle || ''),
+          conceptSubtitle: String(data.conceptSubtitle || ''),
+          effectiveAt: data.effectiveAt?.toMillis ? data.effectiveAt.toMillis() : null,
+          createdAt: data.createdAt?.toMillis ? data.createdAt.toMillis() : null,
+          status: data.status || 'ACTIVE'
+        } as any;
+      });
+      callback(movs);
+    }, (err) => {
+      console.warn("F1-HISTORY-WARNING:", err.message);
+      if (onError) onError(err.message);
     });
   }
 
@@ -122,10 +158,12 @@ export class AccountingService {
     
     movements.forEach(m => {
       if (!this.isMovementContable(m) || m.type === 'TRANSFER') return;
-      const amt = Math.abs(Number(m.amount) || 0);
-      const type = (m.type as any);
-      if (type === 'INCOME' || type === 'INGRESO') income += amt;
-      else if (type === 'EXPENSE' || type === 'EGRESO') expense += amt;
+      
+      const amt = Number(m.amount) || 0;
+      const direction = (m as any).direction || (m.type === 'INCOME' || (m.type as any) === 'INGRESO' ? 'IN' : 'OUT');
+      
+      if (direction === 'IN') income += amt;
+      else if (direction === 'OUT') expense += amt;
     });
 
     return { income, expense, balance: income - expense };
@@ -139,10 +177,11 @@ export class AccountingService {
       const aid = (m.accountId || 'otros').toLowerCase().trim();
       if (!groups[aid]) groups[aid] = { income: 0, expense: 0, net: 0 };
       
-      const amt = Math.abs(Number(m.amount) || 0);
-      const type = (m.type as any);
-      if (type === 'INCOME' || type === 'INGRESO') groups[aid].income += amt;
-      else if (type === 'EXPENSE' || type === 'EGRESO') groups[aid].expense += amt;
+      const amt = Number(m.amount) || 0;
+      const direction = (m as any).direction || (m.type === 'INCOME' || (m.type as any) === 'INGRESO' ? 'IN' : 'OUT');
+      
+      if (direction === 'IN') groups[aid].income += amt;
+      else if (direction === 'OUT') groups[aid].expense += amt;
       
       groups[aid].net = groups[aid].income - groups[aid].expense;
     });
@@ -162,13 +201,14 @@ export class AccountingService {
 
     movements.forEach(m => {
       if (!this.isMovementContable(m)) return;
-      const date = m.effectiveAt?.toDate?.() || new Date();
+      const date = typeof (m as any).createdAt === 'number' ? new Date((m as any).createdAt) : new Date();
       const key = date.toISOString().split('T')[0];
       if (daily[key]) {
-        const amt = Math.abs(Number(m.amount) || 0);
-        const type = (m.type as any);
-        if (type === 'INCOME' || type === 'INGRESO') daily[key].income += amt;
-        else if (type === 'EXPENSE' || type === 'EGRESO') daily[key].expense += amt;
+        const amt = Number(m.amount) || 0;
+        const direction = (m as any).direction || (m.type === 'INCOME' ? 'IN' : 'OUT');
+        
+        if (direction === 'IN') daily[key].income += amt;
+        else if (direction === 'OUT') daily[key].expense += amt;
         daily[key].balance = daily[key].income - daily[key].expense;
       }
     });

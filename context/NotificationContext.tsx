@@ -9,7 +9,7 @@ export interface AppNotification {
   title: string;
   message: string;
   timestamp: string;
-  isRead: boolean; // mapped from 'read' in firestore
+  isRead: boolean; 
   type: 'price_update' | 'system' | 'alert' | 'PRICE_UPDATE_REPORT';
   refId?: string;
   refType?: string;
@@ -30,42 +30,54 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const { user } = useAuth();
 
-  // Escuchar notificaciones persistentes de Firestore
   useEffect(() => {
-    if (!user) {
+    if (!user?.uid) {
       setNotifications([]);
       return;
     }
 
-    const q = query(
-      collection(db, "users", user.uid, "notifications"),
-      orderBy("timestamp", "desc"),
-      limit(30)
-    );
+    try {
+      const q = query(
+        collection(db, "users", user.uid, "notifications"),
+        orderBy("timestamp", "desc"),
+        limit(30)
+      );
 
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const internalNotifs = snapshot.docs.map(doc => {
-        const data = doc.data();
-        return {
-          id: doc.id,
-          ...data,
-          // Unificar el campo isRead de la UI con el campo 'read' de Firestore para persistencia
-          isRead: data.read !== undefined ? data.read : (data.isRead || false)
-        };
-      }) as AppNotification[];
-      
-      setNotifications(internalNotifs);
-    }, (error) => {
-      console.error("Error en Firestore notifications:", error);
-    });
+      const unsubscribe = onSnapshot(q, (snapshot) => {
+        const internalNotifs = snapshot.docs.map(doc => {
+          const data = doc.data();
+          
+          // Sanitización: Extraer solo campos serializables para evitar estructuras circulares
+          // como DocumentReferences que pueden venir en el spread.
+          return {
+            id: doc.id,
+            title: String(data.title || ''),
+            message: String(data.message || ''),
+            // Manejar Timestamp de Firebase o string ISO
+            timestamp: data.timestamp?.toDate ? data.timestamp.toDate().toISOString() : String(data.timestamp || new Date().toISOString()),
+            type: data.type || 'system',
+            refId: data.refId || null,
+            refType: data.refType || null,
+            isRead: data.read === true
+          };
+        }) as AppNotification[];
+        
+        setNotifications(internalNotifs);
+      }, (error) => {
+        if (error.code !== 'permission-denied') {
+          console.error("Error en Firestore notifications:", error);
+        }
+      });
 
-    return () => unsubscribe();
-  }, [user]);
+      return () => unsubscribe();
+    } catch (e) {
+      console.error("Failed to setup notification listener:", e);
+    }
+  }, [user?.uid]);
 
   const fetchNotifications = useCallback(async () => {}, []);
 
   const addNotification = useCallback((notification: Omit<AppNotification, 'id' | 'timestamp' | 'isRead'>) => {
-    // Para notificaciones locales (no firestore)
     const newNotif: AppNotification = {
       ...notification,
       id: 'local_' + Math.random().toString(36).substr(2, 9),
@@ -97,6 +109,8 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
         where("read", "==", false)
       );
       const snap = await getDocs(q);
+      if (snap.empty) return;
+
       const batch = writeBatch(db);
       snap.docs.forEach(d => {
         batch.update(d.ref, { read: true });

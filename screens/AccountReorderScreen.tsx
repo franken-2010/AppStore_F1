@@ -28,8 +28,19 @@ const AccountReorderScreen: React.FC = () => {
       try {
         const q = query(collection(db, "users", user.uid, "accounts"));
         const snap = await getDocs(q);
-        const accs = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as AccountingAccount));
-        // Ordenar inicialmente por el campo 'order' si existe
+        const accs = snap.docs.map(d => {
+          const data = d.data();
+          return {
+            id: d.id,
+            accountId: String(data.accountId || ''),
+            name: String(data.name || ''),
+            type: data.type as any,
+            balance: Number(data.balance || 0),
+            isVisible: data.isVisible !== false,
+            code: String(data.code || ''),
+            order: Number(data.order || 0)
+          } as AccountingAccount;
+        });
         accs.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
         setAccounts(accs);
       } catch (err) {
@@ -44,14 +55,13 @@ const AccountReorderScreen: React.FC = () => {
   const handleDragStart = (e: React.DragEvent, item: AccountingAccount) => {
     setDraggedItem(item);
     e.dataTransfer.effectAllowed = 'move';
-    // Para Firefox compatibilidad
     e.dataTransfer.setData('text/plain', item.id!);
   };
 
   const handleDragOver = (e: React.DragEvent, targetItem: AccountingAccount) => {
     e.preventDefault();
     if (!draggedItem || draggedItem.id === targetItem.id) return;
-    if (draggedItem.type !== targetItem.type) return; // Solo permitir reordenar dentro de la misma sección
+    if (draggedItem.type !== targetItem.type) return;
 
     const updatedAccounts = [...accounts];
     const draggedIdx = updatedAccounts.findIndex(a => a.id === draggedItem.id);
@@ -90,7 +100,7 @@ const AccountReorderScreen: React.FC = () => {
   };
 
   const renderSection = (title: string, type: string) => {
-    const filtered = accounts.filter(a => (type === 'Ahorro' ? (a as any).type === 'Ahorro' : a.type === type));
+    const filtered = accounts.filter(a => a.type === type);
     if (filtered.length === 0) return null;
 
     return (

@@ -19,6 +19,13 @@ const ToolsScreen: React.FC = () => {
       path: '/tools/price-verification'
     },
     {
+      title: 'Generador de Pedidos',
+      description: 'Crea listas inteligentes para WhatsApp usando IA.',
+      icon: 'shopping_cart_checkout',
+      color: 'bg-amber-500',
+      path: '/tools/orders'
+    },
+    {
       title: 'Actualización de productos',
       description: 'Sincroniza costos y precios masivamente vía Make.',
       icon: 'sync_alt',

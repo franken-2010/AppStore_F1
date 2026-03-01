@@ -10,6 +10,14 @@ import {
   doc, 
   updateDoc,
   serverTimestamp 
+} from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
+import { 
+  collection as firestoreCollection, 
+  query as firestoreQuery, 
+  onSnapshot as firestoreOnSnapshot, 
+  doc as firestoreDoc, 
+  updateDoc as firestoreUpdateDoc,
+  serverTimestamp as firestoreServerTimestamp 
 } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 import { AccountingAccount } from '../types';
 
@@ -23,9 +31,22 @@ const AccountVisibilityScreen: React.FC = () => {
   useEffect(() => {
     if (!user) return;
     setLoading(true);
-    const q = query(collection(db, "users", user.uid, "accounts"));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const accs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as AccountingAccount));
+    const q = firestoreQuery(firestoreCollection(db, "users", user.uid, "accounts"));
+    const unsubscribe = firestoreOnSnapshot(q, (snapshot) => {
+      const accs = snapshot.docs.map(d => {
+        const data = d.data();
+        return {
+          id: d.id,
+          accountId: String(data.accountId || ''),
+          name: String(data.name || ''),
+          type: data.type as any,
+          categoryId: data.categoryId ? String(data.categoryId) : null,
+          balance: Number(data.balance || 0),
+          isVisible: data.isVisible !== false,
+          code: String(data.code || ''),
+          order: Number(data.order || 0)
+        } as AccountingAccount;
+      });
       setAccounts(accs);
       setLoading(false);
       setError(null);
@@ -41,10 +62,10 @@ const AccountVisibilityScreen: React.FC = () => {
   const toggleVisibility = async (id: string, current: boolean) => {
     if (!user) return;
     try {
-      const docRef = doc(db, "users", user.uid, "accounts", id);
-      await updateDoc(docRef, {
+      const docRef = firestoreDoc(db, "users", user.uid, "accounts", id);
+      await firestoreUpdateDoc(docRef, {
         isVisible: !current,
-        updatedAt: serverTimestamp()
+        updatedAt: firestoreServerTimestamp()
       });
     } catch (err) {
       console.error("Error toggling visibility:", err);
@@ -62,7 +83,7 @@ const AccountVisibilityScreen: React.FC = () => {
   );
 
   const VisibilityRow: React.FC<{ account: AccountingAccount }> = ({ account }) => {
-    const isVisible = account.isVisible !== false; // Default true
+    const isVisible = account.isVisible !== false;
     return (
       <div className="flex items-center justify-between py-4 px-5 border-b border-white/5 bg-[#0f172a] active:bg-white/5 transition-colors">
         <div className="flex flex-col gap-0.5">
@@ -101,7 +122,6 @@ const AccountVisibilityScreen: React.FC = () => {
 
   return (
     <div className="relative flex flex-col h-screen w-full max-w-md mx-auto bg-[#0f172a] font-display antialiased overflow-hidden">
-      {/* Header idéntico a la imagen */}
       <header className="sticky top-0 z-50 bg-[#0f172a] pt-12 px-4 pb-4 flex items-center gap-4">
         <button onClick={() => navigate(-1)} className="p-2 rounded-full hover:bg-white/10 transition-colors text-white">
           <span className="material-symbols-outlined text-[28px]">arrow_back</span>
@@ -109,7 +129,6 @@ const AccountVisibilityScreen: React.FC = () => {
         <h1 className="text-xl font-medium text-white">Mostrar/Ocultar</h1>
       </header>
 
-      {/* Descripción técnica */}
       <div className="px-5 py-4 bg-[#0f172a]">
         <p className="text-[13px] font-medium text-slate-400 italic leading-relaxed">
           Oculta cuentas para que no aparezcan en el resumen general de la pantalla principal.

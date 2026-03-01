@@ -17,7 +17,7 @@ import { AccountingAccount, AccountType, AccountCategory } from '../types';
 import MoneyInputWithCalculator from '../components/MoneyInputWithCalculator';
 
 const AccountUpsertScreen: React.FC = () => {
-  const { accountId: editDocId } = useParams(); // Document ID en 'accounts'
+  const { accountId: editDocId } = useParams();
   const navigate = useNavigate();
   const { user } = useAuth();
   
@@ -35,7 +35,7 @@ const AccountUpsertScreen: React.FC = () => {
     inventoryMin: 0,
     inventoryMax: 0,
     code: '',
-    accountId: '' // Stable ID (ventas, fiesta, etc.)
+    accountId: ''
   });
 
   const normalizeToAccountId = (name: string): string => {
@@ -54,25 +54,33 @@ const AccountUpsertScreen: React.FC = () => {
       try {
         const qCat = query(collection(db, "users", user.uid, "categories"), orderBy("order", "asc"));
         const snapCat = await getDocs(qCat);
-        const cats = snapCat.docs.map(d => ({ id: d.id, ...d.data() } as AccountCategory));
+        const cats = snapCat.docs.map(d => {
+          const data = d.data();
+          return {
+            id: d.id,
+            name: String(data.name || ''),
+            accountingType: data.accountingType as any,
+            order: Number(data.order || 0)
+          } as AccountCategory;
+        });
         setCategories(cats);
 
         if (editDocId) {
           const docRef = doc(db, "users", user.uid, "accounts", editDocId);
           const snapAcc = await getDoc(docRef);
           if (snapAcc.exists()) {
-            const data = snapAcc.data() as AccountingAccount;
+            const data = snapAcc.data();
             setFormData({
-              name: data.name,
-              categoryId: data.categoryId || '',
-              accountingType: data.type,
-              balance: data.balance || 0,
+              name: String(data.name || ''),
+              categoryId: data.categoryId ? String(data.categoryId) : '',
+              accountingType: data.type as any,
+              balance: Number(data.balance || 0),
               isVisible: data.isVisible !== false,
               isContable: data.isContable !== false,
-              inventoryMin: data.inventoryMin || 0,
-              inventoryMax: data.inventoryMax || 0,
-              code: data.code || '',
-              accountId: data.accountId || ''
+              inventoryMin: Number(data.inventoryMin || 0),
+              inventoryMax: Number(data.inventoryMax || 0),
+              code: String(data.code || ''),
+              accountId: String(data.accountId || '')
             });
           }
         }
@@ -95,7 +103,6 @@ const AccountUpsertScreen: React.FC = () => {
     try {
       const batch = writeBatch(db);
       const selectedCat = categories.find(c => c.id === formData.categoryId);
-      
       const stableAccountId = formData.accountId || normalizeToAccountId(formData.name);
       
       const accountCol = collection(db, "users", user.uid, "accounts");
@@ -104,9 +111,7 @@ const AccountUpsertScreen: React.FC = () => {
         : doc(accountCol);
 
       const indexDocRef = doc(db, "users", user.uid, "accountIndex", stableAccountId);
-
       const type = selectedCat ? selectedCat.accountingType : formData.accountingType;
-
       const isInv = stableAccountId === 'inventarios';
 
       const accountData: any = {
@@ -116,7 +121,7 @@ const AccountUpsertScreen: React.FC = () => {
         type: type,
         balance: Number(formData.balance),
         isVisible: formData.isVisible,
-        isContable: isInv ? false : formData.isContable, // Inventarios nunca es contable
+        isContable: isInv ? false : formData.isContable,
         inventoryMin: isInv ? Number(formData.inventoryMin) : null,
         inventoryMax: isInv ? Number(formData.inventoryMax) : null,
         code: formData.code || (formData.name.substring(0, 3).toUpperCase() + Math.floor(100 + Math.random() * 900)),
@@ -144,8 +149,7 @@ const AccountUpsertScreen: React.FC = () => {
         isContable: accountData.isContable,
         inventoryMin: accountData.inventoryMin,
         inventoryMax: accountData.inventoryMax,
-        updatedAt: serverTimestamp(),
-        createdAt: editDocId ? serverTimestamp() : serverTimestamp()
+        updatedAt: serverTimestamp()
       }, { merge: true });
 
       await batch.commit();
@@ -276,10 +280,6 @@ const AccountUpsertScreen: React.FC = () => {
             {loading ? <span className="material-symbols-outlined animate-spin">sync</span> : <span className="material-symbols-outlined">save</span>}
             Sincronizar Índice F1
           </button>
-          
-          <p className="text-[9px] text-center text-slate-500 font-bold uppercase tracking-widest px-4 leading-relaxed">
-            Al guardar, el sistema asegura la vinculación vía accountId para reportes de IA y alertas de stock correctos.
-          </p>
         </div>
       </main>
     </div>

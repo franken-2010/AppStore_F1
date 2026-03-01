@@ -22,30 +22,54 @@ const FinanceAccountsScreen: React.FC = () => {
     if (!user) return;
     setLoading(true);
     
-    // Escuchar categorías
+    // Escuchar categorías con limpieza de datos
     const qCat = query(collection(db, "users", user.uid, "categories"), orderBy("order", "asc"));
     const unsubCat = onSnapshot(qCat, (snap) => {
-      setCategories(snap.docs.map(d => ({ id: d.id, ...d.data() } as AccountCategory)));
+      setCategories(snap.docs.map(d => {
+        const data = d.data();
+        return {
+          id: d.id,
+          name: String(data.name || ''),
+          accountingType: data.accountingType as any,
+          order: Number(data.order || 0),
+          color: data.color ? String(data.color) : undefined
+        };
+      }));
     });
 
-    // Escuchar cuentas (Fuente única de verdad)
+    // Escuchar cuentas con limpieza de datos (Evita errores de estructura circular)
     const qAcc = query(collection(db, "users", user.uid, "accounts"), orderBy("order", "asc"));
     const unsubAcc = onSnapshot(qAcc, (snap) => {
-      setAccounts(snap.docs.map(d => ({ id: d.id, ...d.data() } as AccountingAccount)));
+      setAccounts(snap.docs.map(d => {
+        const data = d.data();
+        return {
+          id: d.id,
+          accountId: String(data.accountId || ''),
+          name: String(data.name || ''),
+          type: data.type as any,
+          categoryId: data.categoryId ? String(data.categoryId) : null,
+          balance: Number(data.balance || 0),
+          isVisible: data.isVisible !== false,
+          isContable: data.isContable !== false,
+          inventoryMin: data.inventoryMin !== undefined ? Number(data.inventoryMin) : undefined,
+          inventoryMax: data.inventoryMax !== undefined ? Number(data.inventoryMax) : undefined,
+          order: Number(data.order || 0),
+          code: String(data.code || '')
+        };
+      }));
       setLoading(false);
     });
 
     return () => { unsubCat(); unsubAcc(); };
   }, [user]);
 
-  // 1. Filtrar solo cuentas visibles (default true si el campo no existe)
+  // Filtrar solo cuentas visibles
   const visibleAccounts = useMemo(() => {
     return accounts
       .filter(a => a.isVisible !== false)
       .sort((a, b) => (a.order ?? 999) - (b.order ?? 999));
   }, [accounts]);
 
-  // Totales
   const capital = visibleAccounts.filter(a => a.type === 'Capital').reduce((sum, a) => sum + (a.balance || 0), 0);
   const aDeber = visibleAccounts.filter(a => a.type === 'Pasivo').reduce((sum, a) => sum + (a.balance || 0), 0);
   const totalActivos = visibleAccounts.filter(a => a.type === 'Activo' || a.type === 'Ahorro').reduce((sum, a) => sum + (a.balance || 0), 0);
@@ -57,14 +81,10 @@ const FinanceAccountsScreen: React.FC = () => {
 
   const AccountRow: React.FC<{ account: AccountingAccount }> = ({ account }) => {
     const isNegative = account.type === 'Pasivo';
-    // 4. Normalización de accountId para lógica (opcional para debug aquí)
-    const normalizedId = (account.accountId || account.id || '').toLowerCase().trim().replace(/\s+/g, '_');
-    
     return (
       <div 
         onClick={() => navigate(`/account/history/${account.id}`)}
         className="flex items-center justify-between py-4 px-5 border-b border-white/5 active:bg-white/5 transition-colors cursor-pointer"
-        data-account-id={normalizedId}
       >
         <div className="flex flex-col gap-0.5">
           <span className="text-[15px] font-medium text-slate-200">{account.name}</span>
@@ -83,12 +103,10 @@ const FinanceAccountsScreen: React.FC = () => {
     </div>
   );
 
-  // 5. Renderizado data-driven
   const renderCategorizedAccounts = () => {
     const renderedIds = new Set<string>();
     const sections: React.ReactNode[] = [];
 
-    // Cuentas por categoría existente
     categories.forEach(cat => {
       const catAccs = visibleAccounts.filter(a => a.categoryId === cat.id);
       if (catAccs.length > 0) {
@@ -104,7 +122,6 @@ const FinanceAccountsScreen: React.FC = () => {
       }
     });
 
-    // Cuentas sin categoría o con categoría inexistente (incluyendo "Fiesta")
     const remainingAccs = visibleAccounts.filter(a => !renderedIds.has(a.id!));
     if (remainingAccs.length > 0) {
       sections.push(
@@ -148,19 +165,11 @@ const FinanceAccountsScreen: React.FC = () => {
               </div>
             )}
           </div>
-          <div className="size-9 rounded-full bg-indigo-600 flex items-center justify-center text-[11px] font-black text-white ml-1 border-2 border-[#0f172a] shadow-lg">
+          <div className="size-9 rounded-full bg-indigo-500 flex items-center justify-center text-[11px] font-black text-white ml-1 border-2 border-[#0f172a] shadow-lg">
             {profile?.displayName?.substring(0,2).toUpperCase() || 'AD'}
           </div>
         </div>
       </header>
-
-      {/* 6. Diagnóstico de discrepancias */}
-      {!loading && renderedCount !== visibleAccounts.length && (
-        <div className="bg-red-500/20 px-5 py-2 flex items-center gap-2">
-          <span className="material-symbols-outlined text-red-400 text-sm">warning</span>
-          <span className="text-[10px] font-bold text-red-200 uppercase">Error de renderizado: {visibleAccounts.length - renderedCount} cuenta(s) ocultas.</span>
-        </div>
-      )}
 
       <div className="px-5 py-6 grid grid-cols-3 gap-1 bg-[#0f172a] border-b border-white/5">
         <div className="text-center">

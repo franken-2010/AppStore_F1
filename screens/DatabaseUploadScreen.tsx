@@ -10,11 +10,9 @@ import {
   doc, 
   getDocs,
   serverTimestamp,
-  addDoc,
   query,
   orderBy,
   where,
-  collectionGroup,
   updateDoc,
   limit,
   setDoc,
@@ -26,7 +24,7 @@ type UploadContext = 'products' | 'providers' | 'costs';
 
 const DatabaseUploadScreen: React.FC = () => {
   const navigate = useNavigate();
-  const { user, profile } = useAuth();
+  const { user } = useAuth();
   
   const productsInputRef = useRef<HTMLInputElement>(null);
   const providersInputRef = useRef<HTMLInputElement>(null);
@@ -52,7 +50,7 @@ const DatabaseUploadScreen: React.FC = () => {
   const [reindexSummary, setReindexSummary] = useState<any>(null);
   const [lastJob, setLastJob] = useState<{ id: string, totalRead: number, finishedAtMillis: number | null } | null>(null);
 
-  const REQUIRED_STABLE_IDS = ['ventas', 'fiesta', 'recargas', 'estancias', 'cxc'];
+  const REQUIRED_STABLE_IDS = ['ventas', 'fiesta', 'recargas', 'estancias', 'cxc', 'inventarios'];
 
   useEffect(() => {
     if (activeSubTab === 'diag') runDiagnostic();
@@ -72,7 +70,7 @@ const DatabaseUploadScreen: React.FC = () => {
 
   const tokenize = (text: string): string[] => {
     const tokens = text.split(' ').filter(t => t.length >= 2 || !isNaN(Number(t)));
-    return Array.from(new Set(tokens)); // Únicos
+    return Array.from(new Set(tokens)); 
   };
 
   const handleNormalizePrices = async () => {
@@ -179,7 +177,6 @@ const DatabaseUploadScreen: React.FC = () => {
       let processedCount = 0;
       let batch = writeBatch(db);
       let batchCount = 0;
-      const sampleUpdatedKeys: string[] = [];
 
       for (const d of docs) {
         try {
@@ -195,9 +192,7 @@ const DatabaseUploadScreen: React.FC = () => {
             const oldTokensStr = Array.isArray(data.searchTokens) ? data.searchTokens.sort().join('|') : '';
             const newTokensStr = sTokens.sort().join('|');
             
-            const needsUpdate = 
-              data.searchName !== sName || 
-              oldTokensStr !== newTokensStr;
+            const needsUpdate = data.searchName !== sName || oldTokensStr !== newTokensStr;
 
             if (needsUpdate) {
               batch.update(d.ref, { 
@@ -207,7 +202,6 @@ const DatabaseUploadScreen: React.FC = () => {
               });
               updatedCount++;
               batchCount++;
-              if (sampleUpdatedKeys.length < 10) sampleUpdatedKeys.push(d.id);
 
               if (batchCount >= 400) {
                 await batch.commit();
@@ -226,69 +220,34 @@ const DatabaseUploadScreen: React.FC = () => {
         processedCount++;
         if (processedCount % 25 === 0 || processedCount === totalDocs) {
           setOpStats({ processed: processedCount, total: totalDocs, updated: updatedCount, skipped: skippedCount, errors: errorCount });
-          await updateDoc(jobRef, {
-            totalRead: processedCount,
-            updated: updatedCount,
-            skipped: skippedCount,
-            errors: errorCount
-          });
         }
       }
 
       if (batchCount > 0) await batch.commit();
       const durationMs = Date.now() - startTime;
 
-      let postCheckHits = 0;
-      if (sampleUpdatedKeys.length > 0) {
-        const firstDoc = await getDoc(doc(db, "costs_catalog", sampleUpdatedKeys[0]));
-        const tokens = firstDoc.data()?.searchTokens || [];
-        if (tokens.length > 0) {
-          const qCheck = query(collection(db, "costs_catalog"), where("searchTokens", "array-contains", tokens[0]), limit(5));
-          const snapCheck = await getDocs(qCheck);
-          postCheckHits = snapCheck.size;
-        }
-      }
-
-      const finalSummary = {
-        totalRead: processedCount,
-        updated: updatedCount,
-        skipped: skippedCount,
-        errors: errorCount,
-        durationMs,
-        postCheckHits,
-        sampleUpdatedKeys
-      };
-
       await updateDoc(jobRef, {
         status: "DONE",
         finishedAt: serverTimestamp(),
         durationMs,
-        ...finalSummary
+        totalRead: processedCount,
+        updated: updatedCount,
+        skipped: skippedCount,
+        errors: errorCount
       });
 
-      setReindexSummary(finalSummary);
-      fetchLastJob();
+      setReindexSummary({ totalRead: processedCount, updated: updatedCount });
     } catch (err: any) {
       console.error(err);
-      await updateDoc(jobRef, {
-        status: "ERROR",
-        finishedAt: serverTimestamp(),
-        errorMessage: err.message
-      });
-      alert(`Error crítico: ${err.message}`);
+      setStatus({ text: `Error crítico: ${err.message}`, type: 'error' });
     } finally {
       setIsReindexing(false);
     }
   };
 
-  /**
-   * FIX: Simplificación de la consulta para evitar el error de falta de índice compuesto.
-   * Filtramos por 'type' en memoria después de obtener los registros más recientes.
-   */
   const fetchLastJob = async () => {
     if (!user) return;
     try {
-      // Obtenemos los últimos 20 jobs globales para encontrar el de reindexación
       const q = query(
         collection(db, "admin_jobs"), 
         orderBy("startedAt", "desc"),
@@ -297,9 +256,7 @@ const DatabaseUploadScreen: React.FC = () => {
       
       const snap = await getDocs(q);
       if (!snap.empty) {
-        // Filtrado en memoria
         const targetJobDoc = snap.docs.find(d => d.data().type === "reindex_costs_catalog");
-        
         if (targetJobDoc) {
           const data = targetJobDoc.data();
           setLastJob({ 
@@ -346,25 +303,53 @@ const DatabaseUploadScreen: React.FC = () => {
     }
   };
 
+  /**
+   * FIX: Migración por cuenta para evitar errores de índice de collectionGroup.
+   * Ahora también mapea cxc_pago a cxc automáticamente.
+   */
   const handleMigrateUIDs = async () => {
     if (!user) return;
     setIsProcessing(true);
-    setStatus({ text: "Iniciando migración...", type: 'info' });
+    setStatus({ text: "Iniciando estandarización de movimientos...", type: 'info' });
     
     try {
-      const q = query(collectionGroup(db, "movements"));
-      const snap = await getDocs(q);
-      
+      const accountsSnap = await getDocs(collection(db, "users", user.uid, "accounts"));
+      let totalFixed = 0;
       let batch = writeBatch(db);
       let opCount = 0;
-      let totalFixed = 0;
 
-      for (const mDoc of snap.docs) {
-        const mData = mDoc.data();
-        if (!mData.uid && mDoc.ref.path.includes(user.uid)) {
-          batch.update(mDoc.ref, { uid: user.uid, updatedAt: serverTimestamp() });
-          opCount++;
-          totalFixed++;
+      for (const accDoc of accountsSnap.docs) {
+        const movsRef = collection(db, "users", user.uid, "accounts", accDoc.id, "movements");
+        const movsSnap = await getDocs(movsRef);
+        const accData = accDoc.data();
+
+        for (const mDoc of movsSnap.docs) {
+          const mData = mDoc.data();
+          const updates: any = {};
+          
+          if (!mData.uid) updates.uid = user.uid;
+          
+          // Legacy check for cxc_pago
+          const currentAccountId = (mData.accountId || accData.accountId || '').toLowerCase();
+          if (currentAccountId === 'cxc_pago') {
+            updates.accountId = 'cxc';
+            updates.rubro = 'cxc';
+          }
+
+          if (!mData.direction || !mData.signedAmount) {
+            const isIncome = mData.type === 'INCOME' || (mData.type as any) === 'INGRESO';
+            const amt = Number(mData.amount || 0);
+            updates.direction = isIncome ? 'IN' : 'OUT';
+            updates.signedAmount = isIncome ? amt : -amt;
+            updates.amount = amt;
+            if (!mData.rubro) updates.rubro = updates.accountId || currentAccountId || 'otros';
+          }
+
+          if (Object.keys(updates).length > 0) {
+            batch.update(mDoc.ref, { ...updates, updatedAt: serverTimestamp() });
+            opCount++;
+            totalFixed++;
+          }
           
           if (opCount >= 450) {
             await batch.commit();
@@ -375,7 +360,7 @@ const DatabaseUploadScreen: React.FC = () => {
       }
 
       if (opCount > 0) await batch.commit();
-      setStatus({ text: `✅ Migración completada: ${totalFixed} actualizados.`, type: 'success' });
+      setStatus({ text: `✅ Estandarización completa: ${totalFixed} actualizados.`, type: 'success' });
     } catch (err: any) {
       console.error(err);
       setStatus({ text: `Error: ${err.message}`, type: 'error' });
@@ -384,6 +369,9 @@ const DatabaseUploadScreen: React.FC = () => {
     }
   };
 
+  /**
+   * FIX: Reseteo por cuenta para evitar errores de índice.
+   */
   const handleResetMovements = async () => {
     if (!user || resetConfirmText !== 'RESET') return;
     setIsProcessing(true);
@@ -391,33 +379,27 @@ const DatabaseUploadScreen: React.FC = () => {
     setStatus({ text: "Reseteando...", type: 'info' });
 
     try {
-      const q = query(collectionGroup(db, "movements"));
-      const snapRaw = await getDocs(q);
-      const snap = snapRaw.docs.filter(d => {
-        const dUid = d.data().uid;
-        return !dUid || dUid === user.uid;
-      });
-      
       let batch = writeBatch(db);
       let opCount = 0;
 
       const accountsSnap = await getDocs(collection(db, "users", user.uid, "accounts"));
-      accountsSnap.docs.forEach(accountDoc => {
-        const accData = accountDoc.data();
-        batch.update(accountDoc.ref, { 
+      for (const accDoc of accountsSnap.docs) {
+        const accData = accDoc.data();
+        batch.update(accDoc.ref, { 
           balance: accData.initialBalance || 0, 
           updatedAt: serverTimestamp() 
         });
         opCount++;
-      });
 
-      for (const mDoc of snap) {
-        batch.delete(mDoc.ref);
-        opCount++;
-        if (opCount >= 450) { 
-          await batch.commit(); 
-          batch = writeBatch(db); 
-          opCount = 0; 
+        const movsSnap = await getDocs(collection(db, "users", user.uid, "accounts", accDoc.id, "movements"));
+        for (const mDoc of movsSnap.docs) {
+          batch.delete(mDoc.ref);
+          opCount++;
+          if (opCount >= 450) { 
+            await batch.commit(); 
+            batch = writeBatch(db); 
+            opCount = 0; 
+          }
         }
       }
 
@@ -434,33 +416,29 @@ const DatabaseUploadScreen: React.FC = () => {
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>, context: UploadContext) => {
     const file = e.target.files?.[0];
     if (file && (file.type === "text/csv" || file.name.endsWith('.csv'))) {
-      processCSV(file, context);
-    }
-  };
-
-  const processCSV = (file: File, context: UploadContext) => {
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const text = e.target?.result as string;
-      const lines = text.split(/\r?\n/).filter(l => l.trim() !== '');
-      if (lines.length < 2) return;
-      const headers = lines[0].split(',').map(h => h.trim().replace(/^"|"$/g, ''));
-      const dataLines = lines.slice(1);
-      const result = dataLines.map(line => {
-        const values = line.split(',').map(val => val.trim().replace(/^"|"$/g, ''));
-        const entry: any = {};
-        headers.forEach((header, index) => {
-          let val: any = values[index] || "";
-          if (val !== "" && !isNaN(val as any)) val = val.includes('.') ? parseFloat(val) : parseInt(val);
-          entry[header] = val;
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        const text = ev.target?.result as string;
+        const lines = text.split(/\r?\n/).filter(l => l.trim() !== '');
+        if (lines.length < 2) return;
+        const headers = lines[0].split(',').map(h => h.trim().replace(/^"|"$/g, ''));
+        const dataLines = lines.slice(1);
+        const result = dataLines.map(line => {
+          const values = line.split(',').map(val => val.trim().replace(/^"|"$/g, ''));
+          const entry: any = {};
+          headers.forEach((header, index) => {
+            let val: any = values[index] || "";
+            if (val !== "" && !isNaN(val as any)) val = val.includes('.') ? parseFloat(val) : parseInt(val);
+            entry[header] = val;
+          });
+          return entry;
         });
-        return entry;
-      });
-      if (context === 'products') setParsedProducts(result);
-      else if (context === 'providers') setParsedProviders(result);
-      else if (context === 'costs') setParsedCosts(result);
-    };
-    reader.readAsText(file);
+        if (context === 'products') setParsedProducts(result);
+        else if (context === 'providers') setParsedProviders(result);
+        else if (context === 'costs') setParsedCosts(result);
+      };
+      reader.readAsText(file);
+    }
   };
 
   const syncWithFirestore = async (context: UploadContext) => {
@@ -524,34 +502,14 @@ const DatabaseUploadScreen: React.FC = () => {
 
   return (
     <div className="relative flex flex-col h-screen w-full max-w-md mx-auto bg-background-light dark:bg-background-dark shadow-2xl overflow-hidden pb-32 font-display text-slate-900 dark:text-white">
-      {(isReindexing || isNormalizing) && (
+      {isProcessing && (
         <div className="fixed inset-0 z-[110] flex items-center justify-center p-6 bg-black/80 backdrop-blur-md animate-in fade-in duration-200">
-          <div className="w-full max-w-xs bg-white dark:bg-surface-dark rounded-[2.5rem] p-8 shadow-2xl border border-slate-100 dark:border-white/10 animate-in zoom-in duration-300">
+          <div className="w-full max-w-xs bg-white dark:bg-surface-dark rounded-[2.5rem] p-8 shadow-2xl animate-in zoom-in duration-300">
             <div className="flex flex-col items-center text-center">
-              <span className="material-symbols-outlined text-5xl text-primary animate-spin mb-4">{isReindexing ? 'rebase_edit' : 'payments'}</span>
-              <h3 className="text-xl font-black mb-2">{isReindexing ? 'Reindexando...' : 'Normalizando...'}</h3>
-              <div className="w-full bg-slate-100 dark:bg-white/5 h-2.5 rounded-full overflow-hidden mb-6 shadow-inner">
-                <div className="h-full bg-primary transition-all duration-300" style={{ width: `${(opStats.processed / (opStats.total || 1)) * 100}%` }}></div>
-              </div>
-              <div className="grid grid-cols-2 gap-4 w-full text-left">
-                <div><p className="text-[8px] font-black text-slate-400 uppercase">Leídos</p><p className="text-lg font-black">{opStats.processed}/{opStats.total}</p></div>
-                <div><p className="text-[8px] font-black text-slate-400 uppercase text-right">Editados</p><p className="text-lg font-black text-emerald-500 text-right">{opStats.updated}</p></div>
-              </div>
+              <span className="material-symbols-outlined text-5xl text-primary animate-spin mb-4">sync</span>
+              <h3 className="text-xl font-black mb-2">Procesando...</h3>
+              <p className="text-xs text-slate-500">Optimizando base de datos</p>
             </div>
-          </div>
-        </div>
-      )}
-
-      {reindexSummary && (
-        <div className="fixed inset-0 z-[110] flex items-center justify-center p-6 bg-black/60 backdrop-blur-md animate-in fade-in duration-200">
-          <div className="w-full max-w-sm bg-white dark:bg-surface-dark rounded-[2.5rem] p-8 shadow-2xl border border-slate-100 dark:border-white/10 animate-in zoom-in duration-300">
-            <h3 className="text-2xl font-black mb-1">Completado</h3>
-            <div className="space-y-4 my-8">
-               <div className="flex justify-between items-center pb-2 border-b border-slate-50 dark:border-white/5"><span className="text-xs font-bold text-slate-500">Procesados</span><span className="text-sm font-black">{reindexSummary.totalRead}</span></div>
-               <div className="flex justify-between items-center pb-2 border-b border-slate-50 dark:border-white/5"><span className="text-xs font-bold text-slate-500">Actualizados</span><span className="text-sm font-black text-emerald-500">{reindexSummary.updated}</span></div>
-               <div className="flex justify-between items-center pb-2 border-b border-slate-50 dark:border-white/5"><span className="text-xs font-bold text-slate-500">Hits post-check</span><span className="text-sm font-black text-blue-500">{reindexSummary.postCheckHits}</span></div>
-            </div>
-            <button onClick={() => setReindexSummary(null)} className="w-full py-4 bg-primary text-white font-black rounded-2xl shadow-xl shadow-primary/20 active:scale-95">Cerrar</button>
           </div>
         </div>
       )}
@@ -578,7 +536,7 @@ const DatabaseUploadScreen: React.FC = () => {
 
       <div className="flex px-6 pt-2 gap-4 overflow-x-auto no-scrollbar">
         <button onClick={() => setActiveSubTab('upload')} className={`pb-2 shrink-0 text-xs font-black uppercase tracking-widest border-b-2 ${activeSubTab === 'upload' ? 'border-primary text-primary' : 'border-transparent text-slate-400'}`}>Cargas CSV</button>
-        <button onClick={() => setActiveSubTab('accounting')} className={`pb-2 shrink-0 text-xs font-black uppercase tracking-widest border-b-2 ${activeSubTab === 'accounting' ? 'border-primary text-primary' : 'border-transparent text-slate-400'}`}>Limpieza</button>
+        <button onClick={() => setActiveSubTab('accounting')} className={`pb-2 shrink-0 text-xs font-black uppercase tracking-widest border-b-2 ${activeSubTab === 'accounting' ? 'border-primary text-primary' : 'border-transparent text-slate-400'}`}>Operaciones</button>
         <button onClick={() => setActiveSubTab('diag')} className={`pb-2 shrink-0 text-xs font-black uppercase tracking-widest border-b-2 ${activeSubTab === 'diag' ? 'border-primary text-primary' : 'border-transparent text-slate-400'}`}>Diagnóstico</button>
       </div>
 
@@ -601,22 +559,26 @@ const DatabaseUploadScreen: React.FC = () => {
         {activeSubTab === 'accounting' && (
           <div className="space-y-6 animate-in fade-in">
             <div className="bg-white dark:bg-surface-dark p-8 rounded-[2.5rem] shadow-sm border border-slate-100 dark:border-white/5 space-y-6">
-              <button onClick={handleNormalizePrices} disabled={isNormalizing || isReindexing} className="w-full py-4 bg-blue-600 text-white font-black rounded-2xl active:scale-95 transition-all flex items-center justify-center gap-3 shadow-lg shadow-blue-600/20">
+              <button onClick={handleNormalizePrices} className="w-full py-4 bg-blue-600 text-white font-black rounded-2xl active:scale-95 transition-all flex items-center justify-center gap-3">
                 <span className="material-symbols-outlined">payments</span>
                 Normalizar Precios
               </button>
-              <button onClick={handleReindexCosts} disabled={isReindexing || isNormalizing} className="w-full py-4 bg-emerald-600 text-white font-black rounded-2xl active:scale-95 transition-all flex items-center justify-center gap-3 shadow-lg shadow-emerald-600/20">
+              <button onClick={handleReindexCosts} className="w-full py-4 bg-emerald-600 text-white font-black rounded-2xl active:scale-95 transition-all flex items-center justify-center gap-3">
                 <span className="material-symbols-outlined">rebase_edit</span>
                 Reindexar Catálogo
               </button>
-              {lastJob && (
-                 <p className="text-[8px] font-black text-center text-slate-400 uppercase">Último Index: {lastJob.totalRead} docs - {lastJob.finishedAtMillis ? new Date(lastJob.finishedAtMillis).toLocaleDateString() : '---'}</p>
-              )}
               <div className="h-px bg-slate-100 dark:bg-white/5 w-full my-2"></div>
-              <button onClick={handleMigrateUIDs} disabled={isProcessing} className="w-full py-4 bg-indigo-600 text-white font-black rounded-2xl active:scale-95 transition-all flex items-center justify-center gap-3 shadow-lg shadow-indigo-600/20">
-                <span className="material-symbols-outlined">person_add</span>
-                Migrar UIDs
-              </button>
+              
+              <div className="space-y-3">
+                <p className="text-[10px] font-black uppercase text-slate-500 tracking-widest ml-1">Estandarización F1</p>
+                <button onClick={handleMigrateUIDs} disabled={isProcessing} className="w-full py-4 bg-indigo-600 text-white font-black rounded-2xl active:scale-95 transition-all flex items-center justify-center gap-3 shadow-lg shadow-indigo-600/20">
+                  <span className="material-symbols-outlined">person_add</span>
+                  Sincronizar Schema Standard
+                </button>
+                <p className="text-[9px] font-bold text-slate-400 italic text-center uppercase">Soluciona errores de permisos y Dashboard.</p>
+              </div>
+
+              <div className="h-px bg-slate-100 dark:bg-white/5 w-full my-2"></div>
               <button onClick={() => setShowResetModal(true)} disabled={isProcessing} className="w-full py-4 bg-red-500 text-white font-black rounded-2xl active:scale-95 transition-all flex items-center justify-center gap-3 shadow-lg shadow-red-500/20">
                 <span className="material-symbols-outlined">delete_sweep</span>
                 Resetear Movimientos
