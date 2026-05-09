@@ -35,10 +35,8 @@ const DashboardScreen: React.FC = () => {
 
   const dashboardConfig = useMemo(() => profile?.dashboardConfig || {
     showBalance: true,
-    showPerformance: true,
     showLogistics: true,
-    showClosings: true,
-    performanceAccounts: ['ventas', 'fiesta', 'estancias', 'recargas']
+    showClosings: true
   }, [profile?.dashboardConfig]);
 
   const formatMXN = (val: number) => new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(val);
@@ -117,15 +115,7 @@ const DashboardScreen: React.FC = () => {
   }, [user?.uid]);
 
   const totals = useMemo(() => AccountingService.calculateTotals(movementsToday), [movementsToday]);
-  const statsByAccount = useMemo(() => AccountingService.groupStatsByAccount(movementsToday), [movementsToday]);
   
-  const rubrics = useMemo(() => {
-    return dashboardConfig.performanceAccounts.map(id => {
-      const acc = AccountResolver.getAccount(id);
-      return { id, label: acc?.name || id };
-    });
-  }, [dashboardConfig.performanceAccounts]);
-
   const inventoryStatus = useMemo(() => {
     if (!invAccount) return { label: 'Cargando...', color: 'bg-slate-500', icon: 'sync', progress: 0, status: 'UNKNOWN' };
     
@@ -214,36 +204,6 @@ const DashboardScreen: React.FC = () => {
                </div>
                <span className="material-symbols-outlined absolute -right-6 -bottom-6 text-[140px] opacity-10 rotate-12">account_balance_wallet</span>
              </div>
-          </section>
-        )}
-
-        {dashboardConfig.showPerformance && rubrics.length > 0 && (
-          <section className="space-y-4">
-            <div className="flex items-center justify-between px-1">
-              <h2 className="text-[10px] font-black uppercase tracking-[0.25em] text-slate-500">Rendimiento Hoy</h2>
-              <div className="h-px flex-1 bg-white/5 ml-4"></div>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              {rubrics.map((r) => {
-                const data = statsByAccount[r.id] || { income: 0, expense: 0, net: 0 };
-                const accInfo = AccountResolver.getAccount(r.id);
-                return (
-                  <div 
-                    key={r.id} 
-                    onClick={() => navigate(accInfo ? `/account/history/${accInfo.accountDocId}` : '/finance-accounts')}
-                    className="p-5 bg-white/5 rounded-[1.8rem] border border-white/5 shadow-sm active:scale-95 transition-all cursor-pointer group"
-                  >
-                    <div className="flex justify-between items-start mb-3">
-                      <span className="text-[9px] font-black uppercase tracking-widest text-slate-400 group-hover:text-primary dark:group-hover:text-blue-400 transition-colors">{r.label}</span>
-                      <div className={`size-1.5 rounded-full ${data.net >= 0 ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]' : 'bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.5)]'}`}></div>
-                    </div>
-                    <p className={`text-xl font-black tracking-tight ${data.net >= 0 ? 'text-white' : 'text-rose-400'}`}>
-                      {formatMXN(data.net)}
-                    </p>
-                  </div>
-                );
-              })}
-            </div>
           </section>
         )}
 

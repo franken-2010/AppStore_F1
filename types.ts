@@ -105,10 +105,8 @@ export interface AccountMovement {
 
 export interface DashboardConfig {
   showBalance: boolean;
-  showPerformance: boolean;
   showLogistics: boolean;
   showClosings: boolean;
-  performanceAccounts: string[]; // IDs de cuentas a mostrar en Rendimiento
 }
 
 export interface UserProfile {

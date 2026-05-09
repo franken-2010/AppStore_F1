@@ -14,15 +14,12 @@ interface DashboardCustomizerProps {
 
 const DashboardCustomizer: React.FC<DashboardCustomizerProps> = ({ isOpen, onClose }) => {
   const { user, profile } = useAuth();
-  const [allAccounts, setAllAccounts] = useState<AccountIndex[]>([]);
   const [isSaving, setIsSaving] = useState(false);
   
   const defaultConfig: DashboardConfig = {
     showBalance: true,
-    showPerformance: true,
     showLogistics: true,
-    showClosings: true,
-    performanceAccounts: ['ventas', 'fiesta', 'estancias', 'recargas']
+    showClosings: true
   };
 
   const [config, setConfig] = useState<DashboardConfig>(profile?.dashboardConfig || defaultConfig);
@@ -33,33 +30,8 @@ const DashboardCustomizer: React.FC<DashboardCustomizerProps> = ({ isOpen, onClo
     }
   }, [profile?.dashboardConfig]);
 
-  useEffect(() => {
-    const fetchAccounts = async () => {
-      if (!user) return;
-      try {
-        const snap = await getDocs(collection(db, "users", user.uid, "accountIndex"));
-        const accounts = snap.docs.map(doc => ({ ...doc.data(), accountDocId: doc.id } as AccountIndex));
-        setAllAccounts(accounts.filter(a => a.isActive));
-      } catch (err) {
-        console.error("Error loading accounts for customizer", err);
-      }
-    };
-    if (isOpen) fetchAccounts();
-  }, [isOpen, user]);
-
-  const handleToggleModule = (key: keyof Omit<DashboardConfig, 'performanceAccounts'>) => {
+  const handleToggleModule = (key: keyof DashboardConfig) => {
     setConfig(prev => ({ ...prev, [key]: !prev[key] }));
-  };
-
-  const handleToggleAccount = (accountId: string) => {
-    setConfig(prev => {
-      const accts = prev.performanceAccounts || [];
-      if (accts.includes(accountId)) {
-        return { ...prev, performanceAccounts: accts.filter(id => id !== accountId) };
-      } else {
-        return { ...prev, performanceAccounts: [...accts, accountId] };
-      }
-    });
   };
 
   const handleSave = async () => {
@@ -111,7 +83,6 @@ const DashboardCustomizer: React.FC<DashboardCustomizerProps> = ({ isOpen, onClo
                 <div className="grid grid-cols-1 gap-3">
                   {[
                     { key: 'showBalance', label: 'Balance de Hoy', icon: 'account_balance_wallet' },
-                    { key: 'showPerformance', label: 'Rendimiento (Rubros)', icon: 'query_stats' },
                     { key: 'showLogistics', label: 'Logística (Inventario)', icon: 'inventory_2' },
                     { key: 'showClosings', label: 'Cierre Reciente', icon: 'verified' }
                   ].map((m) => (
@@ -132,31 +103,7 @@ const DashboardCustomizer: React.FC<DashboardCustomizerProps> = ({ isOpen, onClo
                 </div>
               </section>
 
-              {config.showPerformance && (
-                <section className="space-y-4">
-                  <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-primary">Métricas en Rendimiento</h3>
-                  <div className="grid grid-cols-2 gap-2">
-                    {allAccounts.map((acc) => {
-                      const isActive = config.performanceAccounts?.includes(acc.accountId);
-                      return (
-                        <button 
-                          key={acc.accountId}
-                          onClick={() => handleToggleAccount(acc.accountId)}
-                          className={`p-3 rounded-xl border text-left transition-all ${isActive ? 'bg-primary/10 border-primary/20' : 'bg-white/5 border-white/5 opacity-50'}`}
-                        >
-                          <p className={`text-[10px] font-black uppercase tracking-tight truncate ${isActive ? 'text-white' : 'text-slate-400'}`}>
-                            {acc.name}
-                          </p>
-                          <div className="flex justify-between items-center mt-1">
-                            <span className="text-[8px] font-bold text-slate-550 uppercase">{acc.type}</span>
-                            {isActive && <span className="material-symbols-outlined text-[12px] text-primary">check_circle</span>}
-                          </div>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </section>
-              )}
+
             </div>
 
             <div className="p-6 bg-[#0a0f1d] border-t border-white/5">
