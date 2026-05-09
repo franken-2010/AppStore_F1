@@ -12,9 +12,10 @@ import {
   doc, 
   getDoc,
   Timestamp
-} from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+} from "firebase/firestore";
 import { AccountingAccount, AccountMovement } from '../types';
 import { AccountingService } from '../services/AccountingService';
+import { handleFirestoreError, OperationType } from '../services/errorHandling';
 
 const AccountChartsScreen: React.FC = () => {
   const { accountId: docId } = useParams();
@@ -81,7 +82,7 @@ const AccountChartsScreen: React.FC = () => {
           setMovements(list);
         }
       } catch (e) {
-        console.error("Error fetching charts data:", e);
+        handleFirestoreError(e, OperationType.GET, `users/${user.uid}/accounts/${docId}`);
       } finally {
         setLoading(false);
       }
@@ -99,7 +100,11 @@ const AccountChartsScreen: React.FC = () => {
   const selectedMovements = useMemo(() => {
     if (!selectedDay) return [];
     return movements.filter(m => {
-      const mDate = new Date(m.createdAt as any).toISOString().split('T')[0];
+      const d = new Date(m.createdAt as any);
+      const year = d.getFullYear();
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      const mDate = `${year}-${month}-${day}`;
       return mDate === selectedDay;
     });
   }, [movements, selectedDay]);

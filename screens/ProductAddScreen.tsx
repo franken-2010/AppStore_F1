@@ -15,7 +15,8 @@ import {
   orderBy,
   limit,
   where
-} from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+} from "firebase/firestore";
+import { handleFirestoreError, OperationType } from '../services/errorHandling';
 
 const ProductAddScreen: React.FC = () => {
   const navigate = useNavigate();
@@ -24,11 +25,11 @@ const ProductAddScreen: React.FC = () => {
   const [availableProviders, setAvailableProviders] = useState<string[]>([]);
   const [availableCategories, setAvailableCategories] = useState<string[]>([]);
   
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<any>({
     categoria: '',
     producto: '',
     presentacion: '',
-    uniPorCaja: 1,
+    uniPorCaja: '1',
     costoBase: '',
     utilidad: 0.2,
     proveedor: ''
@@ -71,7 +72,7 @@ const ProductAddScreen: React.FC = () => {
         setAvailableCategories(defaultCats.sort((a, b) => a.localeCompare(b)));
 
       } catch (error) {
-        console.error("Error fetching catalogs:", error);
+        handleFirestoreError(error, OperationType.GET, "suppliers_directory / products");
       } finally {
         setLoadingInitial(false);
       }
@@ -113,8 +114,9 @@ const ProductAddScreen: React.FC = () => {
   const handleSave = async () => {
     if (!user) return;
 
-    if (!formData.categoria || !formData.producto || !formData.presentacion || !formData.proveedor || !formData.costoBase) {
-      setStatus({ text: 'Todos los campos son obligatorios.', type: 'error' });
+    const uniPorCajaNum = parseInt(formData.uniPorCaja);
+    if (!formData.categoria || !formData.producto || !formData.presentacion || !formData.proveedor || !formData.costoBase || isNaN(uniPorCajaNum) || uniPorCajaNum <= 0) {
+      setStatus({ text: 'Todos los campos son obligatorios y Unidades por caja debe ser mayor a 0.', type: 'error' });
       return;
     }
 
@@ -144,7 +146,7 @@ const ProductAddScreen: React.FC = () => {
       const searchTokens = tokenize(searchName);
       
       const costoBaseNum = parseFloat(formData.costoBase.replace(/[$,]/g, '')) || 0;
-      const costoUnidadNum = costoBaseNum / formData.uniPorCaja;
+      const costoUnidadNum = costoBaseNum / uniPorCajaNum;
       const precioSugeridoNum = costoUnidadNum * (1 + formData.utilidad);
       const precioSugRedNum = Math.ceil(precioSugeridoNum);
       const margenNum = precioSugRedNum - costoUnidadNum;
@@ -157,7 +159,7 @@ const ProductAddScreen: React.FC = () => {
         Categoría: formData.categoria,
         Producto: formData.producto.trim(),
         Presentación: formData.presentacion.trim(),
-        Uni_por_caja: formData.uniPorCaja,
+        Uni_por_caja: uniPorCajaNum,
         Proveedor_principal: formData.proveedor,
         ProductoID: newProductoID,
         ProductKey: ProductKey,
@@ -169,7 +171,7 @@ const ProductAddScreen: React.FC = () => {
       const costRef = doc(db, "costs_catalog", ProductKey);
       batch.set(costRef, {
         ProductKey, ProductoID: newProductoID, Nombre_Completo,
-        Uni_por_caja: formData.uniPorCaja, "Utilidad_%": formData.utilidad,
+        Uni_por_caja: uniPorCajaNum, "Utilidad_%": formData.utilidad,
         Costo_base_principal: formatCurrency(costoBaseNum),
         Costo_unidad: formatCurrency(costoUnidadNum),
         Precio_sugerido: formatCurrency(precioSugeridoNum),
@@ -187,7 +189,7 @@ const ProductAddScreen: React.FC = () => {
       batch.set(providerProdRef, {
         ProductKey, ProductoID: newProductoID,
         Proveedor: formData.proveedor, Nombre_Completo,
-        Uni_por_caja: formData.uniPorCaja, Costo_actual: costoBaseNum,
+        Uni_por_caja: uniPorCajaNum, Costo_actual: costoBaseNum,
         Fecha_ult_actualización: serverTimestamp(),
         _importDate: serverTimestamp()
       });
@@ -198,11 +200,11 @@ const ProductAddScreen: React.FC = () => {
         text: `✅ Producto creado: ${ProductKey}. Sugerido: ${formatCurrency(precioSugRedNum)}`, 
         type: 'success' 
       });
-
-      setFormData({ categoria: '', producto: '', presentacion: '', uniPorCaja: 1, costoBase: '', utilidad: 0.2, proveedor: '' });
+      
+      setFormData({ categoria: '', producto: '', presentacion: '', uniPorCaja: '1', costoBase: '', utilidad: 0.2, proveedor: '' });
 
     } catch (error: any) {
-      console.error(error);
+      handleFirestoreError(error, OperationType.WRITE, "products");
       setStatus({ text: `Error: ${error.message}`, type: 'error' });
     } finally {
       setIsSaving(false);
@@ -266,7 +268,7 @@ const ProductAddScreen: React.FC = () => {
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
               <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Uni por Caja</label>
-              <input type="number" value={formData.uniPorCaja} onChange={(e) => setFormData({ ...formData, uniPorCaja: parseInt(e.target.value) || 0 })} className="w-full py-4 px-5 rounded-xl bg-white dark:bg-surface-dark border border-slate-200 dark:border-white/5 outline-none font-bold dark:text-white" />
+              <input type="number" value={formData.uniPorCaja} onChange={(e) => setFormData({ ...formData, uniPorCaja: e.target.value })} className="w-full py-4 px-5 rounded-xl bg-white dark:bg-surface-dark border border-slate-200 dark:border-white/5 outline-none font-bold dark:text-white" />
             </div>
             <div className="space-y-1.5">
               <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Utilidad (Ej: 0.20)</label>

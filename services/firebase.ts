@@ -1,7 +1,7 @@
 
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-import { getAuth } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
-import { getFirestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+import { initializeApp } from "firebase/app";
+import { getAuth } from "firebase/auth";
+import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager } from "firebase/firestore";
 
 /**
  * Configuración oficial del proyecto adminf1-2213b

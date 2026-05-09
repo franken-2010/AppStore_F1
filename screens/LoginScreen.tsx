@@ -10,8 +10,8 @@ import {
   browserSessionPersistence,
   GoogleAuthProvider,
   signInWithPopup
-} from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
-import { doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+} from "firebase/auth";
+import { doc, getDoc, setDoc } from "firebase/firestore";
 
 const LoginScreen: React.FC = () => {
   const navigate = useNavigate();
@@ -89,7 +89,7 @@ const LoginScreen: React.FC = () => {
         }
       }
     } catch (err: any) {
-      console.error("Biometric login error:", err);
+      console.error("Biometric login error:", err.message || String(err));
       setError({ message: 'Error biométrico: ' + err.message });
     } finally {
       setLoading(false);

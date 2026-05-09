@@ -10,42 +10,60 @@ const ToolsScreen: React.FC = () => {
   const navigate = useNavigate();
   const [isSidebarOpen, setIsSidebarOpen] = React.useState(false);
 
-  const tools = [
+  const toolCategories = [
     {
-      title: 'Verificación de precios',
-      description: 'Consulta precios sugeridos con IA en la base de datos.',
-      icon: 'search_check',
-      color: 'bg-blue-600',
-      path: '/tools/price-verification'
+      name: 'Precios y Costos',
+      icon: 'payments',
+      tools: [
+        {
+          title: 'Verificación de precios',
+          description: 'Consulta precios sugeridos con IA en la base de datos.',
+          icon: 'price_check',
+          color: 'bg-blue-500',
+          path: '/tools/price-verification'
+        },
+        {
+          title: 'Actualización masiva',
+          description: 'Sincroniza costos y precios masivamente vía Make.',
+          icon: 'sync_saved_locally',
+          color: 'bg-indigo-500',
+          path: '/tools/price-update'
+        }
+      ]
     },
     {
-      title: 'Generador de Pedidos',
-      description: 'Crea listas inteligentes para WhatsApp usando IA.',
-      icon: 'shopping_cart_checkout',
-      color: 'bg-amber-500',
-      path: '/tools/orders'
+      name: 'Catálogo de Productos',
+      icon: 'inventory_2',
+      tools: [
+        {
+          title: 'Alta de productos',
+          description: 'Registra manualmente nuevos ítems en el catálogo.',
+          icon: 'add_box',
+          color: 'bg-emerald-500',
+          path: '/tools/product-add'
+        }
+      ]
     },
     {
-      title: 'Actualización de productos',
-      description: 'Sincroniza costos y precios masivamente vía Make.',
-      icon: 'sync_alt',
-      color: 'bg-indigo-600',
-      path: '/tools/price-update'
-    },
-    {
-      title: 'Alta de productos',
-      description: 'Registra manualmente nuevos ítems en el catálogo.',
-      icon: 'add_circle',
-      color: 'bg-emerald-600',
-      path: '/tools/product-add'
+      name: 'Operaciones y Pedidos',
+      icon: 'local_shipping',
+      tools: [
+        {
+          title: 'Generador de Pedidos',
+          description: 'Crea listas inteligentes para WhatsApp usando IA.',
+          icon: 'shopping_basket',
+          color: 'bg-amber-500',
+          path: '/tools/orders'
+        }
+      ]
     }
   ];
 
   return (
-    <div className="relative flex h-full min-h-screen w-full flex-col overflow-x-hidden max-w-md mx-auto shadow-2xl bg-background-light dark:bg-background-dark pb-32 font-display">
+    <div className="relative flex h-full min-h-screen w-full flex-col overflow-x-hidden max-w-md mx-auto shadow-2xl bg-slate-50 dark:bg-background-dark pb-32 font-display">
       <Sidebar isOpen={isSidebarOpen} onClose={() => setIsSidebarOpen(false)} />
       
-      <header className="sticky top-0 z-30 bg-background-light/95 dark:bg-background-dark/95 backdrop-blur-md pt-12 px-6 pb-6">
+      <header className="sticky top-0 z-30 bg-slate-50/95 dark:bg-background-dark/95 backdrop-blur-md pt-12 px-6 pb-6">
         <div className="flex items-center justify-between mb-8">
           <button 
             onClick={() => setIsSidebarOpen(true)}
@@ -59,29 +77,49 @@ const ToolsScreen: React.FC = () => {
           </div>
         </div>
         <div>
-          <h1 className="text-3xl font-black tracking-tight text-slate-900 dark:text-white">Herramientas</h1>
-          <p className="text-sm text-slate-500 font-bold uppercase tracking-widest mt-1">Panel Administrativo</p>
+          <h1 className="text-4xl font-black tracking-tighter text-slate-900 dark:text-white uppercase italic">Herramientas</h1>
+          <p className="text-[10px] text-slate-400 font-black uppercase tracking-[0.2em] mt-1 flex items-center gap-2">
+            <span className="w-4 h-[1px] bg-slate-300"></span>
+            Panel de Gestión F1-AI
+          </p>
         </div>
       </header>
 
-      <main className="px-6 flex flex-col gap-4">
-        {tools.map((tool, index) => (
-          <button 
-            key={index}
-            onClick={() => navigate(tool.path)}
-            className="flex items-center gap-5 p-5 bg-white dark:bg-surface-dark rounded-3xl shadow-sm border border-slate-100 dark:border-white/5 active:scale-[0.98] transition-all text-left group"
-          >
-            <div className={`size-14 rounded-2xl ${tool.color} text-white flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform`}>
-              <span className="material-symbols-outlined text-3xl">{tool.icon}</span>
+      <main className="px-6 space-y-8">
+        {toolCategories.map((category, catIndex) => (
+          <section key={catIndex} className="space-y-4">
+            <div className="flex items-center gap-2 px-1">
+              <span className="material-symbols-outlined text-slate-400 text-lg">{category.icon}</span>
+              <h2 className="text-xs font-black text-slate-400 uppercase tracking-widest">{category.name}</h2>
             </div>
-            <div className="flex-1">
-              <h3 className="text-lg font-black text-slate-900 dark:text-white leading-tight">{tool.title}</h3>
-              <p className="text-xs text-slate-500 dark:text-slate-400 font-medium mt-1 leading-relaxed">
-                {tool.description}
-              </p>
+            
+            <div className="grid gap-3">
+              {category.tools.map((tool, toolIndex) => (
+                <button 
+                  key={toolIndex}
+                  onClick={() => navigate(tool.path)}
+                  className="flex items-center gap-4 p-4 bg-white dark:bg-surface-dark rounded-[2rem] shadow-sm border border-slate-100 dark:border-white/5 active:scale-[0.97] transition-all text-left group relative overflow-hidden"
+                >
+                  <div className={`absolute top-0 left-0 w-1 h-full ${tool.color} opacity-0 group-hover:opacity-100 transition-opacity`}></div>
+                  
+                  <div className={`size-12 rounded-2xl ${tool.color} text-white flex items-center justify-center shadow-lg shadow-current/20 group-hover:rotate-6 transition-transform`}>
+                    <span className="material-symbols-outlined text-2xl">{tool.icon}</span>
+                  </div>
+                  
+                  <div className="flex-1">
+                    <h3 className="text-base font-black text-slate-900 dark:text-white leading-tight group-hover:text-primary transition-colors">{tool.title}</h3>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400 font-medium mt-0.5 leading-tight line-clamp-1">
+                      {tool.description}
+                    </p>
+                  </div>
+                  
+                  <div className="size-8 rounded-full bg-slate-50 dark:bg-white/5 flex items-center justify-center text-slate-300 dark:text-slate-700 group-hover:bg-primary group-hover:text-white transition-all">
+                    <span className="material-symbols-outlined text-lg">arrow_forward</span>
+                  </div>
+                </button>
+              ))}
             </div>
-            <span className="material-symbols-outlined text-slate-300 dark:text-slate-700 group-hover:text-primary transition-colors">chevron_right</span>
-          </button>
+          </section>
         ))}
       </main>
 

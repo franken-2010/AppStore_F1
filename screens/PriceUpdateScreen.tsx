@@ -15,7 +15,9 @@ import {
   serverTimestamp,
   writeBatch,
   Timestamp
-} from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+} from "firebase/firestore";
+import { handleFirestoreError, OperationType } from '../services/errorHandling';
+import VoiceInputButton from '../components/VoiceInputButton';
 
 interface ProcessResult {
   name: string;
@@ -47,6 +49,8 @@ const PriceUpdateScreen: React.FC = () => {
   const { user } = useAuth();
   const [activeTab, setActiveTab] = useState<'update' | 'history'>('update');
   const [productList, setProductList] = useState('');
+  const [voiceBuffer, setVoiceBuffer] = useState('');
+  const [interimText, setInterimText] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
   const [report, setReport] = useState<ProcessResult[] | null>(null);
   const [history, setHistory] = useState<PriceJob[]>([]);
@@ -81,8 +85,8 @@ const PriceUpdateScreen: React.FC = () => {
         } as PriceJob;
       });
       setHistory(jobs);
-    } catch (e) {
-      console.error("Error fetching history:", e);
+    } catch (e: any) {
+      handleFirestoreError(e, OperationType.GET, `users/${user.uid}/price_update_jobs`);
     } finally {
       setLoadingHistory(false);
     }
@@ -99,11 +103,28 @@ const PriceUpdateScreen: React.FC = () => {
     const qTokens = query.split(' ').filter(t => t.length > 1);
     const tTokens = target.split(' ').filter(t => t.length > 1);
     if (qTokens.length === 0) return 0;
-    let matches = 0;
-    qTokens.forEach(qt => { if (tTokens.includes(qt)) matches++; });
-    const score = matches / qTokens.length;
-    if (target.includes(query)) return Math.min(1, score + 0.2);
-    return score;
+    
+    let score = 0;
+    qTokens.forEach(qt => {
+      if (tTokens.includes(qt)) {
+        score += (qt.length > 4 ? 3 : 2); // Palabras largas valen más
+      } else if (target.includes(qt)) {
+        score += 1; // Coincidencia parcial
+      }
+    });
+
+    // Bono por números (clave para tamaños y pesos)
+    const qNumbers = qTokens.filter(t => !isNaN(Number(t)));
+    qNumbers.forEach(qn => {
+      if (tTokens.includes(qn)) score += 4;
+    });
+
+    // Bono si el target contiene toda la query de forma literal
+    if (target.includes(query)) score += 5;
+
+    // Normalización
+    const maxPossible = qTokens.reduce((acc, qt) => acc + (qt.length > 4 ? 3 : 2), 0) + (qNumbers.length * 4);
+    return Math.min(1.0, score / (maxPossible || 1));
   };
 
   const parseLine = (line: string) => {
@@ -114,6 +135,39 @@ const PriceUpdateScreen: React.FC = () => {
     const price = parseFloat(priceStr);
     if (!name || isNaN(price)) return null;
     return { name, price: roundTo2(price) };
+  };
+
+  const handleVoiceResult = (text: string, isFinal: boolean) => {
+    if (isFinal) {
+      setInterimText('');
+      setVoiceBuffer(prev => {
+        const fullText = (prev + ' ' + text).trim();
+        // Regex global para encontrar todos los pares
+        const regex = /producto\s+(.+?)\s+costo\s+([\d,.]+)/gi;
+        let match;
+        let lastIndex = 0;
+        const items: string[] = [];
+
+        // Buscamos pares completos
+        while ((match = regex.exec(fullText)) !== null) {
+          const name = match[1].trim();
+          const price = match[2].trim();
+          if (name && price) {
+            items.push(`${name}, $${price}`);
+            lastIndex = regex.lastIndex;
+          }
+        }
+
+        if (items.length > 0) {
+          setProductList(p => p ? p + '\n' + items.join('\n') : items.join('\n'));
+          // Retornamos lo que quedó después del último par completo (podría ser el inicio de un nuevo par)
+          return fullText.substring(lastIndex).trim();
+        }
+        return fullText;
+      });
+    } else {
+      setInterimText(text);
+    }
   };
 
   const handleProcessUpdates = async () => {
@@ -271,7 +325,6 @@ const PriceUpdateScreen: React.FC = () => {
         refType: "price_update_job",
         refId: jobId,
         timestamp: new Date().toISOString(),
-        isRead: false,
         read: false
       });
 
@@ -280,7 +333,7 @@ const PriceUpdateScreen: React.FC = () => {
       setProductList('');
       setStatusMessage({ text: 'Sincronización finalizada y reporte guardado.', type: 'success' });
     } catch (err: any) {
-      console.error(err);
+      handleFirestoreError(err, OperationType.WRITE, `users/${user.uid}/price_update_jobs`);
       setStatusMessage({ text: `Error: ${err.message}`, type: 'error' });
     } finally {
       setIsProcessing(false);
@@ -344,9 +397,21 @@ const PriceUpdateScreen: React.FC = () => {
 
             {!report ? (
               <div className="space-y-6">
-                <div className="flex flex-col gap-2">
-                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 ml-1">Carga de Datos</label>
+                <div className="flex flex-col gap-2 relative">
+                  <div className="flex justify-between items-center px-1">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 ml-1">Carga de Datos</label>
+                    <VoiceInputButton onResult={handleVoiceResult} className="bg-primary/10 text-primary" />
+                  </div>
                   <textarea value={productList} onChange={(e) => setProductList(e.target.value)} className="w-full rounded-2xl bg-white dark:bg-surface-dark border border-slate-200 dark:border-border-dark text-slate-900 dark:text-white p-5 text-sm min-h-[260px] font-mono leading-relaxed transition-all outline-none resize-none shadow-inner focus:ring-2 focus:ring-primary/20" placeholder="PRODUCTO, COSTO&#10;Ej: LECHE ALPURA 1L, 25.00" />
+                  
+                  {(voiceBuffer || interimText) && (
+                    <div className="p-3 rounded-xl bg-primary/5 border border-primary/10 animate-in fade-in slide-in-from-top-1">
+                      <p className="text-[8px] font-black uppercase text-primary mb-1 opacity-60">Dictado en vivo:</p>
+                      <p className="text-[11px] text-slate-600 dark:text-slate-300 italic">
+                        {voiceBuffer} <span className="text-primary font-bold">{interimText}</span>
+                      </p>
+                    </div>
+                  )}
                 </div>
                 
                 <button onClick={handleProcessUpdates} disabled={isProcessing || !productList.trim()} className="w-full bg-primary hover:bg-primary-dark active:scale-[0.98] transition-all text-white font-black py-5 rounded-2xl shadow-xl flex items-center justify-center gap-3 disabled:opacity-50">

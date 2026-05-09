@@ -8,7 +8,8 @@ import {
   query, 
   onSnapshot,
   where
-} from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+} from "firebase/firestore";
+import { handleFirestoreError, OperationType } from '../services/errorHandling';
 import BottomNav from '../components/BottomNav';
 import Sidebar from '../components/Sidebar';
 import ProfileMenu from '../components/ProfileMenu';
@@ -55,7 +56,7 @@ const DirectoryScreen: React.FC = () => {
       setContacts(list);
       setLoading(false);
     }, (error) => {
-      console.error("Error en Directory listener:", error);
+      handleFirestoreError(error, OperationType.GET, "suppliers_directory");
       setLoading(false);
     });
 

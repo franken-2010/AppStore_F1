@@ -53,7 +53,8 @@ export class GeminiService {
       - "estancias" -> ingresos por estancias.
       - "pagoClientes" -> cobros de deudas, pagos cxc, clientes pagaron.
       - "cxc" -> ventas a credito realizadas (ingreso no efectivo).
-      - "mercancias" -> gastos abarrotes, gastos fiesta, gastos recargas.
+      - "mercancias" -> gastos abarrotes, gastos recargas.
+      - "fiesta" (en expenses) -> gastos en fiesta, gasto fiesta, fiesta, compra fiesta, mercancía fiesta, producto fiesta (solo si es egreso/gasto). PRIORIDAD: Si el gasto menciona "fiesta", asígnale este campo y NO a mercancias.
       - "empleados" -> sueldos, pagos personal.
       - "consumoPersonal" -> gastos del dueño o uso personal.
       - "dineroEntregado" -> efectivo final reportado.
@@ -84,6 +85,7 @@ export class GeminiService {
                 type: Type.OBJECT, 
                 properties: { 
                   mercancias: { type: Type.NUMBER }, 
+                  fiesta: { type: Type.NUMBER },
                   empleados: { type: Type.NUMBER }, 
                   consumoPersonal: { type: Type.NUMBER } 
                 } 
@@ -115,7 +117,13 @@ export class GeminiService {
         model: 'gemini-3-flash-preview',
         contents: { parts: [{ text: String(rawText) }] },
         config: {
-          systemInstruction: `Extrae items del pedido.`,
+          systemInstruction: `Eres un experto en logística para "Abarrotes F1". Tu tarea es extraer items de una lista de pedido.
+          REGLAS:
+          1. Identifica el nombre del producto de forma clara (rawName).
+          2. Extrae la cantidad (qty) y la unidad (unit: pza, kg, caja, bulto, etc).
+          3. Identifica notas o especificaciones (notes).
+          4. Genera una lista de palabras clave de búsqueda (searchKeywords). Estas deben ser solo los términos más descriptivos del producto (marca, tipo, tamaño/peso) para facilitar el match en una base de datos.
+          5. Si un item no es claro, trata de inferir el producto más probable.`,
           responseMimeType: "application/json",
           responseSchema: {
             type: Type.OBJECT,
@@ -128,9 +136,10 @@ export class GeminiService {
                     rawName: { type: Type.STRING },
                     qty: { type: Type.NUMBER },
                     unit: { type: Type.STRING },
-                    notes: { type: Type.ARRAY, items: { type: Type.STRING } }
+                    notes: { type: Type.ARRAY, items: { type: Type.STRING } },
+                    searchKeywords: { type: Type.ARRAY, items: { type: Type.STRING } }
                   },
-                  required: ["rawName", "qty", "unit", "notes"]
+                  required: ["rawName", "qty", "unit", "notes", "searchKeywords"]
                 }
               }
             },

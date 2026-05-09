@@ -3,7 +3,8 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { db } from '../services/firebase';
-import { collection, addDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+import { collection, addDoc, serverTimestamp } from "firebase/firestore";
+import { handleFirestoreError, OperationType } from '../services/errorHandling';
 import BottomNav from '../components/BottomNav';
 import { useNotifications } from '../context/NotificationContext';
 
@@ -78,8 +79,7 @@ const AddProviderScreen: React.FC = () => {
 
       navigate('/directorio');
     } catch (err: any) {
-      console.error("Error creating provider:", err);
-      alert("Error al guardar: " + err.message);
+      handleFirestoreError(err, OperationType.WRITE, "suppliers_directory");
     } finally {
       setSaving(false);
     }

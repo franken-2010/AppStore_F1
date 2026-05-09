@@ -3,6 +3,7 @@ import React from 'react';
 import { HashRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { NotificationProvider } from './context/NotificationContext';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import ErrorBoundary from './components/ErrorBoundary';
 import LoginScreen from './screens/LoginScreen';
 import RegisterScreen from './screens/RegisterScreen';
 import DashboardScreen from './screens/DashboardScreen';
@@ -43,52 +44,54 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) =
 
 const App: React.FC = () => {
   return (
-    <AuthProvider>
-      <NotificationProvider>
-        <Router>
-          <Routes>
-            <Route path="/" element={<ProtectedRoute><DashboardScreen /></ProtectedRoute>} />
-            <Route path="/login" element={<LoginScreen />} />
-            <Route path="/register" element={<RegisterScreen />} />
-            <Route path="/install" element={<InstallScreen />} />
-            <Route path="/permissions" element={<ProtectedRoute><PermissionsScreen /></ProtectedRoute>} />
-            <Route path="/dashboard" element={<ProtectedRoute><DashboardScreen /></ProtectedRoute>} />
-            <Route path="/cortes" element={<ProtectedRoute><CortesScreen /></ProtectedRoute>} />
-            <Route path="/tools" element={<ProtectedRoute><ToolsScreen /></ProtectedRoute>} />
-            <Route path="/tools/price-update" element={<ProtectedRoute><PriceUpdateScreen /></ProtectedRoute>} />
-            <Route path="/tools/product-add" element={<ProtectedRoute><ProductAddScreen /></ProtectedRoute>} />
-            <Route path="/tools/price-verification" element={<ProtectedRoute><PriceVerificationScreen /></ProtectedRoute>} />
-            <Route path="/tools/product-edit/:productKey" element={<ProtectedRoute><EditProductScreen /></ProtectedRoute>} />
-            <Route path="/tools/product-details/:productKey" element={<ProtectedRoute><ProductDetailsScreen /></ProtectedRoute>} />
-            <Route path="/tools/orders" element={<ProtectedRoute><OrdersScreen /></ProtectedRoute>} />
-            
-            <Route path="/accounting" element={<ProtectedRoute><FinanceAccountsScreen /></ProtectedRoute>} />
-            <Route path="/finance-accounts" element={<ProtectedRoute><FinanceAccountsScreen /></ProtectedRoute>} />
-            <Route path="/finance-stats" element={<ProtectedRoute><FinanceStatsTotalsScreen /></ProtectedRoute>} />
-            
-            <Route path="/chat" element={<ProtectedRoute><ChatScreen /></ProtectedRoute>} />
-            <Route path="/settings" element={<ProtectedRoute><SettingsScreen /></ProtectedRoute>} />
-            <Route path="/settings/bdd" element={<ProtectedRoute><DatabaseUploadScreen /></ProtectedRoute>} />
-            <Route path="/settings/account-categories" element={<ProtectedRoute><AccountCategorySettingsScreen /></ProtectedRoute>} />
-            
-            <Route path="/account/upsert" element={<ProtectedRoute><AccountUpsertScreen /></ProtectedRoute>} />
-            <Route path="/account/edit/:accountId" element={<ProtectedRoute><AccountUpsertScreen /></ProtectedRoute>} />
-            <Route path="/account/history/:accountId" element={<ProtectedRoute><AccountHistoryScreen /></ProtectedRoute>} />
-            <Route path="/account/charts/:accountId" element={<ProtectedRoute><AccountChartsScreen /></ProtectedRoute>} />
-            <Route path="/account/add-movement/:accountId" element={<ProtectedRoute><AddMovementScreen /></ProtectedRoute>} />
-            <Route path="/account/edit-movement/:accountId/:movementId" element={<ProtectedRoute><EditMovementScreen /></ProtectedRoute>} />
-            <Route path="/account/visibility" element={<ProtectedRoute><AccountVisibilityScreen /></ProtectedRoute>} />
-            <Route path="/account/delete" element={<ProtectedRoute><AccountDeleteScreen /></ProtectedRoute>} />
-            <Route path="/account/reorder" element={<ProtectedRoute><AccountReorderScreen /></ProtectedRoute>} />
+    <ErrorBoundary>
+      <AuthProvider>
+        <NotificationProvider>
+          <Router>
+            <Routes>
+              <Route path="/" element={<ProtectedRoute><DashboardScreen /></ProtectedRoute>} />
+              <Route path="/login" element={<LoginScreen />} />
+              <Route path="/register" element={<RegisterScreen />} />
+              <Route path="/install" element={<InstallScreen />} />
+              <Route path="/permissions" element={<ProtectedRoute><PermissionsScreen /></ProtectedRoute>} />
+              <Route path="/dashboard" element={<ProtectedRoute><DashboardScreen /></ProtectedRoute>} />
+              <Route path="/cortes" element={<ProtectedRoute><CortesScreen /></ProtectedRoute>} />
+              <Route path="/tools" element={<ProtectedRoute><ToolsScreen /></ProtectedRoute>} />
+              <Route path="/tools/price-update" element={<ProtectedRoute><PriceUpdateScreen /></ProtectedRoute>} />
+              <Route path="/tools/product-add" element={<ProtectedRoute><ProductAddScreen /></ProtectedRoute>} />
+              <Route path="/tools/price-verification" element={<ProtectedRoute><PriceVerificationScreen /></ProtectedRoute>} />
+              <Route path="/tools/product-edit/:productKey" element={<ProtectedRoute><EditProductScreen /></ProtectedRoute>} />
+              <Route path="/tools/product-details/:productKey" element={<ProtectedRoute><ProductDetailsScreen /></ProtectedRoute>} />
+              <Route path="/tools/orders" element={<ProtectedRoute><OrdersScreen /></ProtectedRoute>} />
+              
+              <Route path="/accounting" element={<ProtectedRoute><FinanceAccountsScreen /></ProtectedRoute>} />
+              <Route path="/finance-accounts" element={<ProtectedRoute><FinanceAccountsScreen /></ProtectedRoute>} />
+              <Route path="/finance-stats" element={<ProtectedRoute><FinanceStatsTotalsScreen /></ProtectedRoute>} />
+              
+              <Route path="/chat" element={<ProtectedRoute><ChatScreen /></ProtectedRoute>} />
+              <Route path="/settings" element={<ProtectedRoute><SettingsScreen /></ProtectedRoute>} />
+              <Route path="/settings/bdd" element={<ProtectedRoute><DatabaseUploadScreen /></ProtectedRoute>} />
+              <Route path="/settings/account-categories" element={<ProtectedRoute><AccountCategorySettingsScreen /></ProtectedRoute>} />
+              
+              <Route path="/account/upsert" element={<ProtectedRoute><AccountUpsertScreen /></ProtectedRoute>} />
+              <Route path="/account/edit/:accountId" element={<ProtectedRoute><AccountUpsertScreen /></ProtectedRoute>} />
+              <Route path="/account/history/:accountId" element={<ProtectedRoute><AccountHistoryScreen /></ProtectedRoute>} />
+              <Route path="/account/charts/:accountId" element={<ProtectedRoute><AccountChartsScreen /></ProtectedRoute>} />
+              <Route path="/account/add-movement/:accountId" element={<ProtectedRoute><AddMovementScreen /></ProtectedRoute>} />
+              <Route path="/account/edit-movement/:accountId/:movementId" element={<ProtectedRoute><EditMovementScreen /></ProtectedRoute>} />
+              <Route path="/account/visibility" element={<ProtectedRoute><AccountVisibilityScreen /></ProtectedRoute>} />
+              <Route path="/account/delete" element={<ProtectedRoute><AccountDeleteScreen /></ProtectedRoute>} />
+              <Route path="/account/reorder" element={<ProtectedRoute><AccountReorderScreen /></ProtectedRoute>} />
 
-            <Route path="/directorio" element={<ProtectedRoute><DirectoryScreen /></ProtectedRoute>} />
-            <Route path="/directorio/new" element={<ProtectedRoute><AddProviderScreen /></ProtectedRoute>} />
-            <Route path="/directorio/:providerId" element={<ProtectedRoute><ProviderDetailScreen /></ProtectedRoute>} />
-            <Route path="/directorio/edit/:providerId" element={<ProtectedRoute><EditProviderContactScreen /></ProtectedRoute>} />
-          </Routes>
-        </Router>
-      </NotificationProvider>
-    </AuthProvider>
+              <Route path="/directorio" element={<ProtectedRoute><DirectoryScreen /></ProtectedRoute>} />
+              <Route path="/directorio/new" element={<ProtectedRoute><AddProviderScreen /></ProtectedRoute>} />
+              <Route path="/directorio/:providerId" element={<ProtectedRoute><ProviderDetailScreen /></ProtectedRoute>} />
+              <Route path="/directorio/edit/:providerId" element={<ProtectedRoute><EditProviderContactScreen /></ProtectedRoute>} />
+            </Routes>
+          </Router>
+        </NotificationProvider>
+      </AuthProvider>
+    </ErrorBoundary>
   );
 };
 

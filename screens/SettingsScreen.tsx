@@ -5,7 +5,7 @@ import BottomNav from '../components/BottomNav';
 import { useAuth } from '../context/AuthContext';
 import { useNotifications } from '../context/NotificationContext';
 import { auth, db } from '../services/firebase';
-import { updatePassword, signOut } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
+import { updatePassword, signOut } from "firebase/auth";
 import { 
   doc, 
   updateDoc, 
@@ -14,7 +14,8 @@ import {
   where, 
   getDocs, 
   serverTimestamp 
-} from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+} from "firebase/firestore";
+import { handleFirestoreError, OperationType } from '../services/errorHandling';
 import VoiceInputButton from '../components/VoiceInputButton';
 import { GoogleGenAI } from "@google/genai";
 import MoneyInputWithCalculator from '../components/MoneyInputWithCalculator';
@@ -38,6 +39,7 @@ const SettingsScreen: React.FC = () => {
   const [invAccountDocId, setInvAccountDocId] = useState<string | null>(null);
   const [invMin, setInvMin] = useState<number | null>(null);
   const [invMax, setInvMax] = useState<number | null>(null);
+  const [invBalance, setInvBalance] = useState<number | null>(null);
   const [isSavingInv, setIsSavingInv] = useState(false);
 
   const isIframe = window.self !== window.top;
@@ -60,6 +62,7 @@ const SettingsScreen: React.FC = () => {
           setInvAccountDocId(snap.docs[0].id);
           setInvMin(data.inventoryMin ?? null);
           setInvMax(data.inventoryMax ?? null);
+          setInvBalance(data.balance ?? 0);
         }
       };
       fetchInv();
@@ -79,13 +82,14 @@ const SettingsScreen: React.FC = () => {
       await updateDoc(doc(db, "users", user.uid, "accounts", invAccountDocId), {
         inventoryMin: invMin,
         inventoryMax: invMax,
+        balance: invBalance,
         isContable: false,
         updatedAt: serverTimestamp()
       });
-      addNotification({ title: 'Rango Guardado', message: 'Límites de inventario actualizados.', type: 'system' });
+      addNotification({ title: 'Cuenta Actualizada', message: 'Inventario y límites actualizados.', type: 'system' });
       alert("✅ Configuración de inventarios guardada.");
     } catch (e) {
-      console.error(e);
+      handleFirestoreError(e, OperationType.WRITE, `users/${user.uid}/accounts/${invAccountDocId}`);
       alert("Error al guardar.");
     } finally {
       setIsSavingInv(false);
@@ -107,7 +111,7 @@ const SettingsScreen: React.FC = () => {
       setInvMax(null);
       alert("✅ Rangos eliminados.");
     } catch (e) {
-      console.error(e);
+      handleFirestoreError(e, OperationType.WRITE, `users/${user.uid}/accounts/${invAccountDocId}`);
     } finally {
       setIsSavingInv(false);
     }
@@ -142,7 +146,7 @@ const SettingsScreen: React.FC = () => {
         setIsBiometricLinked(true);
         addNotification({ title: 'Biometría Vinculada', message: 'Ahora puedes entrar con tu huella.', type: 'system' });
       }
-    } catch (err) { console.error(err); }
+    } catch (err) { /* Biometric error is local */ }
   };
 
   const generateIAImage = async () => {
@@ -288,6 +292,14 @@ const SettingsScreen: React.FC = () => {
             ) : (
               <div className="space-y-6">
                 <MoneyInputWithCalculator 
+                  label="Inventario Actual / Inicial (MXN)" 
+                  field="invBalance" 
+                  value={invBalance || 0} 
+                  onChange={(_, v) => setInvBalance(parseFloat(v) || 0)} 
+                  placeholder="Monto de inventario"
+                />
+
+                <MoneyInputWithCalculator 
                   label="Inventario Mínimo (MXN)" 
                   field="invMin" 
                   value={invMin || 0} 
@@ -310,7 +322,7 @@ const SettingsScreen: React.FC = () => {
                     className="w-full py-5 bg-primary text-white font-black rounded-3xl shadow-xl shadow-primary/20 active:scale-95 transition-all flex items-center justify-center gap-3"
                   >
                     {isSavingInv ? <span className="material-symbols-outlined animate-spin">sync</span> : <span className="material-symbols-outlined">save</span>}
-                    Guardar Rango Ideal
+                    Guardar Inventario y Rangos
                   </button>
                   <button 
                     onClick={handleClearInventory}

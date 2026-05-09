@@ -77,8 +77,8 @@ const MoneyInputWithCalculator: React.FC<MoneyInputWithCalculatorProps> = ({
         const roundedResult = Number(result.toFixed(2));
         setCalcResult(roundedResult);
         setExpression(roundedResult.toString());
-      } catch (e) {
-        console.error("Calc Error:", e);
+      } catch (e: any) {
+        console.error("Calc Error:", e.message || String(e));
         setCalcError(true);
         setCalcResult(null);
       }

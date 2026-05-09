@@ -7,8 +7,8 @@ import {
   updateProfile, 
   GoogleAuthProvider, 
   signInWithPopup 
-} from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
-import { doc, setDoc, getDoc, collection, writeBatch, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+} from "firebase/auth";
+import { doc, setDoc, getDoc, collection, writeBatch, serverTimestamp } from "firebase/firestore";
 
 const RegisterScreen: React.FC = () => {
   const navigate = useNavigate();

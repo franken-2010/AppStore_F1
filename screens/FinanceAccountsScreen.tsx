@@ -3,7 +3,8 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { db } from '../services/firebase';
-import { collection, query, onSnapshot, orderBy } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+import { collection, query, onSnapshot, orderBy } from "firebase/firestore";
+import { handleFirestoreError, OperationType } from '../services/errorHandling';
 import { AccountingAccount, AccountCategory } from '../types';
 import BottomNav from '../components/BottomNav';
 import Sidebar from '../components/Sidebar';
@@ -35,6 +36,8 @@ const FinanceAccountsScreen: React.FC = () => {
           color: data.color ? String(data.color) : undefined
         };
       }));
+    }, (error) => {
+      handleFirestoreError(error, OperationType.GET, `users/${user.uid}/categories`);
     });
 
     // Escuchar cuentas con limpieza de datos (Evita errores de estructura circular)
@@ -57,6 +60,9 @@ const FinanceAccountsScreen: React.FC = () => {
           code: String(data.code || '')
         };
       }));
+      setLoading(false);
+    }, (error) => {
+      handleFirestoreError(error, OperationType.GET, `users/${user.uid}/accounts`);
       setLoading(false);
     });
 
@@ -97,8 +103,9 @@ const FinanceAccountsScreen: React.FC = () => {
     );
   };
 
-  const SectionHeader = ({ title }: { title: string }) => (
-    <div className="bg-[#0f172a] py-3 px-5 border-b border-white/5">
+  const SectionHeader = ({ title, color }: { title: string, color?: string }) => (
+    <div className="bg-[#0f172a] py-3 px-5 border-b border-white/5 flex items-center gap-3">
+      {color && <div className="size-2 rounded-full" style={{ backgroundColor: color }} />}
       <h3 className="text-[11px] font-bold uppercase tracking-widest text-slate-500">{title}</h3>
     </div>
   );
@@ -112,7 +119,7 @@ const FinanceAccountsScreen: React.FC = () => {
       if (catAccs.length > 0) {
         sections.push(
           <section key={cat.id}>
-            <SectionHeader title={cat.name} />
+            <SectionHeader title={cat.name} color={cat.color} />
             {catAccs.map(acc => {
               renderedIds.add(acc.id!);
               return <AccountRow key={acc.id} account={acc} />;

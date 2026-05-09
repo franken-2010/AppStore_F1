@@ -13,7 +13,8 @@ import {
   deleteDoc, 
   orderBy,
   serverTimestamp 
-} from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+} from "firebase/firestore";
+import { handleFirestoreError, OperationType } from '../services/errorHandling';
 import { AccountCategory, AccountType } from '../types';
 
 const AccountCategorySettingsScreen: React.FC = () => {
@@ -25,14 +26,28 @@ const AccountCategorySettingsScreen: React.FC = () => {
   
   const [formData, setFormData] = useState({
     name: '',
-    accountingType: 'Activo' as AccountType
+    accountingType: 'Activo' as AccountType,
+    color: '#6366f1'
   });
+
+  const PRESET_COLORS = [
+    '#6366f1', // Indigo
+    '#10b981', // Emerald
+    '#f59e0b', // Amber
+    '#f43f5e', // Rose
+    '#8b5cf6', // Violet
+    '#0ea5e9', // Sky
+    '#64748b', // Slate
+  ];
 
   useEffect(() => {
     if (!user) return;
     const q = query(collection(db, "users", user.uid, "categories"), orderBy("order", "asc"));
     const unsub = onSnapshot(q, (snap) => {
       setCategories(snap.docs.map(d => ({ id: d.id, ...d.data() } as AccountCategory)));
+      setLoading(false);
+    }, (err) => {
+      handleFirestoreError(err, OperationType.GET, `users/${user.uid}/categories`);
       setLoading(false);
     });
     return () => unsub();
@@ -45,24 +60,32 @@ const AccountCategorySettingsScreen: React.FC = () => {
         await updateDoc(doc(db, "users", user.uid, "categories", editingId), {
           name: formData.name.trim(),
           accountingType: formData.accountingType,
+          color: formData.color,
           updatedAt: serverTimestamp()
         });
       } else {
         await addDoc(collection(db, "users", user.uid, "categories"), {
           name: formData.name.trim(),
           accountingType: formData.accountingType,
+          color: formData.color,
           order: categories.length,
           createdAt: serverTimestamp()
         });
       }
-      setFormData({ name: '', accountingType: 'Activo' });
+      setFormData({ name: '', accountingType: 'Activo', color: '#6366f1' });
       setEditingId(null);
-    } catch (e) { console.error(e); }
+    } catch (e: any) { 
+      handleFirestoreError(e, OperationType.WRITE, `users/${user.uid}/categories`);
+    }
   };
 
   const handleDelete = async (id: string) => {
     if (!user || !window.confirm("¿Eliminar categoría? Las cuentas asociadas perderán su agrupación.")) return;
-    await deleteDoc(doc(db, "users", user.uid, "categories", id));
+    try {
+      await deleteDoc(doc(db, "users", user.uid, "categories", id));
+    } catch (e: any) {
+      handleFirestoreError(e, OperationType.DELETE, `users/${user.uid}/categories/${id}`);
+    }
   };
 
   return (
@@ -95,12 +118,27 @@ const AccountCategorySettingsScreen: React.FC = () => {
               </button>
             ))}
           </div>
+
+          <div className="space-y-2">
+            <p className="text-[9px] font-black uppercase tracking-widest text-slate-500 ml-1">Color Indicador</p>
+            <div className="flex flex-wrap gap-2">
+              {PRESET_COLORS.map(c => (
+                <button
+                  key={c}
+                  onClick={() => setFormData({...formData, color: c})}
+                  className={`size-8 rounded-full border-2 transition-all ${formData.color === c ? 'border-white scale-110 shadow-lg' : 'border-transparent opacity-60'}`}
+                  style={{ backgroundColor: c }}
+                />
+              ))}
+            </div>
+          </div>
+
           <div className="flex gap-2 pt-2">
             <button onClick={handleSave} className="flex-1 bg-primary py-3 rounded-xl font-black text-sm shadow-lg active:scale-95 transition-all">
               {editingId ? 'Actualizar' : 'Guardar'}
             </button>
             {editingId && (
-              <button onClick={() => {setEditingId(null); setFormData({name:'', accountingType:'Activo'});}} className="px-4 bg-white/10 rounded-xl">
+              <button onClick={() => {setEditingId(null); setFormData({name:'', accountingType:'Activo', color: '#6366f1'});}} className="px-4 bg-white/10 rounded-xl">
                 <span className="material-symbols-outlined">close</span>
               </button>
             )}
@@ -112,13 +150,16 @@ const AccountCategorySettingsScreen: React.FC = () => {
           <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-500 ml-1">Existentes</h3>
           {categories.map(cat => (
             <div key={cat.id} className="flex items-center justify-between p-4 bg-surface-dark rounded-2xl border border-white/5">
-              <div className="flex flex-col">
-                <span className="text-sm font-bold">{cat.name}</span>
-                <span className="text-[9px] font-black uppercase text-slate-500 tracking-tighter">{cat.accountingType}</span>
+              <div className="flex items-center gap-4">
+                <div className="size-3 rounded-full shadow-sm" style={{ backgroundColor: cat.color || '#6366f1' }} />
+                <div className="flex flex-col">
+                  <span className="text-sm font-bold">{cat.name}</span>
+                  <span className="text-[9px] font-black uppercase text-slate-500 tracking-tighter">{cat.accountingType}</span>
+                </div>
               </div>
               <div className="flex gap-1">
                 <button 
-                  onClick={() => { setEditingId(cat.id!); setFormData({name: cat.name, accountingType: cat.accountingType}); }}
+                  onClick={() => { setEditingId(cat.id!); setFormData({name: cat.name, accountingType: cat.accountingType, color: cat.color || '#6366f1'}); }}
                   className="size-9 bg-white/5 rounded-xl flex items-center justify-center text-blue-400"
                 >
                   <span className="material-symbols-outlined text-lg">edit</span>

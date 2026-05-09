@@ -8,7 +8,8 @@ import {
   getDoc,
   writeBatch,
   serverTimestamp 
-} from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+} from "firebase/firestore";
+import { handleFirestoreError, OperationType } from '../services/errorHandling';
 
 const ProductDetailsScreen: React.FC = () => {
   const { productKey } = useParams();
@@ -23,7 +24,7 @@ const ProductDetailsScreen: React.FC = () => {
   // Edit Mode States
   const [editMode, setEditMode] = useState(false);
   const [localCostoBase, setLocalCostoBase] = useState<string>('');
-  const [localUniCaja, setLocalUniCaja] = useState<number>(1);
+  const [localUniCaja, setLocalUniCaja] = useState<string>('1');
 
   const fetchData = async () => {
     if (!productKey) return;
@@ -44,10 +45,10 @@ const ProductDetailsScreen: React.FC = () => {
         
         // Initialize edit states
         if (cData) setLocalCostoBase(parsePrice(cData.Costo_base_principal).toString());
-        setLocalUniCaja(pData?.Uni_por_caja || cData?.Uni_por_caja || 1);
+        setLocalUniCaja((pData?.Uni_por_caja || cData?.Uni_por_caja || 1).toString());
       }
     } catch (err) {
-      console.error(err);
+      handleFirestoreError(err, OperationType.GET, `products_or_costs/${productKey}`);
       setError("Error al conectar con la base de datos.");
     } finally {
       setLoading(false);
@@ -161,7 +162,7 @@ const ProductDetailsScreen: React.FC = () => {
       await fetchData();
       alert("Producto actualizado y recalculado correctamente ✅");
     } catch (err: any) {
-      console.error(err);
+      handleFirestoreError(err, OperationType.WRITE, `products_or_costs/${productKey}`);
       alert("Error al guardar cambios: " + err.message);
     } finally {
       setIsSaving(false);
@@ -218,7 +219,16 @@ const ProductDetailsScreen: React.FC = () => {
         <section className="animate-in fade-in duration-500">
           <div className="bg-gradient-to-br from-indigo-900 to-[#1a2333] rounded-[2.5rem] p-7 shadow-2xl border border-white/10 relative overflow-hidden">
             <div className="relative z-10">
-              <p className="text-[9px] font-black text-primary-light uppercase tracking-[0.3em] mb-2">Ficha Técnica</p>
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-[9px] font-black text-primary-light uppercase tracking-[0.3em]">Ficha Técnica</p>
+                <button 
+                  onClick={() => navigate(`/tools/product-edit/${productKey}`)}
+                  className="flex items-center gap-1 text-[9px] font-black text-slate-400 hover:text-primary transition-colors uppercase tracking-widest"
+                >
+                  EXPEDIENTE COMPLETO
+                  <span className="material-symbols-outlined text-[14px]">open_in_new</span>
+                </button>
+              </div>
               <h2 className="text-2xl font-black text-white uppercase leading-tight mb-4">{mainName}</h2>
               
               <div className="grid grid-cols-2 gap-4 pt-4 border-t border-white/5">
@@ -299,7 +309,7 @@ const ProductDetailsScreen: React.FC = () => {
                    <input 
                     type="number" 
                     value={localUniCaja}
-                    onChange={(e) => setLocalUniCaja(parseInt(e.target.value) || 1)}
+                    onChange={(e) => setLocalUniCaja(e.target.value)}
                     className="w-20 bg-[#0a1120] border-none rounded-lg py-1 px-2 text-primary font-black outline-none focus:ring-1 focus:ring-primary text-sm"
                   />
                 ) : (
@@ -344,7 +354,7 @@ const ProductDetailsScreen: React.FC = () => {
                     setEditMode(false);
                     // Revert values
                     if (costData) setLocalCostoBase(parsePrice(costData.Costo_base_principal).toString());
-                    setLocalUniCaja(productData?.Uni_por_caja || costData?.Uni_por_caja || 1);
+                    setLocalUniCaja((productData?.Uni_por_caja || costData?.Uni_por_caja || 1).toString());
                   }}
                   className="w-full py-4 text-slate-500 font-black text-[11px] uppercase tracking-[0.3em] active:opacity-50 transition-opacity"
                 >

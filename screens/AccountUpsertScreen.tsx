@@ -12,7 +12,8 @@ import {
   query,
   orderBy,
   serverTimestamp 
-} from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+} from "firebase/firestore";
+import { handleFirestoreError, OperationType } from '../services/errorHandling';
 import { AccountingAccount, AccountType, AccountCategory } from '../types';
 import MoneyInputWithCalculator from '../components/MoneyInputWithCalculator';
 
@@ -84,7 +85,11 @@ const AccountUpsertScreen: React.FC = () => {
             });
           }
         }
-      } catch (e) { console.error(e); } finally { setFetching(false); }
+      } catch (e) { 
+        handleFirestoreError(e, OperationType.GET, `users/${user.uid}/categories`);
+      } finally { 
+        setFetching(false); 
+      }
     };
     loadData();
   }, [editDocId, user]);
@@ -135,6 +140,25 @@ const AccountUpsertScreen: React.FC = () => {
         accountData.order = lastOrder + 1;
         accountData.createdAt = serverTimestamp();
         batch.set(accountDocRef, accountData);
+
+        // Si hay un saldo inicial, crear el movimiento correspondiente para el historial
+        if (Number(formData.balance) !== 0) {
+          const initialMovRef = doc(collection(accountDocRef, "movements"));
+          batch.set(initialMovRef, {
+            uid: user.uid,
+            accountId: stableAccountId,
+            amount: Math.abs(Number(formData.balance)),
+            type: Number(formData.balance) > 0 ? 'INCOME' : 'EXPENSE',
+            direction: Number(formData.balance) > 0 ? 'IN' : 'OUT',
+            signedAmount: Number(formData.balance),
+            conceptTitle: 'SALDO INICIAL',
+            conceptSubtitle: 'Apertura de Cuenta',
+            source: 'manual',
+            status: 'ACTIVE',
+            createdAt: serverTimestamp(),
+            effectiveAt: serverTimestamp()
+          });
+        }
       } else {
         batch.update(accountDocRef, accountData);
       }
@@ -154,9 +178,8 @@ const AccountUpsertScreen: React.FC = () => {
 
       await batch.commit();
       navigate('/finance-accounts');
-    } catch (e) { 
-      console.error(e); 
-      alert("Error al sincronizar con el índice canónico.");
+    } catch (e: any) { 
+      handleFirestoreError(e, OperationType.WRITE, `users/${user.uid}/accounts`);
     } finally { 
       setLoading(false); 
     }
@@ -193,6 +216,14 @@ const AccountUpsertScreen: React.FC = () => {
             className="w-full bg-surface-dark/30 border border-white/5 rounded-xl py-4 px-5 font-mono text-xs text-slate-400 outline-none"
           />
         </div>
+
+        <MoneyInputWithCalculator 
+          label={editDocId ? (isInventory ? "Valor Total Actual" : "Saldo Actual") : "Saldo Inicial"} 
+          field="balance" 
+          value={formData.balance} 
+          onChange={handleInputChange} 
+          icon="account_balance_wallet"
+        />
 
         {isInventory ? (
           <div className="p-6 bg-primary/10 border border-primary/20 rounded-3xl space-y-6">
@@ -235,13 +266,6 @@ const AccountUpsertScreen: React.FC = () => {
             </select>
           </div>
         )}
-
-        <MoneyInputWithCalculator 
-          label={isInventory ? "Valor Total Actual" : "Saldo Inicial / Actual"} 
-          field="balance" 
-          value={formData.balance} 
-          onChange={handleInputChange} 
-        />
 
         {!isInventory && (
           <div className="flex items-center justify-between p-4 bg-surface-dark rounded-2xl border border-white/5">

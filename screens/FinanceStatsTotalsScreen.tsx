@@ -3,9 +3,18 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { AccountMovement } from '../types';
+import { handleFirestoreError, OperationType } from '../services/errorHandling';
 import BottomNav from '../components/BottomNav';
 import { AccountResolver } from '../services/AccountResolver';
 import { AccountingService } from '../services/AccountingService';
+import { 
+  PieChart, 
+  Pie, 
+  Cell, 
+  ResponsiveContainer, 
+  Tooltip, 
+  Legend 
+} from 'recharts';
 
 type ReportTab = 'resumen' | 'ingresos' | 'egresos';
 type PeriodType = 'day' | 'week' | 'month';
@@ -56,6 +65,8 @@ const FinanceStatsTotalsScreen: React.FC = () => {
     const unsub = AccountingService.subscribeToMovements(user.uid, dateRange.start, dateRange.end, (movs) => {
       setMovements(movs);
       setLoading(false);
+    }, (err) => {
+      setLoading(false);
     });
     return () => unsub();
   }, [user, dateRange]);
@@ -78,6 +89,68 @@ const FinanceStatsTotalsScreen: React.FC = () => {
 
   const getAccountName = (id: string) => {
     return AccountResolver.getAccount(id)?.name || id.toUpperCase();
+  };
+
+  const COLORS = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4'];
+
+  const SalesByCategoryChart = () => {
+    const chartData = useMemo(() => {
+      return (Object.entries(statsByAccount) as [string, AccountStats][])
+        .filter(([_, data]) => data.income > 0)
+        .map(([id, data]) => ({
+          name: getAccountName(id),
+          value: data.income
+        }))
+        .sort((a, b) => b.value - a.value);
+    }, [statsByAccount]);
+
+    if (chartData.length === 0) return null;
+
+    return (
+      <div className="bg-white dark:bg-surface-dark rounded-[2.5rem] p-6 shadow-sm border border-slate-100 dark:border-white/5 mt-8">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-400">Distribución de Ingresos</h3>
+          <span className="material-symbols-outlined text-indigo-400 text-sm">pie_chart</span>
+        </div>
+        <div className="h-64 w-full">
+          <ResponsiveContainer width="100%" height="100%">
+            <PieChart>
+              <Pie
+                data={chartData}
+                cx="50%"
+                cy="50%"
+                innerRadius={60}
+                outerRadius={80}
+                paddingAngle={5}
+                dataKey="value"
+                stroke="none"
+              >
+                {chartData.map((_, index) => (
+                  <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                ))}
+              </Pie>
+              <Tooltip 
+                formatter={(value: number) => formatMXN(value)}
+                contentStyle={{ 
+                  borderRadius: '16px', 
+                  border: 'none', 
+                  boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)',
+                  fontSize: '10px',
+                  fontWeight: 'bold',
+                  textTransform: 'uppercase'
+                }}
+              />
+              <Legend 
+                verticalAlign="bottom" 
+                height={36}
+                iconType="circle"
+                formatter={(value) => <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">{value}</span>}
+              />
+            </PieChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+    );
   };
 
   const TrendLineChart = () => {
@@ -229,6 +302,8 @@ const FinanceStatsTotalsScreen: React.FC = () => {
                    </div>
                    <span className="material-symbols-outlined absolute -right-8 -bottom-8 text-[200px] opacity-10 rotate-12 pointer-events-none group-hover:rotate-45 transition-transform duration-700">finance_mode</span>
                 </div>
+
+                <SalesByCategoryChart />
 
                 <div className="space-y-6">
                   <div className="flex items-center justify-between px-1">

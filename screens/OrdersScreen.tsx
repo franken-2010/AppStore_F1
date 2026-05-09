@@ -11,10 +11,13 @@ import {
   limit, 
   addDoc,
   serverTimestamp 
-} from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+} from "firebase/firestore";
+import { handleFirestoreError, OperationType } from '../services/errorHandling';
 import { GeminiService } from '../services/geminiService';
 import BottomNav from '../components/BottomNav';
 import VoiceInputButton from '../components/VoiceInputButton';
+
+import { useNotifications } from '../context/NotificationContext';
 
 interface OrderItem {
   rawName: string;
@@ -35,6 +38,7 @@ interface SupplierContact {
 const OrdersScreen: React.FC = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { addNotification } = useNotifications();
   
   const [rawInput, setRawInput] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
@@ -82,15 +86,21 @@ const OrdersScreen: React.FC = () => {
       const costsRef = collection(db, "costs_catalog");
 
       for (const item of extractedItems) {
-        const qNorm = normalizeText(item.rawName);
-        const qTokens = tokenize(qNorm);
+        // Combinamos el nombre extraído con las palabras clave sugeridas por la IA
+        const rawKeywords = [...(item.searchKeywords || [])];
+        if (rawKeywords.length === 0) {
+          rawKeywords.push(...tokenize(normalizeText(item.rawName)));
+        }
+
+        const qTokens = rawKeywords.map(k => normalizeText(k)).filter(k => k.length > 2);
         const strongTokens = qTokens.filter(t => t.length > 3 || !isNaN(Number(t))).slice(0, 10);
         
         let match: any = null;
         let bestScore = 0;
 
         if (strongTokens.length > 0) {
-          const qMain = query(costsRef, where("searchTokens", "array-contains-any", strongTokens), limit(30));
+          // Buscamos candidatos que tengan AL MENOS UNO de los tokens fuertes
+          const qMain = query(costsRef, where("searchTokens", "array-contains-any", strongTokens), limit(40));
           const snap = await getDocs(qMain);
           
           snap.docs.forEach(doc => {
@@ -99,11 +109,23 @@ const OrdersScreen: React.FC = () => {
             const candTokens = data.searchTokens || [];
 
             let score = 0;
-            qTokens.forEach(qt => { if (candTokens.includes(qt)) score += 1; });
+            // Puntuación base por cada token que coincida exactamente
+            qTokens.forEach(qt => { 
+              if (candTokens.includes(qt)) {
+                score += (qt.length > 4 ? 3 : 2); // Más peso a palabras largas
+              } else if (candNorm.includes(qt)) {
+                score += 1; // Un punto si el token está contenido pero no es exacto
+              }
+            });
+
+            // Bono por números (suelen ser pesos o tamaños críticos)
             const qNumbers = qTokens.filter(t => !isNaN(Number(t)));
-            qNumbers.forEach(qn => { if (candTokens.includes(qn)) score += 2; });
-            const longTokens = qTokens.filter(t => t.length > 3);
-            if (longTokens.every(lt => candNorm.includes(lt))) score += 3;
+            qNumbers.forEach(qn => { if (candTokens.includes(qn)) score += 4; });
+
+            // Súper bono: Si TODAS las palabras clave de la IA están en el candidato
+            if (qTokens.every(qt => candNorm.includes(qt))) {
+              score += 10;
+            }
 
             if (score > bestScore) {
               bestScore = score;
@@ -112,9 +134,9 @@ const OrdersScreen: React.FC = () => {
           });
         }
 
-        const threshold = 0.45;
-        const normalizedScore = bestScore / (qTokens.length || 1);
-        const isFound = match && normalizedScore > threshold;
+        // Umbral adaptativo: Si tenemos muchos tokens, necesitamos más puntos
+        const threshold = qTokens.length > 0 ? (qTokens.length * 1.8) : 2;
+        const isFound = match && bestScore >= threshold;
 
         processed.push({
           rawName: item.rawName,
@@ -149,9 +171,14 @@ const OrdersScreen: React.FC = () => {
         notFoundCount: processed.filter(p => !p.isFound).length
       });
 
+      addNotification({
+        title: 'Pedido Generado',
+        message: `Se procesó la lista de ${processed.length} artículos. Ya puedes enviarla.`,
+        type: 'system'
+      });
+
     } catch (err) {
-      console.error(err);
-      alert("Error al generar la lista. Intenta de nuevo.");
+      handleFirestoreError(err, OperationType.WRITE, `users/${user.uid}/orders_history`);
     } finally {
       setIsProcessing(false);
     }
@@ -187,7 +214,7 @@ const OrdersScreen: React.FC = () => {
       const list = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as SupplierContact));
       setSuppliers(list.sort((a, b) => a.supplierName.localeCompare(b.supplierName)));
     } catch (err) {
-      console.error(err);
+      handleFirestoreError(err, OperationType.GET, "suppliers_directory");
     } finally {
       setLoadingSuppliers(false);
     }

@@ -10,7 +10,8 @@ import {
   orderBy, 
   limit, 
   getDocs 
-} from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+} from "firebase/firestore";
+import { handleFirestoreError, OperationType } from '../services/errorHandling';
 import VoiceInputButton from '../components/VoiceInputButton';
 
 const PriceVerificationScreen: React.FC = () => {
@@ -117,7 +118,7 @@ const PriceVerificationScreen: React.FC = () => {
       if (finalResults.length === 0) setError("Sin coincidencias en el catálogo.");
       
     } catch (err: any) {
-      console.error(err);
+      handleFirestoreError(err, OperationType.GET, "costs_catalog");
       setError("Error en la conexión. Intenta de nuevo.");
     } finally {
       setIsSearching(false);
@@ -146,26 +147,25 @@ const PriceVerificationScreen: React.FC = () => {
 
         <div className="flex flex-col gap-2">
           <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 ml-2">¿Qué producto buscas?</label>
-          <div className="relative flex items-center">
+          <form onSubmit={handleSearch} className="relative flex items-center">
             <input 
               type="text" 
               value={productQuery} 
               onChange={(e) => setProductQuery(e.target.value)} 
-              onKeyPress={(e) => e.key === 'Enter' && handleSearch()}
               placeholder="Ej: Cloralex 1lt, Sabritas..." 
               className="w-full rounded-2xl bg-white dark:bg-surface-dark border border-slate-200 dark:border-white/5 py-4.5 px-6 pr-14 text-sm font-bold outline-none focus:ring-2 focus:ring-primary shadow-sm dark:text-white" 
             />
             <div className="absolute right-2 flex items-center gap-1">
                <VoiceInputButton onResult={(t) => {setProductQuery(t); setTimeout(handleSearch, 100);}} />
                <button 
-                onClick={() => handleSearch()} 
+                type="submit"
                 disabled={isSearching}
                 className="size-10 bg-primary text-white rounded-full flex items-center justify-center shadow-lg active:scale-95 transition-all disabled:opacity-50"
                >
                  {isSearching ? <span className="material-symbols-outlined animate-spin text-sm">sync</span> : <span className="material-symbols-outlined text-sm">search</span>}
                </button>
             </div>
-          </div>
+          </form>
         </div>
 
         {error && <p className="text-red-500 text-[10px] font-black uppercase text-center animate-pulse">{error}</p>}

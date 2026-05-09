@@ -11,7 +11,8 @@ import {
   getDocs,
   collection,
   runTransaction
-} from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+} from "firebase/firestore";
+import { handleFirestoreError, OperationType } from '../services/errorHandling';
 import { AccountingAccount, AccountMovement } from '../types';
 import MoneyInputWithCalculator from '../components/MoneyInputWithCalculator';
 
@@ -60,7 +61,7 @@ const EditMovementScreen: React.FC = () => {
           });
         }
       } catch (e) {
-        console.error("Error loading movement data:", e);
+        handleFirestoreError(e, OperationType.GET, `users/${user.uid}/accounts/${docId}/movements/${movementId}`);
       } finally {
         setFetching(false);
       }
@@ -87,11 +88,31 @@ const EditMovementScreen: React.FC = () => {
         if (currentMov.status !== 'VOID') {
           const isOldIncome = currentMov.type === 'INCOME' || (currentMov.type as any) === 'INGRESO';
           oldImpact = isOldIncome ? currentMov.amount : -currentMov.amount;
+
+          // Caso especial CXC solicitado por el usuario:
+          const isCxcVenta = currentMov.rubro === 'in_cxc_venta' || (currentMov.accountId === 'cxc' && currentMov.conceptTitle?.toUpperCase().includes('VENTA'));
+          const isCxcPago = currentMov.rubro === 'in_cxc_pago' || (currentMov.accountId === 'cxc' && (currentMov.conceptTitle?.toUpperCase().includes('PAGO') || currentMov.conceptTitle?.toUpperCase().includes('COBRANZA')));
+
+          if (isCxcVenta) {
+            oldImpact = -currentMov.amount;
+          } else if (isCxcPago) {
+            oldImpact = currentMov.amount;
+          }
         }
 
         let newImpact = 0;
         if (formData.status === 'ACTIVE') {
           newImpact = formData.type === 'INCOME' ? formData.amount : -formData.amount;
+
+          // Caso especial CXC solicitado por el usuario:
+          const isCxcVenta = currentMov.rubro === 'in_cxc_venta' || (currentMov.accountId === 'cxc' && currentMov.conceptTitle?.toUpperCase().includes('VENTA'));
+          const isCxcPago = currentMov.rubro === 'in_cxc_pago' || (currentMov.accountId === 'cxc' && (currentMov.conceptTitle?.toUpperCase().includes('PAGO') || currentMov.conceptTitle?.toUpperCase().includes('COBRANZA')));
+
+          if (isCxcVenta) {
+            newImpact = -formData.amount;
+          } else if (isCxcPago) {
+            newImpact = formData.amount;
+          }
         }
 
         if (!isAccountChanged) {
@@ -102,9 +123,13 @@ const EditMovementScreen: React.FC = () => {
             transaction.update(oldAccRef, { balance: currentBal + delta, updatedAt: serverTimestamp() });
           }
           
+          const newDirection = newImpact >= 0 ? 'IN' : 'OUT';
+          
           transaction.update(oldMovRef, {
             amount: Number(formData.amount),
             type: formData.type,
+            direction: newDirection,
+            signedAmount: newImpact,
             status: formData.status,
             conceptTitle: formData.title.toUpperCase(),
             conceptSubtitle: formData.subtitle,
@@ -126,12 +151,16 @@ const EditMovementScreen: React.FC = () => {
             updatedAt: serverTimestamp() 
           });
 
+          const newDirection = newImpact >= 0 ? 'IN' : 'OUT';
+
           const newMovRef = doc(collection(db, "users", user.uid, "accounts", formData.targetAccountDocId, "movements"));
           transaction.set(newMovRef, {
             uid: user.uid,
             accountId: accounts.find(a => a.id === formData.targetAccountDocId)?.accountId || 'desconocida',
             amount: Number(formData.amount),
             type: formData.type,
+            direction: newDirection,
+            signedAmount: newImpact,
             status: formData.status,
             conceptTitle: formData.title.toUpperCase(),
             conceptSubtitle: formData.subtitle,
@@ -147,8 +176,7 @@ const EditMovementScreen: React.FC = () => {
 
       navigate(`/account/history/${formData.targetAccountDocId}`);
     } catch (e: any) {
-      console.error("F1-TRANSACTION-ERROR:", e);
-      alert(`⚠️ Error al guardar: ${e.message}`);
+      handleFirestoreError(e, OperationType.WRITE, `users/${user.uid}/accounts/${docId}/movements/${movementId}`);
     } finally {
       setLoading(false);
     }

@@ -5,7 +5,8 @@ import {
   doc, 
   runTransaction, 
   serverTimestamp 
-} from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+} from "firebase/firestore";
+import { handleFirestoreError, OperationType } from '../services/errorHandling';
 
 interface MovementDeleteButtonProps {
   uid: string;
@@ -82,8 +83,7 @@ const MovementDeleteButton: React.FC<MovementDeleteButtonProps> = ({
       if (onDone) onDone();
       
     } catch (err: any) {
-      console.error("DELETE_ERROR:", err);
-      alert(`⚠️ ERROR AL ANULAR: ${err.message || 'Error desconocido'}`);
+      handleFirestoreError(err, OperationType.WRITE, `users/${uid}/accounts/${accountDocId}/movements/${movementDocId}`);
     } finally {
       setLoading(false);
     }

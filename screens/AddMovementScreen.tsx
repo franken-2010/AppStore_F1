@@ -8,7 +8,8 @@ import {
   serverTimestamp, 
   doc, 
   runTransaction
-} from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+} from "firebase/firestore";
+import { handleFirestoreError, OperationType } from '../services/errorHandling';
 import { AccountingService } from '../services/AccountingService';
 import { AccountResolver } from '../services/AccountResolver';
 import MoneyInputWithCalculator from '../components/MoneyInputWithCalculator';
@@ -84,8 +85,21 @@ const AddMovementScreen: React.FC = () => {
 
         const currentBalance = Number(accSnap.data()?.balance || 0);
         const amount = Math.round(formData.amount * 100) / 100;
-        const direction = formData.type === 'INCOME' ? 'IN' : 'OUT';
-        const impact = direction === 'IN' ? amount : -amount;
+        
+        let direction = formData.type === 'INCOME' ? 'IN' : 'OUT';
+        let impact = direction === 'IN' ? amount : -amount;
+
+        // Caso especial CXC solicitado por el usuario:
+        // Ventas a crédito (in_cxc_venta) -> Afecta negativo
+        // Pago clientes (in_cxc_pago) -> Afecta positivo
+        if (formData.selectedRubricId === 'in_cxc_venta') {
+          direction = 'OUT';
+          impact = -amount;
+        } else if (formData.selectedRubricId === 'in_cxc_pago') {
+          direction = 'IN';
+          impact = amount;
+        }
+
         const newBalance = currentBalance + impact;
 
         const newMovRef = doc(collection(db, "users", user.uid, "accounts", accountDocId, "movements"));
@@ -100,7 +114,7 @@ const AddMovementScreen: React.FC = () => {
           type: formData.type,
           direction: direction,
           signedAmount: impact,
-          rubro: selectedRubric.accountId,
+          rubro: formData.selectedRubricId,
           conceptTitle: conceptTitle,
           conceptSubtitle: "Registro Manual",
           source: 'manual',
@@ -142,8 +156,8 @@ const AddMovementScreen: React.FC = () => {
       setStatus({ text: `Guardado ✅`, type: 'success' });
       setTimeout(() => navigate('/dashboard'), 800);
     } catch (e: any) {
-      console.error(e);
-      setStatus({ text: `Error al guardar.`, type: 'error' });
+      handleFirestoreError(e, OperationType.WRITE, `users/${user.uid}/accounts`);
+    } finally {
       setLoading(false);
     }
   };

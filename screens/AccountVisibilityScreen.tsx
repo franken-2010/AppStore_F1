@@ -10,15 +10,8 @@ import {
   doc, 
   updateDoc,
   serverTimestamp 
-} from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
-import { 
-  collection as firestoreCollection, 
-  query as firestoreQuery, 
-  onSnapshot as firestoreOnSnapshot, 
-  doc as firestoreDoc, 
-  updateDoc as firestoreUpdateDoc,
-  serverTimestamp as firestoreServerTimestamp 
-} from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+} from "firebase/firestore";
+import { handleFirestoreError, OperationType } from '../services/errorHandling';
 import { AccountingAccount } from '../types';
 
 const AccountVisibilityScreen: React.FC = () => {
@@ -31,8 +24,8 @@ const AccountVisibilityScreen: React.FC = () => {
   useEffect(() => {
     if (!user) return;
     setLoading(true);
-    const q = firestoreQuery(firestoreCollection(db, "users", user.uid, "accounts"));
-    const unsubscribe = firestoreOnSnapshot(q, (snapshot) => {
+    const q = query(collection(db, "users", user.uid, "accounts"));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
       const accs = snapshot.docs.map(d => {
         const data = d.data();
         return {
@@ -50,9 +43,8 @@ const AccountVisibilityScreen: React.FC = () => {
       setAccounts(accs);
       setLoading(false);
       setError(null);
-    }, (err) => {
-      console.error("Error fetching accounts:", err);
-      setError("No se pudo conectar con la base de datos.");
+    }, (err: any) => {
+      handleFirestoreError(err, OperationType.GET, `users/${user.uid}/accounts`);
       setLoading(false);
     });
 
@@ -62,13 +54,13 @@ const AccountVisibilityScreen: React.FC = () => {
   const toggleVisibility = async (id: string, current: boolean) => {
     if (!user) return;
     try {
-      const docRef = firestoreDoc(db, "users", user.uid, "accounts", id);
-      await firestoreUpdateDoc(docRef, {
+      const docRef = doc(db, "users", user.uid, "accounts", id);
+      await updateDoc(docRef, {
         isVisible: !current,
-        updatedAt: firestoreServerTimestamp()
+        updatedAt: serverTimestamp()
       });
-    } catch (err) {
-      console.error("Error toggling visibility:", err);
+    } catch (err: any) {
+      handleFirestoreError(err, OperationType.WRITE, `users/${user.uid}/accounts/${id}`);
     }
   };
 

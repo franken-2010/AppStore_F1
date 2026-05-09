@@ -18,7 +18,8 @@ import {
   setDoc,
   getDoc,
   Timestamp
-} from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+} from "firebase/firestore";
+import { handleFirestoreError, OperationType } from '../services/errorHandling';
 
 type UploadContext = 'products' | 'providers' | 'costs';
 
@@ -120,8 +121,8 @@ const DatabaseUploadScreen: React.FC = () => {
           } else {
             skippedCount++;
           }
-        } catch (e) {
-          console.error("Error normalizing doc:", d.id, e);
+        } catch (e: any) {
+          handleFirestoreError(e, OperationType.WRITE, `costs_catalog/${d.id}`);
           errorCount++;
         }
 
@@ -137,8 +138,7 @@ const DatabaseUploadScreen: React.FC = () => {
         type: 'success' 
       });
     } catch (err: any) {
-      console.error(err);
-      setStatus({ text: `Error en normalización: ${err.message}`, type: 'error' });
+      handleFirestoreError(err, OperationType.WRITE, "costs_catalog");
     } finally {
       setIsNormalizing(false);
     }
@@ -212,8 +212,8 @@ const DatabaseUploadScreen: React.FC = () => {
               skippedCount++;
             }
           }
-        } catch (e) {
-          console.error("Error processing doc:", d.id, e);
+        } catch (e: any) {
+          handleFirestoreError(e, OperationType.WRITE, `costs_catalog/${d.id}`);
           errorCount++;
         }
 
@@ -238,8 +238,7 @@ const DatabaseUploadScreen: React.FC = () => {
 
       setReindexSummary({ totalRead: processedCount, updated: updatedCount });
     } catch (err: any) {
-      console.error(err);
-      setStatus({ text: `Error crítico: ${err.message}`, type: 'error' });
+      handleFirestoreError(err, OperationType.WRITE, "admin_jobs");
     } finally {
       setIsReindexing(false);
     }
@@ -266,8 +265,8 @@ const DatabaseUploadScreen: React.FC = () => {
           });
         }
       }
-    } catch (e) {
-      console.error("Error fetching last job:", e);
+    } catch (e: any) {
+      handleFirestoreError(e, OperationType.GET, "admin_jobs");
     }
   };
 
@@ -295,8 +294,8 @@ const DatabaseUploadScreen: React.FC = () => {
       });
 
       setDiagResults(results);
-    } catch (e) {
-      console.error(e);
+    } catch (e: any) {
+      handleFirestoreError(e, OperationType.GET, `users/${user.uid}/accountIndex`);
       setStatus({ text: "Error al ejecutar diagnóstico.", type: 'error' });
     } finally {
       setIsProcessing(false);
@@ -362,8 +361,7 @@ const DatabaseUploadScreen: React.FC = () => {
       if (opCount > 0) await batch.commit();
       setStatus({ text: `✅ Estandarización completa: ${totalFixed} actualizados.`, type: 'success' });
     } catch (err: any) {
-      console.error(err);
-      setStatus({ text: `Error: ${err.message}`, type: 'error' });
+      handleFirestoreError(err, OperationType.WRITE, `users/${user.uid}/accounts`);
     } finally {
       setIsProcessing(false);
     }
@@ -406,8 +404,7 @@ const DatabaseUploadScreen: React.FC = () => {
       if (opCount > 0) await batch.commit();
       setStatus({ text: "✅ Sistema reseteado.", type: 'success' });
     } catch (err: any) {
-      console.error(err);
-      setStatus({ text: `Error: ${err.message}`, type: 'error' });
+      handleFirestoreError(err, OperationType.DELETE, `users/${user.uid}/accounts`);
     } finally {
       setIsProcessing(false);
     }
@@ -476,7 +473,7 @@ const DatabaseUploadScreen: React.FC = () => {
       }
       setStatus({ text: `Importación exitosa.`, type: 'success' });
     } catch (err: any) {
-      setStatus({ text: `Error: ${err.message}`, type: 'error' });
+      handleFirestoreError(err, OperationType.WRITE, collectionName);
     } finally {
       setIsProcessing(false);
     }

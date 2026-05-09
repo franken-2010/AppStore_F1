@@ -3,7 +3,7 @@ import React from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { auth } from '../services/firebase';
-import { signOut } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
+import { signOut } from "firebase/auth";
 
 interface SidebarProps {
   isOpen: boolean;

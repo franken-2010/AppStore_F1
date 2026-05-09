@@ -11,8 +11,11 @@ import {
   doc, 
   getDoc,
   where,
-  Timestamp
-} from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+  Timestamp,
+  runTransaction,
+  serverTimestamp
+} from "firebase/firestore";
+import { handleFirestoreError, OperationType } from '../services/errorHandling';
 import { AccountingAccount, AccountMovement } from '../types';
 import BottomNav from '../components/BottomNav';
 
@@ -24,6 +27,7 @@ const AccountHistoryScreen: React.FC = () => {
   const [account, setAccount] = useState<AccountingAccount | null>(null);
   const [movements, setMovements] = useState<AccountMovement[]>([]);
   const [loading, setLoading] = useState(true);
+  const [voiding, setVoiding] = useState<string | null>(null);
   const [selectedMovement, setSelectedMovement] = useState<AccountMovement | null>(null);
   
   const [currentDate, setCurrentDate] = useState(new Date());
@@ -51,6 +55,8 @@ const AccountHistoryScreen: React.FC = () => {
           accountId: String(data.accountId || '')
         } as AccountingAccount);
       }
+    }).catch(err => {
+      handleFirestoreError(err, OperationType.GET, `users/${user.uid}/accounts/${docId}`);
     });
 
     const q = query(
@@ -75,13 +81,16 @@ const AccountHistoryScreen: React.FC = () => {
           source: String(data.source || ''),
           status: String(data.status || 'ACTIVE'),
           createdAt: data.createdAt?.toMillis ? data.createdAt.toMillis() : null,
-          notes: String(data.notes || '')
+          notes: String(data.notes || ''),
+          direction: data.direction,
+          signedAmount: data.signedAmount,
+          rubro: data.rubro
         } as any;
       });
       setMovements(allMovs);
       setLoading(false);
     }, (error) => {
-      console.error("Error fetching movements:", error);
+      handleFirestoreError(error, OperationType.GET, `users/${user.uid}/accounts/${docId}/movements`);
       setLoading(false);
     });
 
@@ -94,8 +103,9 @@ const AccountHistoryScreen: React.FC = () => {
 
   const totalPeriodValue = useMemo(() => {
     return activeMovements.reduce((sum, m) => {
-      const isIncome = m.type === 'INCOME' || (m.type as any) === 'INGRESO';
-      return sum + (isIncome ? m.amount : -m.amount);
+      if (m.signedAmount !== undefined) return sum + m.signedAmount;
+      const sign = getMovementSign(m);
+      return sum + (sign === '+' ? m.amount : -m.amount);
     }, 0);
   }, [activeMovements]);
 
@@ -103,7 +113,90 @@ const AccountHistoryScreen: React.FC = () => {
     setCurrentDate(prev => new Date(prev.getFullYear(), prev.getMonth() + dir, 1));
   };
 
+  const handleVoidMovement = async (m: AccountMovement) => {
+    if (!user || !docId || !m.id) return;
+    if (!window.confirm(`¿Estás seguro de anular el movimiento "${m.conceptTitle}" por ${formatCurrency(m.amount)}? Esta acción ajustará el saldo de la cuenta.`)) return;
+
+    setVoiding(m.id);
+    try {
+      await runTransaction(db, async (transaction) => {
+        const accountRef = doc(db, "users", user.uid, "accounts", docId);
+        const movementRef = doc(db, "users", user.uid, "accounts", docId, "movements", m.id!);
+
+        const accSnap = await transaction.get(accountRef);
+        if (!accSnap.exists()) throw new Error("La cuenta no existe.");
+
+        const movSnap = await transaction.get(movementRef);
+        if (!movSnap.exists()) throw new Error("El movimiento no existe.");
+        if (movSnap.data()?.status === 'VOID') throw new Error("El movimiento ya está anulado.");
+
+        const currentBalance = Number(accSnap.data()?.balance || 0);
+        const amount = Number(m.amount || 0);
+        const isIncome = m.type === 'INCOME' || (m.type as any) === 'INGRESO';
+        
+        // Si era ingreso, restamos. Si era egreso, sumamos.
+        let impact = isIncome ? -amount : amount;
+
+        // Caso especial CXC solicitado por el usuario:
+        // Si anulamos una "Venta a crédito" (que restó al saldo), debemos sumar.
+        // Si anulamos un "Pago clientes" (que sumó al saldo), debemos restar.
+        const isCxcVenta = m.rubro === 'in_cxc_venta' || (m.accountId === 'cxc' && m.conceptTitle?.toUpperCase().includes('VENTA'));
+        const isCxcPago = m.rubro === 'in_cxc_pago' || (m.accountId === 'cxc' && (m.conceptTitle?.toUpperCase().includes('PAGO') || m.conceptTitle?.toUpperCase().includes('COBRANZA')));
+
+        if (isCxcVenta) {
+          impact = amount; // Inverso de -amount
+        } else if (isCxcPago) {
+          impact = -amount; // Inverso de amount
+        }
+
+        const newBalance = currentBalance + impact;
+
+        transaction.update(accountRef, {
+          balance: newBalance,
+          updatedAt: serverTimestamp()
+        });
+
+        transaction.update(movementRef, {
+          status: 'VOID',
+          voidedAt: serverTimestamp(),
+          updatedAt: serverTimestamp()
+        });
+      });
+      
+      if (selectedMovement?.id === m.id) {
+        setSelectedMovement(null);
+      }
+    } catch (err: any) {
+      handleFirestoreError(err, OperationType.WRITE, `users/${user.uid}/accounts/${docId}/movements/${m.id}`);
+      alert("Error al anular el movimiento: " + err.message);
+    } finally {
+      setVoiding(null);
+    }
+  };
+
   const formatCurrency = (val: number) => new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(val);
+
+  const getMovementSign = (m: any) => {
+    if (m.direction === 'OUT') return '-';
+    if (m.direction === 'IN') return '+';
+    
+    // Fallback para registros antiguos o sin direction
+    const isIncome = m.type === 'INCOME' || (m.type as any) === 'INGRESO';
+    const isCxcVenta = m.rubro === 'in_cxc_venta' || (m.accountId === 'cxc' && m.conceptTitle?.toUpperCase().includes('VENTA'));
+    
+    if (isCxcVenta) return '-';
+    return isIncome ? '+' : '-';
+  };
+
+  const getMovementColor = (m: any) => {
+    const sign = getMovementSign(m);
+    return sign === '+' ? 'text-blue-400' : 'text-red-400';
+  };
+
+  const getMovementColorEmerald = (m: any) => {
+    const sign = getMovementSign(m);
+    return sign === '+' ? 'text-emerald-400' : 'text-rose-400';
+  };
 
   const formatDate = (ts: any) => {
     if (!ts) return '---';
@@ -159,14 +252,30 @@ const AccountHistoryScreen: React.FC = () => {
                 <div onClick={() => setSelectedMovement(m)} className="flex-1 min-w-0 flex flex-col justify-center cursor-pointer">
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-[13px] font-black text-slate-200 uppercase truncate leading-tight flex-1">{m.conceptTitle || 'MOVIMIENTO'}</span>
-                    <span className={`text-[14px] font-black shrink-0 ${(m.type === 'INCOME' || (m.type as any) === 'INGRESO') ? 'text-blue-400' : 'text-red-400'}`}>{(m.type === 'INCOME' || (m.type as any) === 'INGRESO') ? '+' : '-'} {formatCurrency(m.amount)}</span>
+                    <span className={`text-[14px] font-black shrink-0 ${getMovementColor(m)}`}>
+                      {getMovementSign(m)} {formatCurrency(m.amount)}
+                    </span>
                   </div>
                   <div className="flex items-center gap-2 mt-1">
                     <span className="text-[10px] font-bold text-slate-500 uppercase tracking-tight truncate flex-1">{m.conceptSubtitle || m.source}</span>
                     <span className="text-[9px] font-black text-slate-600 uppercase shrink-0">{m.createdAt ? new Date(m.createdAt).toLocaleDateString('es-MX', {day: '2-digit', month: 'short'}) : ''}</span>
                   </div>
                 </div>
-                <button onClick={() => navigate(`/account/edit-movement/${docId}/${m.id}`)} className="size-10 rounded-xl bg-white/5 text-slate-400 hover:text-blue-400 active:scale-90 transition-all flex items-center justify-center shrink-0 border border-white/5"><span className="material-symbols-outlined text-[20px]">edit</span></button>
+                <div className="flex items-center gap-2 shrink-0">
+                  <button 
+                    onClick={() => handleVoidMovement(m)} 
+                    disabled={voiding === m.id}
+                    className="size-10 rounded-xl bg-rose-500/10 text-rose-400 hover:bg-rose-500 hover:text-white active:scale-90 transition-all flex items-center justify-center border border-rose-500/20 shadow-sm"
+                    title="Anular movimiento"
+                  >
+                    {voiding === m.id ? (
+                      <span className="material-symbols-outlined text-[20px] animate-spin">sync</span>
+                    ) : (
+                      <span className="material-symbols-outlined text-[20px]">block</span>
+                    )}
+                  </button>
+                  <button onClick={() => navigate(`/account/edit-movement/${docId}/${m.id}`)} className="size-10 rounded-xl bg-white/5 text-slate-400 hover:text-blue-400 active:scale-90 transition-all flex items-center justify-center border border-white/5"><span className="material-symbols-outlined text-[20px]">edit</span></button>
+                </div>
               </div>
             ))}
           </div>
@@ -185,7 +294,9 @@ const AccountHistoryScreen: React.FC = () => {
                 <p className="text-[10px] font-black text-blue-400 uppercase tracking-[0.25em] mb-3">Concepto Principal</p>
                 <h2 className="text-2xl font-black text-white uppercase leading-tight mb-2">{selectedMovement.conceptTitle}</h2>
                 <div className="h-px w-12 bg-blue-500/30 mx-auto mb-4"></div>
-                <p className={`text-5xl font-black tracking-tighter ${(selectedMovement.type === 'INCOME' || (selectedMovement.type as any) === 'INGRESO') ? 'text-emerald-400' : 'text-rose-400'}`}>{(selectedMovement.type === 'INCOME' || (selectedMovement.type as any) === 'INGRESO') ? '+' : '-'} {formatCurrency(selectedMovement.amount)}</p>
+                <p className={`text-5xl font-black tracking-tighter ${getMovementColorEmerald(selectedMovement)}`}>
+                  {getMovementSign(selectedMovement)} {formatCurrency(selectedMovement.amount)}
+                </p>
                 <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mt-2">Monto Neto de Operación</p>
               </div>
               <div className="grid grid-cols-2 gap-4">
@@ -196,6 +307,18 @@ const AccountHistoryScreen: React.FC = () => {
               {selectedMovement.notes && <div className="space-y-3"><label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Observaciones</label><div className="p-5 bg-white/5 rounded-2xl border border-white/5 italic text-[14px] text-slate-300 leading-relaxed shadow-inner">"{selectedMovement.notes}"</div></div>}
             </div>
             <div className="pt-4 pb-8 space-y-3">
+              <button 
+                onClick={() => handleVoidMovement(selectedMovement)} 
+                disabled={voiding === selectedMovement.id}
+                className="w-full py-5 bg-rose-500 text-white font-black rounded-2xl shadow-xl shadow-rose-500/20 active:scale-95 transition-all flex items-center justify-center gap-3 text-xs uppercase tracking-widest"
+              >
+                {voiding === selectedMovement.id ? (
+                  <span className="material-symbols-outlined text-xl animate-spin">sync</span>
+                ) : (
+                  <span className="material-symbols-outlined text-xl">block</span>
+                )}
+                Anular Movimiento
+              </button>
               <button onClick={() => { const m = selectedMovement; setSelectedMovement(null); navigate(`/account/edit-movement/${docId}/${m.id}`); }} className="w-full py-5 bg-blue-500 text-white font-black rounded-2xl shadow-xl shadow-primary/20 active:scale-95 transition-all flex items-center justify-center gap-3 text-xs uppercase tracking-widest"><span className="material-symbols-outlined text-xl">edit</span> Editar este registro</button>
               <button onClick={() => setSelectedMovement(null)} className="w-full py-4 bg-white/5 text-slate-400 font-black rounded-2xl active:scale-95 transition-all text-xs uppercase tracking-widest">Regresar al Historial</button>
             </div>

@@ -1,8 +1,9 @@
 
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { db } from '../services/firebase';
-import { collection, query, orderBy, limit, onSnapshot, doc, updateDoc, writeBatch, getDocs, where } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+import { collection, query, orderBy, limit, onSnapshot, doc, updateDoc, writeBatch, getDocs, where } from "firebase/firestore";
 import { useAuth } from './AuthContext';
+import { handleFirestoreError, OperationType } from '../services/errorHandling';
 
 export interface AppNotification {
   id: string;
@@ -20,6 +21,7 @@ interface NotificationContextType {
   unreadCount: number;
   markAsRead: (id: string) => void;
   markAllAsRead: () => void;
+  deleteNotification: (id: string) => Promise<void>;
   fetchNotifications: () => Promise<void>;
   addNotification: (notification: Omit<AppNotification, 'id' | 'timestamp' | 'isRead'>) => void;
 }
@@ -65,13 +67,13 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
         setNotifications(internalNotifs);
       }, (error) => {
         if (error.code !== 'permission-denied') {
-          console.error("Error en Firestore notifications:", error);
+          handleFirestoreError(error, OperationType.GET, `users/${user.uid}/notifications`);
         }
       });
 
       return () => unsubscribe();
     } catch (e) {
-      console.error("Failed to setup notification listener:", e);
+      handleFirestoreError(e, OperationType.GET, `users/${user.uid}/notifications`);
     }
   }, [user?.uid]);
 
@@ -97,7 +99,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
       const docRef = doc(db, "users", user.uid, "notifications", id);
       await updateDoc(docRef, { read: true });
     } catch (e) {
-      console.error("Error marking as read:", e);
+      handleFirestoreError(e, OperationType.WRITE, `users/${user.uid}/notifications/${id}`);
     }
   };
 
@@ -117,14 +119,28 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
       });
       await batch.commit();
     } catch (e) {
-      console.error("Error marking all as read:", e);
+      handleFirestoreError(e, OperationType.WRITE, `users/${user.uid}/notifications`);
+    }
+  };
+
+  const deleteNotification = async (id: string) => {
+    if (!user) return;
+    try {
+      if (id.startsWith('local_')) {
+        setNotifications(prev => prev.filter(n => n.id !== id));
+        return;
+      }
+      const docRef = doc(db, "users", user.uid, "notifications", id);
+      await writeBatch(db).delete(docRef).commit();
+    } catch (e) {
+      handleFirestoreError(e, OperationType.DELETE, `users/${user.uid}/notifications/${id}`);
     }
   };
 
   const unreadCount = notifications.filter(n => !n.isRead).length;
 
   return (
-    <NotificationContext.Provider value={{ notifications, unreadCount, markAsRead, markAllAsRead, fetchNotifications, addNotification }}>
+    <NotificationContext.Provider value={{ notifications, unreadCount, markAsRead, markAllAsRead, deleteNotification, fetchNotifications, addNotification }}>
       {children}
     </NotificationContext.Provider>
   );

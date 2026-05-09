@@ -3,7 +3,8 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { db } from '../services/firebase';
-import { doc, getDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+import { doc, getDoc } from "firebase/firestore";
+import { handleFirestoreError, OperationType } from '../services/errorHandling';
 import BottomNav from '../components/BottomNav';
 
 interface Provider {
@@ -29,7 +30,7 @@ const ProviderDetailScreen: React.FC = () => {
           setProvider(snap.data() as Provider);
         }
       } catch (err) {
-        console.error("Error fetching provider:", err);
+        handleFirestoreError(err, OperationType.GET, `suppliers_directory/${providerId}`);
       } finally {
         setLoading(false);
       }

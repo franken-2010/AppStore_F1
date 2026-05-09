@@ -14,21 +14,32 @@ import {
   orderBy, 
   limit,
   doc
-} from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+} from "firebase/firestore";
+import { handleFirestoreError, OperationType } from '../services/errorHandling';
 import { AccountMovement, AccountingAccount } from '../types';
 import { AccountResolver } from '../services/AccountResolver';
 import { AccountingService } from '../services/AccountingService';
+import DashboardCustomizer from '../components/DashboardCustomizer';
 
 const DashboardScreen: React.FC = () => {
   const navigate = useNavigate();
   const { profile, user } = useAuth();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isCustomizerOpen, setIsCustomizerOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [queryError, setQueryError] = useState<string | null>(null);
   
   const [movementsToday, setMovementsToday] = useState<AccountMovement[]>([]);
   const [lastCorte, setLastCorte] = useState<any>(null);
   const [invAccount, setInvAccount] = useState<AccountingAccount | null>(null);
+
+  const dashboardConfig = useMemo(() => profile?.dashboardConfig || {
+    showBalance: true,
+    showPerformance: true,
+    showLogistics: true,
+    showClosings: true,
+    performanceAccounts: ['ventas', 'fiesta', 'estancias', 'recargas']
+  }, [profile?.dashboardConfig]);
 
   const formatMXN = (val: number) => new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(val);
 
@@ -72,6 +83,8 @@ const DashboardScreen: React.FC = () => {
           }
         });
       }
+    }, (error) => {
+      handleFirestoreError(error, OperationType.GET, `users/${user.uid}/cortes`);
     });
 
     let unsubInv: (() => void) | null = null;
@@ -90,6 +103,8 @@ const DashboardScreen: React.FC = () => {
               type: 'Activo'
             } as AccountingAccount);
           }
+        }, (error) => {
+          handleFirestoreError(error, OperationType.GET, `users/${user.uid}/accounts/${acc.id}`);
         });
       }
     });
@@ -103,13 +118,13 @@ const DashboardScreen: React.FC = () => {
 
   const totals = useMemo(() => AccountingService.calculateTotals(movementsToday), [movementsToday]);
   const statsByAccount = useMemo(() => AccountingService.groupStatsByAccount(movementsToday), [movementsToday]);
-
-  const rubrics = [
-    { id: 'ventas', label: 'Ventas' },
-    { id: 'fiesta', label: 'Fiesta' },
-    { id: 'estancias', label: 'Estancias' },
-    { id: 'recargas', label: 'Recargas' }
-  ];
+  
+  const rubrics = useMemo(() => {
+    return dashboardConfig.performanceAccounts.map(id => {
+      const acc = AccountResolver.getAccount(id);
+      return { id, label: acc?.name || id };
+    });
+  }, [dashboardConfig.performanceAccounts]);
 
   const inventoryStatus = useMemo(() => {
     if (!invAccount) return { label: 'Cargando...', color: 'bg-slate-500', icon: 'sync', progress: 0, status: 'UNKNOWN' };
@@ -147,6 +162,13 @@ const DashboardScreen: React.FC = () => {
             </div>
           </div>
           <div className="flex items-center gap-1">
+            <button 
+              onClick={() => setIsCustomizerOpen(true)}
+              className="p-2 rounded-full hover:bg-white/5 text-slate-400 hover:text-primary transition-all active:scale-90"
+              title="Personalizar Dashboard"
+            >
+              <span className="material-symbols-outlined text-2xl">dashboard_customize</span>
+            </button>
             <NotificationBell />
             <ProfileMenu />
           </div>
@@ -154,6 +176,8 @@ const DashboardScreen: React.FC = () => {
       </header>
       
       <main className="flex flex-col w-full max-w-md mx-auto px-6 space-y-7 mt-6">
+        
+        {isCustomizerOpen && <DashboardCustomizer isOpen={isCustomizerOpen} onClose={() => setIsCustomizerOpen(false)} />}
         
         {queryError?.includes('index') && (
           <div className="p-4 bg-amber-500/10 border border-amber-500/20 rounded-2xl animate-in slide-in-from-top-2">
@@ -167,131 +191,139 @@ const DashboardScreen: React.FC = () => {
           </div>
         )}
 
-        <section className="animate-in fade-in slide-in-from-top-4 duration-500">
-           <div className="bg-gradient-to-br from-indigo-500 to-blue-500 p-7 rounded-[2rem] shadow-2xl shadow-primary/20 relative overflow-hidden">
-             <div className="relative z-10">
-               <p className="text-[9px] font-black uppercase tracking-widest text-white/60 mb-2">Balance Neto de Hoy</p>
-               <h2 className="text-4xl font-black tracking-tighter mb-6">
-                 {loading ? '...' : formatMXN(totals.balance)}
-               </h2>
-               
-               <div className="flex items-center gap-6 pt-5 border-t border-white/10">
-                 <div className="flex-1">
-                   <p className="text-[8px] font-black uppercase tracking-widest text-white/40 mb-0.5">Entradas</p>
-                   <p className="text-sm font-bold text-emerald-300">{formatMXN(totals.income)}</p>
-                 </div>
-                 <div className="w-px h-6 bg-white/10"></div>
-                 <div className="flex-1">
-                   <p className="text-[8px] font-black uppercase tracking-widest text-white/40 mb-0.5">Salidas</p>
-                   <p className="text-sm font-bold text-rose-300">{formatMXN(totals.expense)}</p>
+        {dashboardConfig.showBalance && (
+          <section className="animate-in fade-in slide-in-from-top-4 duration-500">
+             <div className="bg-gradient-to-br from-indigo-500 to-blue-500 p-7 rounded-[2rem] shadow-2xl shadow-primary/20 relative overflow-hidden">
+               <div className="relative z-10">
+                 <p className="text-[9px] font-black uppercase tracking-widest text-white/60 mb-2">Balance Neto de Hoy</p>
+                 <h2 className="text-4xl font-black tracking-tighter mb-6">
+                   {loading ? '...' : formatMXN(totals.balance)}
+                 </h2>
+                 
+                 <div className="flex items-center gap-6 pt-5 border-t border-white/10">
+                   <div className="flex-1">
+                     <p className="text-[8px] font-black uppercase tracking-widest text-white/40 mb-0.5">Entradas</p>
+                     <p className="text-sm font-bold text-emerald-300">{formatMXN(totals.income)}</p>
+                   </div>
+                   <div className="w-px h-6 bg-white/10"></div>
+                   <div className="flex-1">
+                     <p className="text-[8px] font-black uppercase tracking-widest text-white/40 mb-0.5">Salidas</p>
+                     <p className="text-sm font-bold text-rose-300">{formatMXN(totals.expense)}</p>
+                   </div>
                  </div>
                </div>
+               <span className="material-symbols-outlined absolute -right-6 -bottom-6 text-[140px] opacity-10 rotate-12">account_balance_wallet</span>
              </div>
-             <span className="material-symbols-outlined absolute -right-6 -bottom-6 text-[140px] opacity-10 rotate-12">account_balance_wallet</span>
-           </div>
-        </section>
+          </section>
+        )}
 
-        <section className="space-y-4">
-          <div className="flex items-center justify-between px-1">
-            <h2 className="text-[10px] font-black uppercase tracking-[0.25em] text-slate-500">Rendimiento Hoy</h2>
-            <div className="h-px flex-1 bg-white/5 ml-4"></div>
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            {rubrics.map((r) => {
-              const data = statsByAccount[r.id] || { income: 0, expense: 0, net: 0 };
-              const accInfo = AccountResolver.getAccount(r.id);
-              return (
-                <div 
-                  key={r.id} 
-                  onClick={() => navigate(accInfo ? `/account/history/${accInfo.accountDocId}` : '/finance-accounts')}
-                  className="p-5 bg-white/5 rounded-[1.8rem] border border-white/5 shadow-sm active:scale-95 transition-all cursor-pointer group"
-                >
-                  <div className="flex justify-between items-start mb-3">
-                    <span className="text-[9px] font-black uppercase tracking-widest text-slate-400 group-hover:text-primary dark:group-hover:text-blue-400 transition-colors">{r.label}</span>
-                    <div className={`size-1.5 rounded-full ${data.net >= 0 ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]' : 'bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.5)]'}`}></div>
+        {dashboardConfig.showPerformance && rubrics.length > 0 && (
+          <section className="space-y-4">
+            <div className="flex items-center justify-between px-1">
+              <h2 className="text-[10px] font-black uppercase tracking-[0.25em] text-slate-500">Rendimiento Hoy</h2>
+              <div className="h-px flex-1 bg-white/5 ml-4"></div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              {rubrics.map((r) => {
+                const data = statsByAccount[r.id] || { income: 0, expense: 0, net: 0 };
+                const accInfo = AccountResolver.getAccount(r.id);
+                return (
+                  <div 
+                    key={r.id} 
+                    onClick={() => navigate(accInfo ? `/account/history/${accInfo.accountDocId}` : '/finance-accounts')}
+                    className="p-5 bg-white/5 rounded-[1.8rem] border border-white/5 shadow-sm active:scale-95 transition-all cursor-pointer group"
+                  >
+                    <div className="flex justify-between items-start mb-3">
+                      <span className="text-[9px] font-black uppercase tracking-widest text-slate-400 group-hover:text-primary dark:group-hover:text-blue-400 transition-colors">{r.label}</span>
+                      <div className={`size-1.5 rounded-full ${data.net >= 0 ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]' : 'bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.5)]'}`}></div>
+                    </div>
+                    <p className={`text-xl font-black tracking-tight ${data.net >= 0 ? 'text-white' : 'text-rose-400'}`}>
+                      {formatMXN(data.net)}
+                    </p>
                   </div>
-                  <p className={`text-xl font-black tracking-tight ${data.net >= 0 ? 'text-white' : 'text-rose-400'}`}>
-                    {formatMXN(data.net)}
+                );
+              })}
+            </div>
+          </section>
+        )}
+
+        {dashboardConfig.showLogistics && (
+          <section className="space-y-4">
+            <div className="flex items-center justify-between px-1">
+              <h2 className="text-[10px] font-black uppercase tracking-[0.25em] text-slate-500">Logística</h2>
+              <div className="h-px flex-1 bg-white/5 ml-4"></div>
+            </div>
+            <div 
+              onClick={() => invAccount && navigate(`/account/history/${invAccount.id}`)}
+              className="p-6 bg-white/5 rounded-[2rem] border border-white/5 active:scale-[0.98] transition-all cursor-pointer relative overflow-hidden group"
+            >
+              <div className="flex justify-between items-start mb-4">
+                <div className="flex items-center gap-2.5">
+                  <div className="size-8 rounded-xl bg-primary/10 text-primary dark:text-blue-400 flex items-center justify-center">
+                    <span className="material-symbols-outlined text-lg">inventory_2</span>
+                  </div>
+                  <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">Valor en Mercancía</span>
+                </div>
+                <div className={`px-3 py-1 rounded-full text-[8px] font-black tracking-widest text-white shadow-lg ${inventoryStatus.color}`}>
+                  {inventoryStatus.label}
+                </div>
+              </div>
+              
+              <p className="text-3xl font-black tracking-tighter text-white mb-4">
+                {invAccount ? formatMXN(invAccount.balance) : '...'}
+              </p>
+  
+              {invAccount && (invAccount.inventoryMin !== null || invAccount.inventoryMax !== null) && (
+                <div className="space-y-3">
+                  <div className="w-full h-1.5 bg-white/5 rounded-full overflow-hidden">
+                    <div 
+                      className={`h-full transition-all duration-1000 ease-out rounded-full ${
+                        inventoryStatus.status === 'LOW' ? 'bg-amber-500' :
+                        inventoryStatus.status === 'HIGH' ? 'bg-rose-500' :
+                        'bg-emerald-500'
+                      }`}
+                      style={{ width: `${inventoryStatus.progress * 100}%` }}
+                    ></div>
+                  </div>
+                  <p className="text-[8px] font-bold text-slate-500 uppercase tracking-widest text-center">
+                    Rango objetivo: {invAccount.inventoryMin ? formatMXN(invAccount.inventoryMin) : '$0'} – {invAccount.inventoryMax ? formatMXN(invAccount.inventoryMax) : 'Max'}
                   </p>
                 </div>
-              );
-            })}
-          </div>
-        </section>
-
-        <section className="space-y-4">
-          <div className="flex items-center justify-between px-1">
-            <h2 className="text-[10px] font-black uppercase tracking-[0.25em] text-slate-500">Logística</h2>
-            <div className="h-px flex-1 bg-white/5 ml-4"></div>
-          </div>
-          <div 
-            onClick={() => invAccount && navigate(`/account/history/${invAccount.id}`)}
-            className="p-6 bg-white/5 rounded-[2rem] border border-white/5 active:scale-[0.98] transition-all cursor-pointer relative overflow-hidden group"
-          >
-            <div className="flex justify-between items-start mb-4">
-              <div className="flex items-center gap-2.5">
-                <div className="size-8 rounded-xl bg-primary/10 text-primary dark:text-blue-400 flex items-center justify-center">
-                  <span className="material-symbols-outlined text-lg">inventory_2</span>
-                </div>
-                <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">Valor en Mercancía</span>
-              </div>
-              <div className={`px-3 py-1 rounded-full text-[8px] font-black tracking-widest text-white shadow-lg ${inventoryStatus.color}`}>
-                {inventoryStatus.label}
-              </div>
+              )}
             </div>
-            
-            <p className="text-3xl font-black tracking-tighter text-white mb-4">
-              {invAccount ? formatMXN(invAccount.balance) : '...'}
-            </p>
+          </section>
+        )}
 
-            {invAccount && (invAccount.inventoryMin !== null || invAccount.inventoryMax !== null) && (
-              <div className="space-y-3">
-                <div className="w-full h-1.5 bg-white/5 rounded-full overflow-hidden">
-                  <div 
-                    className={`h-full transition-all duration-1000 ease-out rounded-full ${
-                      inventoryStatus.status === 'LOW' ? 'bg-amber-500' :
-                      inventoryStatus.status === 'HIGH' ? 'bg-rose-500' :
-                      'bg-emerald-500'
-                    }`}
-                    style={{ width: `${inventoryStatus.progress * 100}%` }}
-                  ></div>
-                </div>
-                <p className="text-[8px] font-bold text-slate-500 uppercase tracking-widest text-center">
-                  Rango objetivo: {invAccount.inventoryMin ? formatMXN(invAccount.inventoryMin) : '$0'} – {invAccount.inventoryMax ? formatMXN(invAccount.inventoryMax) : 'Max'}
-                </p>
+        {dashboardConfig.showClosings && (
+          <section className="pb-8">
+            <div className="flex items-center justify-between mb-4 px-1">
+              <h2 className="text-[10px] font-black uppercase tracking-[0.25em] text-slate-500">Cierre Reciente</h2>
+              <div className="h-px flex-1 bg-white/5 ml-4"></div>
+            </div>
+            {lastCorte ? (
+               <div onClick={() => navigate('/cortes')} className="flex items-center gap-4 p-5 rounded-[1.8rem] bg-white/5 border border-white/5 cursor-pointer active:scale-[0.98] transition-all group">
+                  <div className={`size-12 rounded-2xl flex items-center justify-center shrink-0 ${lastCorte.status === 'ACTIVE' ? 'bg-emerald-500/10 text-emerald-500 dark:text-emerald-400' : 'bg-rose-500/10 text-rose-500 dark:text-rose-400'}`}>
+                    <span className="material-symbols-outlined text-2xl">{lastCorte.status === 'ACTIVE' ? 'verified' : 'report_problem'}</span>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[8px] font-black uppercase text-slate-500 tracking-widest mb-1">Auditado el {lastCorte.fecha}</p>
+                    <h4 className="text-sm font-bold text-white truncate uppercase">Admin: {lastCorte.admin || 'Paco'}</h4>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-[8px] font-black uppercase text-slate-500 mb-0.5">Diferencia</p>
+                    <p className={`text-xs font-black ${lastCorte.audit?.diferencia >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                      {formatMXN(lastCorte.audit?.diferencia || 0)}
+                    </p>
+                  </div>
+                  <span className="material-symbols-outlined text-slate-600 group-hover:text-primary dark:group-hover:text-blue-400 transition-colors">chevron_right</span>
+               </div>
+            ) : (
+              <div className="p-8 text-center bg-white/5 rounded-[2rem] border border-dashed border-white/10">
+                <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Sin cortes registrados</p>
               </div>
             )}
-          </div>
-        </section>
-
-        <section className="pb-8">
-          <div className="flex items-center justify-between mb-4 px-1">
-            <h2 className="text-[10px] font-black uppercase tracking-[0.25em] text-slate-500">Cierre Reciente</h2>
-            <div className="h-px flex-1 bg-white/5 ml-4"></div>
-          </div>
-          {lastCorte ? (
-             <div onClick={() => navigate('/cortes')} className="flex items-center gap-4 p-5 rounded-[1.8rem] bg-white/5 border border-white/5 cursor-pointer active:scale-[0.98] transition-all group">
-                <div className={`size-12 rounded-2xl flex items-center justify-center shrink-0 ${lastCorte.status === 'ACTIVE' ? 'bg-emerald-500/10 text-emerald-500 dark:text-emerald-400' : 'bg-rose-500/10 text-rose-500 dark:text-rose-400'}`}>
-                  <span className="material-symbols-outlined text-2xl">{lastCorte.status === 'ACTIVE' ? 'verified' : 'report_problem'}</span>
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-[8px] font-black uppercase text-slate-500 tracking-widest mb-1">Auditado el {lastCorte.fecha}</p>
-                  <h4 className="text-sm font-bold text-white truncate uppercase">Admin: {lastCorte.admin || 'Paco'}</h4>
-                </div>
-                <div className="text-right">
-                  <p className="text-[8px] font-black uppercase text-slate-500 mb-0.5">Diferencia</p>
-                  <p className={`text-xs font-black ${lastCorte.audit?.diferencia >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                    {formatMXN(lastCorte.audit?.diferencia || 0)}
-                  </p>
-                </div>
-                <span className="material-symbols-outlined text-slate-600 group-hover:text-primary dark:group-hover:text-blue-400 transition-colors">chevron_right</span>
-             </div>
-          ) : (
-            <div className="p-8 text-center bg-white/5 rounded-[2rem] border border-dashed border-white/10">
-              <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Sin cortes registrados</p>
-            </div>
-          )}
-        </section>
+          </section>
+        )}
       </main>
       <BottomNav />
     </div>

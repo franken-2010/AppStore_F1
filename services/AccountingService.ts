@@ -10,7 +10,8 @@ import {
   collectionGroup,
   getDocs,
   limit
-} from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+} from "firebase/firestore";
+import { handleFirestoreError, OperationType } from './errorHandling';
 import { AccountMovement } from '../types';
 
 export interface RegisterRubric {
@@ -110,9 +111,8 @@ export class AccountingService {
       });
       callback(movs);
     }, (err) => {
-      const msg = err.message || "Error desconocido en suscripción";
-      console.warn("F1-QUERY-WARNING:", msg);
-      if (onError) onError(msg);
+      handleFirestoreError(err, OperationType.GET, "movements (collectionGroup)");
+      if (onError) onError(err.message);
     });
   }
 
@@ -147,7 +147,7 @@ export class AccountingService {
       });
       callback(movs);
     }, (err) => {
-      console.warn("F1-HISTORY-WARNING:", err.message);
+      handleFirestoreError(err, OperationType.GET, "movements (collectionGroup)");
       if (onError) onError(err.message);
     });
   }
@@ -192,17 +192,24 @@ export class AccountingService {
   static getDailyHistory(movements: AccountMovement[], startDate: Date, endDate: Date) {
     const daily: Record<string, { income: number, expense: number, balance: number }> = {};
     
+    const formatDate = (d: Date) => {
+      const year = d.getFullYear();
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    };
+
     let current = new Date(startDate);
     while (current <= endDate) {
-      const key = current.toISOString().split('T')[0];
+      const key = formatDate(current);
       daily[key] = { income: 0, expense: 0, balance: 0 };
       current.setDate(current.getDate() + 1);
     }
 
     movements.forEach(m => {
       if (!this.isMovementContable(m)) return;
-      const date = typeof (m as any).createdAt === 'number' ? new Date((m as any).createdAt) : new Date();
-      const key = date.toISOString().split('T')[0];
+      const date = typeof (m as any).createdAt === 'number' ? new Date((m as any).createdAt) : (m as any).createdAt?.toDate ? (m as any).createdAt.toDate() : new Date();
+      const key = formatDate(date);
       if (daily[key]) {
         const amt = Number(m.amount) || 0;
         const direction = (m as any).direction || (m.type === 'INCOME' ? 'IN' : 'OUT');

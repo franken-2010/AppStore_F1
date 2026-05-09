@@ -11,7 +11,8 @@ import {
   writeBatch,
   orderBy,
   serverTimestamp
-} from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+} from "firebase/firestore";
+import { handleFirestoreError, OperationType } from '../services/errorHandling';
 import { AccountingAccount, AccountCategory } from '../types';
 
 const AccountDeleteScreen: React.FC = () => {
@@ -62,7 +63,7 @@ const AccountDeleteScreen: React.FC = () => {
       setLoading(false);
       setError(null);
     }, (err) => {
-      console.error("Error fetching accounts:", err);
+      handleFirestoreError(err, OperationType.GET, `users/${user.uid}/accounts`);
       setError("Error al cargar las cuentas.");
       setLoading(false);
     });
@@ -103,9 +104,8 @@ const AccountDeleteScreen: React.FC = () => {
 
       await batch.commit();
       navigate('/finance-accounts');
-    } catch (err) {
-      console.error("Error deleting accounts:", err);
-      alert("Ocurrió un error al eliminar las cuentas.");
+    } catch (err: any) {
+      handleFirestoreError(err, OperationType.WRITE, `users/${user.uid}/accounts`);
     } finally {
       setIsDeleting(false);
     }

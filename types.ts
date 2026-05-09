@@ -103,10 +103,19 @@ export interface AccountMovement {
   dateKey?: string; // Campo YYYY-MM-DD para consultas rápidas
 }
 
+export interface DashboardConfig {
+  showBalance: boolean;
+  showPerformance: boolean;
+  showLogistics: boolean;
+  showClosings: boolean;
+  performanceAccounts: string[]; // IDs de cuentas a mostrar en Rendimiento
+}
+
 export interface UserProfile {
   uid: string;
   email: string | null;
   displayName: string;
   photoURL: string;
   role: string;
+  dashboardConfig?: DashboardConfig;
 }

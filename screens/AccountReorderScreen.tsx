@@ -10,7 +10,8 @@ import {
   writeBatch, 
   doc, 
   serverTimestamp 
-} from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+} from "firebase/firestore";
+import { handleFirestoreError, OperationType } from '../services/errorHandling';
 import { AccountingAccount } from '../types';
 
 const AccountReorderScreen: React.FC = () => {
@@ -43,8 +44,8 @@ const AccountReorderScreen: React.FC = () => {
         });
         accs.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
         setAccounts(accs);
-      } catch (err) {
-        console.error("Error fetching accounts:", err);
+      } catch (err: any) {
+        handleFirestoreError(err, OperationType.GET, `users/${user.uid}/accounts`);
       } finally {
         setLoading(false);
       }
@@ -91,9 +92,8 @@ const AccountReorderScreen: React.FC = () => {
       });
       await batch.commit();
       navigate('/finance-accounts');
-    } catch (err) {
-      console.error("Error saving order:", err);
-      alert("Error al guardar el nuevo orden.");
+    } catch (err: any) {
+      handleFirestoreError(err, OperationType.WRITE, `users/${user.uid}/accounts`);
     } finally {
       setIsSaving(false);
     }

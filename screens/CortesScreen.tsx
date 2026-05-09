@@ -5,14 +5,17 @@ import BottomNav from '../components/BottomNav';
 import ProfileMenu from '../components/ProfileMenu';
 import Sidebar from '../components/Sidebar';
 import { useAuth } from '../context/AuthContext';
+import { useNotifications } from '../context/NotificationContext';
 import { db } from '../services/firebase';
 import { 
   collection, 
   serverTimestamp,
   doc,
   writeBatch,
-  increment
-} from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+  increment,
+  Timestamp
+} from "firebase/firestore";
+import { handleFirestoreError, OperationType } from '../services/errorHandling';
 import { GeminiService } from '../services/geminiService';
 import { AccountResolver } from '../services/AccountResolver';
 import { AccountingService, RegisterSchema } from '../services/AccountingService';
@@ -31,6 +34,7 @@ interface CutCanonical {
   };
   expenses: {
     mercancias: number;
+    fiesta: number;
     empleados: number;
     consumoPersonal: number;
   };
@@ -52,7 +56,15 @@ interface AuditMetrics {
 const CortesScreen: React.FC = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { addNotification } = useNotifications();
   const [activeTab, setActiveTab] = useState<TabMode>('manual');
+  const [selectedDate, setSelectedDate] = useState(() => {
+    const d = new Date();
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  });
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [status, setStatus] = useState<{ text: string, type: 'success' | 'error' | 'info' | 'warning' } | null>(null);
@@ -88,7 +100,7 @@ const CortesScreen: React.FC = () => {
     const sub1 = Number((income.ventas + income.fiesta + income.recargas).toFixed(2));
     const sub2 = Number((income.estancias + income.pagoClientes).toFixed(2));
     const totalIn = Number((sub1 + sub2).toFixed(2));
-    const subEx = Number((expenses.mercancias + expenses.empleados + expenses.consumoPersonal).toFixed(2));
+    const subEx = Number((expenses.mercancias + expenses.fiesta + expenses.empleados + expenses.consumoPersonal).toFixed(2));
     const totalExp = Number((totalIn - subEx).toFixed(2));
     const diff = Number((cash.dineroEntregado - totalExp).toFixed(2));
 
@@ -113,8 +125,7 @@ const CortesScreen: React.FC = () => {
     setStatus({ text: "F1-AI analizando reporte...", type: 'info' });
     
     try {
-      const today = new Date().toISOString().split('T')[0];
-      const data = await GeminiService.parseCorteText(rawText, today);
+      const data = await GeminiService.parseCorteText(rawText, selectedDate);
       
       // Asegurar integridad de datos (Self-check)
       const canonical: CutCanonical = {
@@ -128,6 +139,7 @@ const CortesScreen: React.FC = () => {
         },
         expenses: {
           mercancias: Number(data.expenses?.mercancias || 0),
+          fiesta: Number(data.expenses?.fiesta || 0),
           empleados: Number(data.expenses?.empleados || 0),
           consumoPersonal: Number(data.expenses?.consumoPersonal || 0)
         },
@@ -142,7 +154,7 @@ const CortesScreen: React.FC = () => {
       const sub1 = canonical.income.ventas + canonical.income.fiesta + canonical.income.recargas;
       const sub2 = canonical.income.estancias + canonical.income.pagoClientes;
       const totalIn = sub1 + sub2;
-      const subEx = canonical.expenses.mercancias + canonical.expenses.empleados + canonical.expenses.consumoPersonal;
+      const subEx = canonical.expenses.mercancias + canonical.expenses.fiesta + canonical.expenses.empleados + canonical.expenses.consumoPersonal;
       const totalExp = totalIn - subEx;
       const diff = canonical.cash.dineroEntregado - totalExp;
       const surplus = diff > 0.1 ? Number(diff.toFixed(2)) : 0;
@@ -157,6 +169,7 @@ const CortesScreen: React.FC = () => {
         'in_cxc_venta': canonical.income.cxc,
         'in_sobrante': surplus, // Corregido: Mapeo del sobrante detectado
         'ex_mercancias': canonical.expenses.mercancias,
+        'ex_fiesta': canonical.expenses.fiesta,
         'ex_empleados': canonical.expenses.empleados,
         'ex_personal': canonical.expenses.consumoPersonal
       };
@@ -178,9 +191,14 @@ const CortesScreen: React.FC = () => {
     
     try {
       const batch = writeBatch(db); 
-      const todayKey = new Date().toISOString().split('T')[0];
-      const groupId = `RD-${todayKey}-${Math.floor(Math.random()*1000)}`;
+      const dateKey = selectedDate;
+      const groupId = `RD-${dateKey}-${Math.floor(Math.random()*1000)}`;
       const sourceLabel = activeTab === 'raw' ? 'CORTE_IA' : 'MANUAL';
+      
+      // Objeto de fecha para Firestore
+      // Usamos el mediodía para evitar problemas de zona horaria al filtrar por día
+      const accountingDate = new Date(selectedDate + 'T12:00:00');
+      const accountingTimestamp = Timestamp.fromDate(accountingDate);
       
       // 1. Guardar movimientos estándar del manualValues (que ya están mapeados si se usó IA)
       // Esto incluye 'in_sobrante' si fue detectado en el análisis de IA
@@ -190,15 +208,32 @@ const CortesScreen: React.FC = () => {
 
         const accInfo = await AccountResolver.assertAccount(user.uid, rubric.accountId);
         const movDocRef = doc(collection(db, "users", user.uid, "accounts", accInfo.accountDocId, "movements"));
-        const direction = rubric.type === 'INCOME' ? 'IN' : 'OUT';
-        const signedAmount = direction === 'IN' ? amount : -amount;
+        
+        let direction = rubric.type === 'INCOME' ? 'IN' : 'OUT';
+        let signedAmount = direction === 'IN' ? amount : -amount;
+
+        // Caso especial CXC solicitado por el usuario:
+        // Ventas a crédito (in_cxc_venta) -> Afecta negativo (aumenta deuda en su lógica)
+        // Pago clientes (in_cxc_pago) -> Afecta positivo (suma a la cuenta)
+        if (rubric.id === 'in_cxc_venta') {
+          direction = 'OUT'; // Para que el impacto sea negativo en el balance
+          signedAmount = -amount;
+        } else if (rubric.id === 'in_cxc_pago') {
+          direction = 'IN';
+          signedAmount = amount;
+        }
+
         const conceptTitle = rubric.label.toUpperCase();
 
         batch.update(doc(db, "users", user.uid, "accounts", accInfo.accountDocId), { balance: increment(signedAmount), updatedAt: serverTimestamp() });
         batch.set(movDocRef, {
-          uid: user.uid, accountId: rubric.accountId, amount, type: rubric.type, direction, signedAmount, rubro: rubric.accountId,
+          uid: user.uid, accountId: rubric.accountId, amount, type: rubric.type, direction, signedAmount, rubro: rubric.id,
           conceptTitle, conceptSubtitle: `Registro vía ${sourceLabel}`, source: activeTab === 'raw' ? 'corte_ia' : 'manual',
-          status: 'ACTIVE', createdAt: serverTimestamp(), groupId
+          status: 'ACTIVE', 
+          createdAt: accountingTimestamp, // Usamos la fecha seleccionada para el reporte
+          groupId,
+          effectiveAt: accountingTimestamp,
+          dateKey // Útil para filtrados rápidos
         });
 
         // Espejo Inventarios
@@ -214,17 +249,27 @@ const CortesScreen: React.FC = () => {
           batch.set(invMovRef, {
             uid: user.uid, accountId: 'inventarios', amount, direction: isInvIn ? 'IN' : 'OUT', signedAmount: invImpact,
             rubro: 'inventarios', type: isInvIn ? 'INCOME' : 'EXPENSE', conceptTitle: invTitle, conceptSubtitle: "Auto-ajuste F1",
-            source: 'auto_inventory', status: 'ACTIVE', createdAt: serverTimestamp(), groupId
+            source: 'auto_inventory', status: 'ACTIVE', 
+            createdAt: accountingTimestamp, // Usamos la fecha seleccionada para el reporte
+            groupId,
+            effectiveAt: accountingTimestamp,
+            dateKey
           });
         }
       }
 
       await batch.commit();
+
+      addNotification({ 
+        title: 'Corte Registrado', 
+        message: `✅ El corte del ${selectedDate} se guardó con éxito.`, 
+        type: 'system' 
+      });
+
       setStatus({ text: `✅ Corte registrado con éxito.`, type: 'success' });
       setTimeout(() => navigate('/dashboard'), 1500);
     } catch (e: any) {
-      console.error(e);
-      setStatus({ text: `Error al guardar: ${e.message}`, type: 'error' });
+      handleFirestoreError(e, OperationType.WRITE, `users/${user.uid}/accounts`);
     } finally {
       setIsSaving(false);
     }
@@ -248,6 +293,20 @@ const CortesScreen: React.FC = () => {
       </header>
 
       <main className="px-5 mt-6 space-y-8 pb-10">
+        {/* Fecha del Corte */}
+        <div className="flex flex-col gap-2">
+          <label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 ml-1">Fecha del Registro</label>
+          <div className="relative group">
+            <input 
+              type="date" 
+              value={selectedDate}
+              onChange={(e) => setSelectedDate(e.target.value)}
+              className="w-full bg-white dark:bg-surface-dark border border-slate-200 dark:border-white/5 rounded-2xl p-4 font-bold text-slate-800 dark:text-white shadow-sm outline-none focus:ring-2 focus:ring-primary/50 transition-all"
+            />
+            <span className="material-symbols-outlined absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-primary transition-colors pointer-events-none">calendar_today</span>
+          </div>
+        </div>
+
         {status && (
           <div className={`p-5 rounded-2xl flex items-center gap-3 text-sm font-bold border animate-in slide-in-from-top-2 ${status.type === 'success' ? 'bg-emerald-50/10 text-emerald-500 border-emerald-500/20' : status.type === 'error' ? 'bg-red-50/10 text-red-500 border-red-500/20' : 'bg-blue-50/10 text-blue-500 border-blue-500/20'}`}>
             <span className="material-symbols-outlined text-xl">{status.type === 'success' ? 'verified' : 'info'}</span>
@@ -326,7 +385,8 @@ const CortesScreen: React.FC = () => {
                     {/* Bloque Egresos */}
                     <div className="space-y-2">
                       <p className="text-xs font-black uppercase tracking-widest text-rose-500 dark:text-rose-400 border-b border-slate-100 dark:border-white/5 pb-1">Egresos contables</p>
-                      <div className="flex justify-between text-xs"><span>Gastos en mercancías (abarrotes, fiesta, recargas):</span> <span>{formatMXN(parsedCut.expenses.mercancias)}</span></div>
+                      <div className="flex justify-between text-xs"><span>Gastos en mercancías (abarrotes, recargas):</span> <span>{formatMXN(parsedCut.expenses.mercancias)}</span></div>
+                      <div className="flex justify-between"><span>Gastos Fiesta:</span> <span>{formatMXN(parsedCut.expenses.fiesta)}</span></div>
                       <div className="flex justify-between"><span>Consumo o gastos empleados:</span> <span>{formatMXN(parsedCut.expenses.empleados)}</span></div>
                       <div className="flex justify-between"><span>Consumo personal:</span> <span>{formatMXN(parsedCut.expenses.consumoPersonal)}</span></div>
                       <div className="flex justify-between text-rose-500 dark:text-rose-400 font-black border-t border-slate-50 dark:border-white/5 pt-1"><span>Subtotal:</span> <span>{formatMXN(auditMetrics?.subtotalEgresos || 0)}</span></div>

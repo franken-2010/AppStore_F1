@@ -1,9 +1,10 @@
 
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { auth, db } from '../services/firebase';
-import { onAuthStateChanged, User } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
-import { doc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+import { onAuthStateChanged, User } from "firebase/auth";
+import { doc, onSnapshot } from "firebase/firestore";
 import { UserProfile } from '../types';
+import { handleFirestoreError, OperationType } from '../services/errorHandling';
 
 interface AuthContextType {
   user: User | null;
@@ -33,7 +34,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               email: String(data.email || firebaseUser.email || ''),
               displayName: String(data.displayName || firebaseUser.displayName || 'Usuario'),
               photoURL: String(data.photoURL || `https://ui-avatars.com/api/?name=${firebaseUser.email}&background=2563eb&color=fff`),
-              role: String(data.role || 'admin')
+              role: String(data.role || 'admin'),
+              dashboardConfig: data.dashboardConfig || undefined
             });
           } else {
             setProfile({
@@ -41,12 +43,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               email: firebaseUser.email || '',
               displayName: firebaseUser.displayName || 'Usuario',
               photoURL: firebaseUser.photoURL || `https://ui-avatars.com/api/?name=${firebaseUser.email}&background=2563eb&color=fff`,
-              role: 'admin'
+              role: 'admin',
+              dashboardConfig: undefined
             });
           }
           setLoading(false);
         }, (err) => {
-          console.error("Profile sync error:", err.message);
+          handleFirestoreError(err, OperationType.GET, `users/${firebaseUser.uid}`);
           setLoading(false);
         });
         return () => unsubProfile();

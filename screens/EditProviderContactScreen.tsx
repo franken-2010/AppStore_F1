@@ -3,7 +3,8 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { db } from '../services/firebase';
-import { doc, getDoc, updateDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+import { doc, getDoc, updateDoc, serverTimestamp } from "firebase/firestore";
+import { handleFirestoreError, OperationType } from '../services/errorHandling';
 import BottomNav from '../components/BottomNav';
 import { useNotifications } from '../context/NotificationContext';
 
@@ -40,7 +41,7 @@ const EditProviderContactScreen: React.FC = () => {
           setError("Proveedor no encontrado");
         }
       } catch (err) {
-        console.error(err);
+        handleFirestoreError(err, OperationType.GET, `suppliers_directory/${providerId}`);
         setError("Error al cargar datos");
       } finally {
         setLoading(false);
@@ -83,8 +84,7 @@ const EditProviderContactScreen: React.FC = () => {
 
       navigate(`/directorio/${providerId}`, { replace: true });
     } catch (err: any) {
-      console.error("Error updating provider:", err);
-      alert("Error al guardar.");
+      handleFirestoreError(err, OperationType.WRITE, `suppliers_directory/${providerId}`);
     } finally {
       setSaving(false);
     }

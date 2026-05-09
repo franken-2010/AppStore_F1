@@ -1,6 +1,7 @@
 
 import { db } from './firebase';
-import { doc, getDoc, collection, getDocs, query, where } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+import { doc, getDoc, collection, getDocs, query, where } from "firebase/firestore";
+import { handleFirestoreError, OperationType } from './errorHandling';
 import { AccountIndex, AccountingAccount } from '../types';
 
 const ACCOUNT_ALIAS: Record<string, string> = {
@@ -62,7 +63,7 @@ export class AccountResolver {
       this.cache = newCache;
       this.lastLoad = now;
     } catch (e) {
-      console.error("Error loading account index:", e);
+      handleFirestoreError(e, OperationType.GET, `users/${uid}/accountIndex`);
     }
   }
 
@@ -81,17 +82,21 @@ export class AccountResolver {
     let account = this.getAccount(canonicalId);
     
     if (!account) {
-      const snap = await getDoc(doc(db, "users", uid, "accountIndex", canonicalId));
-      if (snap.exists() && snap.data()?.isActive === true) {
-        const data = snap.data();
-        account = { 
-          accountId: canonicalId, 
-          accountDocId: String(data.accountDocId || ''),
-          name: String(data.name || ''),
-          type: data.type as any,
-          isActive: true
-        } as AccountIndex;
-        this.cache[canonicalId] = account; 
+      try {
+        const snap = await getDoc(doc(db, "users", uid, "accountIndex", canonicalId));
+        if (snap.exists() && snap.data()?.isActive === true) {
+          const data = snap.data();
+          account = { 
+            accountId: canonicalId, 
+            accountDocId: String(data.accountDocId || ''),
+            name: String(data.name || ''),
+            type: data.type as any,
+            isActive: true
+          } as AccountIndex;
+          this.cache[canonicalId] = account; 
+        }
+      } catch (e) {
+        handleFirestoreError(e, OperationType.GET, `users/${uid}/accountIndex/${canonicalId}`);
       }
     }
 
@@ -121,7 +126,7 @@ export class AccountResolver {
         } as AccountingAccount;
       }
     } catch (e) {
-      console.warn("Could not resolve full account:", canonicalId);
+      handleFirestoreError(e, OperationType.GET, `users/${uid}/accounts`);
     }
     return null;
   }
