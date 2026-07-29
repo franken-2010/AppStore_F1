@@ -16,7 +16,7 @@ const BottomNav: React.FC = () => {
   ];
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-[1000] bg-[#121212]/95 backdrop-blur-lg border-t border-white/5 pb-safe">
+    <nav className="fixed bottom-0 left-0 right-0 z-[1000] bg-white/95 dark:bg-[#121212]/95 backdrop-blur-lg border-t border-slate-200 dark:border-white/5 pb-safe">
       <div className="flex items-center justify-around h-18 max-w-md mx-auto px-2 py-3">
         {navItems.map((item) => (
           <Link 
@@ -27,7 +27,7 @@ const BottomNav: React.FC = () => {
             } ${
               isActive(item.path) 
                 ? 'text-primary' 
-                : 'text-slate-500 hover:text-slate-300'
+                : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-300'
             }`}
           >
             <div className={`flex items-center justify-center transition-transform ${

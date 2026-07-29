@@ -35,7 +35,9 @@ interface CutCanonical {
   expenses: {
     mercancias: number;
     fiesta: number;
-    empleados: number;
+    gastosAdministrativos: number;
+    sueldos: number;
+    consumoEmpleados: number;
     consumoPersonal: number;
   };
   cash: {
@@ -100,7 +102,7 @@ const CortesScreen: React.FC = () => {
     const sub1 = Number((income.ventas + income.fiesta + income.recargas).toFixed(2));
     const sub2 = Number((income.estancias + income.pagoClientes).toFixed(2));
     const totalIn = Number((sub1 + sub2).toFixed(2));
-    const subEx = Number((expenses.mercancias + expenses.fiesta + expenses.empleados + expenses.consumoPersonal).toFixed(2));
+    const subEx = Number((expenses.mercancias + expenses.fiesta + expenses.gastosAdministrativos + expenses.sueldos + expenses.consumoEmpleados + expenses.consumoPersonal).toFixed(2));
     const totalExp = Number((totalIn - subEx).toFixed(2));
     const diff = Number((cash.dineroEntregado - totalExp).toFixed(2));
 
@@ -140,7 +142,9 @@ const CortesScreen: React.FC = () => {
         expenses: {
           mercancias: Number(data.expenses?.mercancias || 0),
           fiesta: Number(data.expenses?.fiesta || 0),
-          empleados: Number(data.expenses?.empleados || 0),
+          gastosAdministrativos: Number(data.expenses?.gastosAdministrativos || 0),
+          sueldos: Number(data.expenses?.sueldos || 0),
+          consumoEmpleados: Number(data.expenses?.consumoEmpleados || 0),
           consumoPersonal: Number(data.expenses?.consumoPersonal || 0)
         },
         cash: {
@@ -150,14 +154,15 @@ const CortesScreen: React.FC = () => {
 
       setParsedCut(canonical);
 
-      // --- CÁLCULO DE SOBRANTE PARA MAPEO ---
+      // --- CÁLCULO DE SOBRANTE / FALTANTE PARA MAPEO ---
       const sub1 = canonical.income.ventas + canonical.income.fiesta + canonical.income.recargas;
       const sub2 = canonical.income.estancias + canonical.income.pagoClientes;
       const totalIn = sub1 + sub2;
-      const subEx = canonical.expenses.mercancias + canonical.expenses.fiesta + canonical.expenses.empleados + canonical.expenses.consumoPersonal;
+      const subEx = canonical.expenses.mercancias + canonical.expenses.fiesta + canonical.expenses.gastosAdministrativos + canonical.expenses.sueldos + canonical.expenses.consumoEmpleados + canonical.expenses.consumoPersonal;
       const totalExp = totalIn - subEx;
       const diff = canonical.cash.dineroEntregado - totalExp;
       const surplus = diff > 0.1 ? Number(diff.toFixed(2)) : 0;
+      const deficit = diff < -0.1 ? Number(Math.abs(diff).toFixed(2)) : 0;
       
       // Mapeo automático a campos manuales para el flujo de guardado
       const mappedManual: Record<string, number> = {
@@ -167,11 +172,14 @@ const CortesScreen: React.FC = () => {
         'in_estancias': canonical.income.estancias,
         'in_cxc_pago': canonical.income.pagoClientes,
         'in_cxc_venta': canonical.income.cxc,
-        'in_sobrante': surplus, // Corregido: Mapeo del sobrante detectado
+        'in_sobrante': surplus, // Mapeo del sobrante detectado
         'ex_mercancias': canonical.expenses.mercancias,
         'ex_fiesta': canonical.expenses.fiesta,
-        'ex_empleados': canonical.expenses.empleados,
-        'ex_personal': canonical.expenses.consumoPersonal
+        'ex_gastos_administrativos': canonical.expenses.gastosAdministrativos,
+        'ex_empleados': canonical.expenses.sueldos, // Map "sueldos" to rubric "ex_empleados"
+        'ex_consumo_empleados': canonical.expenses.consumoEmpleados,
+        'ex_personal': canonical.expenses.consumoPersonal,
+        'ex_faltante': deficit // Mapeo del faltante detectado
       };
       setManualValues(mappedManual);
 
@@ -202,9 +210,30 @@ const CortesScreen: React.FC = () => {
       
       // 1. Guardar movimientos estándar del manualValues (que ya están mapeados si se usó IA)
       // Esto incluye 'in_sobrante' si fue detectado en el análisis de IA
+      let seqIndex = 0;
+      const username = user.displayName || 'Administrador';
+      const origin = activeTab === 'raw' ? 'IA' : 'manual';
+
       for (const rubric of [...schema.ingresos, ...schema.egresos]) {
         const amount = Number((manualValues[rubric.id] || 0).toFixed(2));
         if (amount <= 0) continue;
+
+        const contableFields = AccountingService.getAccountingFields(
+          rubric.id,
+          amount,
+          '',
+          username,
+          origin,
+          rubric.label
+        );
+
+        // Validar contabilidad antes de registrar
+        const validationError = AccountingService.validateAccountingMovement(contableFields);
+        if (validationError) {
+          throw new Error(validationError);
+        }
+
+        const registeredAt = Timestamp.fromMillis(Date.now() + (seqIndex++) * 50);
 
         const accInfo = await AccountResolver.assertAccount(user.uid, rubric.accountId);
         const movDocRef = doc(collection(db, "users", user.uid, "accounts", accInfo.accountDocId, "movements"));
@@ -221,39 +250,227 @@ const CortesScreen: React.FC = () => {
         } else if (rubric.id === 'in_cxc_pago') {
           direction = 'IN';
           signedAmount = amount;
+        } else if (rubric.id === 'ex_consumo_empleados' || rubric.id === 'ex_personal') {
+          // El consumo de empleados y cortesías no afectan Caja directamente
+          direction = 'OUT';
+          signedAmount = 0;
         }
 
         const conceptTitle = rubric.label.toUpperCase();
 
         batch.update(doc(db, "users", user.uid, "accounts", accInfo.accountDocId), { balance: increment(signedAmount), updatedAt: serverTimestamp() });
         batch.set(movDocRef, {
-          uid: user.uid, accountId: rubric.accountId, amount, type: rubric.type, direction, signedAmount, rubro: rubric.id,
-          conceptTitle, conceptSubtitle: `Registro vía ${sourceLabel}`, source: activeTab === 'raw' ? 'corte_ia' : 'manual',
+          uid: user.uid, 
+          accountId: rubric.accountId, 
+          amount: contableFields.amount ?? amount, 
+          type: rubric.type, 
+          direction, 
+          signedAmount: contableFields.signo === -1 ? -(contableFields.amount ?? amount) : (contableFields.amount ?? amount), 
+          rubro: rubric.id,
+          conceptTitle, 
+          conceptSubtitle: `Registro vía ${sourceLabel}`, 
+          source: activeTab === 'raw' ? 'corte_ia' : 'manual',
           status: 'ACTIVE', 
           createdAt: accountingTimestamp, // Usamos la fecha seleccionada para el reporte
           groupId,
           effectiveAt: accountingTimestamp,
-          dateKey // Útil para filtrados rápidos
+          dateKey,
+          registeredAt,
+
+          // Campos contables obligatorios requeridos por lógica contable interna
+          id_movimiento: movDocRef.id,
+          fecha: accountingTimestamp,
+          tipo_operacion: contableFields.tipo_operacion,
+          centro_utilidad: contableFields.centro_utilidad,
+          categoria: contableFields.categoria,
+          cuenta_contable: contableFields.cuenta_contable,
+          monto: contableFields.amount ?? amount,
+          signo: contableFields.signo,
+          afecta_caja: contableFields.afecta_caja,
+          afectaCaja: contableFields.afecta_caja,
+          afecta_ventas: contableFields.afecta_ventas,
+          afectaVentas: contableFields.afecta_ventas,
+          afecta_cxc: contableFields.afecta_cxc,
+          afectaCxC: contableFields.afecta_cxc,
+          afecta_gasto: contableFields.afecta_gasto,
+          afecta_costo: contableFields.afecta_costo,
+          es_control: contableFields.es_control,
+          esControl: contableFields.es_control,
+          origen: origin,
+          texto_original: rubric.label,
+          usuario: username,
+
+          // Detalles adicionales para consumo de empleados
+          ...(rubric.id === 'ex_consumo_empleados' ? {
+            consumo_empleados_valor_venta: amount,
+            consumo_empleados_costo_real: Number((amount * 0.82).toFixed(2))
+          } : {})
         });
+
+        // Si es consumo de empleados o cortesía personal, guardar también el registro de control
+        if (rubric.id === 'ex_consumo_empleados' || rubric.id === 'ex_personal') {
+          const controlMovRef = doc(collection(db, "users", user.uid, "accounts", accInfo.accountDocId, "movements"));
+          const controlContableFields = AccountingService.getAccountingFields(
+            rubric.id,
+            amount,
+            '',
+            username,
+            origin,
+            rubric.label,
+            true // asControlRecord = true
+          );
+
+          batch.set(controlMovRef, {
+            uid: user.uid,
+            accountId: rubric.accountId,
+            amount: amount,
+            type: rubric.type,
+            direction: 'IN',
+            signedAmount: amount,
+            rubro: rubric.id,
+            conceptTitle: `CONTROL: ${conceptTitle}`,
+            conceptSubtitle: `Registro vía ${sourceLabel}`,
+            source: activeTab === 'raw' ? 'corte_ia' : 'manual',
+            status: 'ACTIVE',
+            createdAt: accountingTimestamp,
+            groupId,
+            effectiveAt: accountingTimestamp,
+            dateKey,
+            registeredAt,
+
+            // Campos contables obligatorios
+            id_movimiento: controlMovRef.id,
+            fecha: accountingTimestamp,
+            tipo_operacion: controlContableFields.tipo_operacion,
+            centro_utilidad: controlContableFields.centro_utilidad,
+            categoria: controlContableFields.categoria,
+            cuenta_contable: controlContableFields.cuenta_contable,
+            monto: amount,
+            signo: controlContableFields.signo,
+            afecta_caja: controlContableFields.afecta_caja,
+            afectaCaja: controlContableFields.afecta_caja,
+            afecta_ventas: controlContableFields.afecta_ventas,
+            afectaVentas: controlContableFields.afecta_ventas,
+            afecta_cxc: controlContableFields.afecta_cxc,
+            afectaCxC: controlContableFields.afecta_cxc,
+            afecta_gasto: controlContableFields.afecta_gasto,
+            afecta_costo: controlContableFields.afecta_costo,
+            es_control: controlContableFields.es_control,
+            esControl: controlContableFields.es_control,
+            origen: origin,
+            texto_original: rubric.label,
+            usuario: username
+          });
+        }
 
         // Espejo Inventarios
         const mirrorTitle = AccountingService.getInventoryMirrorTitle(rubric.id);
-        if (mirrorTitle || (rubric.type === 'INCOME' && ['ventas', 'fiesta', 'recargas', 'cxc'].includes(rubric.accountId))) {
+        const isEmployeeConsumption = rubric.id === 'ex_consumo_empleados';
+        const isSaleIncome = rubric.type === 'INCOME' && ['ventas', 'fiesta', 'recargas', 'cxc'].includes(rubric.accountId);
+
+        if (mirrorTitle || isEmployeeConsumption || isSaleIncome) {
           const invAcc = await AccountResolver.assertAccount(user.uid, 'inventarios');
           const invMovRef = doc(collection(db, "users", user.uid, "accounts", invAcc.accountDocId, "movements"));
           const isInvIn = !!mirrorTitle;
-          const invImpact = isInvIn ? amount : -amount;
-          const invTitle = mirrorTitle || `SALIDA INV (${rubric.label.toUpperCase()})`;
+          
+          let invAmount = amount;
+          if (isEmployeeConsumption) {
+            invAmount = Number((amount * 0.82).toFixed(2)); // Costo real = Valor venta * 0.82
+          } else if (!isInvIn && isSaleIncome) {
+            invAmount = Number((amount * 0.8).toFixed(2));
+          }
+          const invImpact = isInvIn ? invAmount : -invAmount;
+          const invTitle = mirrorTitle || (isEmployeeConsumption ? 'SALIDA INV (CONSUMO EMPLEADOS)' : `SALIDA INV (${rubric.label.toUpperCase()})`);
 
           batch.update(doc(db, "users", user.uid, "accounts", invAcc.accountDocId), { balance: increment(invImpact), updatedAt: serverTimestamp() });
           batch.set(invMovRef, {
-            uid: user.uid, accountId: 'inventarios', amount, direction: isInvIn ? 'IN' : 'OUT', signedAmount: invImpact,
-            rubro: 'inventarios', type: isInvIn ? 'INCOME' : 'EXPENSE', conceptTitle: invTitle, conceptSubtitle: "Auto-ajuste F1",
-            source: 'auto_inventory', status: 'ACTIVE', 
+            uid: user.uid, 
+            accountId: 'inventarios', 
+            amount: invAmount, 
+            direction: isInvIn ? 'IN' : 'OUT', 
+            signedAmount: invImpact,
+            rubro: 'inventarios', 
+            type: isInvIn ? 'INCOME' : 'EXPENSE', 
+            conceptTitle: invTitle, 
+            conceptSubtitle: "Auto-ajuste F1",
+            source: 'auto_inventory', 
+            status: 'ACTIVE', 
             createdAt: accountingTimestamp, // Usamos la fecha seleccionada para el reporte
             groupId,
             effectiveAt: accountingTimestamp,
-            dateKey
+            dateKey,
+            registeredAt,
+
+            // Campos contables para inventario espejo
+            id_movimiento: invMovRef.id,
+            fecha: accountingTimestamp,
+            tipo_operacion: isEmployeeConsumption ? 'consumo_empleados' : 'compra_mercancia',
+            categoria: contableFields.categoria,
+            cuenta_contable: 'Inventario',
+            monto: invAmount,
+            signo: isInvIn ? 1 : -1,
+            afecta_caja: 'no',
+            afectaCaja: false,
+            afecta_ventas: 'no',
+            afectaVentas: false,
+            afecta_cxc: 'no',
+            afectaCxC: false,
+            afecta_inventario: 'sí',
+            afectaInventario: true,
+            es_control: 'no',
+            esControl: false,
+            origen: origin,
+            texto_original: invTitle,
+            usuario: username
+          });
+        }
+
+        // Debito automatico de Ventas para gastos administrativos
+        if (rubric.accountId === 'gastos_administrativos' && rubric.type === 'EXPENSE') {
+          const ventasAcc = await AccountResolver.assertAccount(user.uid, 'ventas');
+          const ventasMovRef = doc(collection(db, "users", user.uid, "accounts", ventasAcc.accountDocId, "movements"));
+          const vImpact = -amount;
+
+          batch.update(doc(db, "users", user.uid, "accounts", ventasAcc.accountDocId), { balance: increment(vImpact), updatedAt: serverTimestamp() });
+          batch.set(ventasMovRef, {
+            uid: user.uid, 
+            accountId: 'ventas', 
+            amount, 
+            direction: 'OUT', 
+            signedAmount: vImpact,
+            rubro: 'ventas', 
+            type: 'EXPENSE', 
+            conceptTitle: `DEBITO ADM (${rubric.label.toUpperCase()})`, 
+            conceptSubtitle: "Débito Automático",
+            source: 'auto_debit', 
+            status: 'ACTIVE', 
+            createdAt: accountingTimestamp,
+            groupId,
+            effectiveAt: accountingTimestamp,
+            dateKey,
+            registeredAt,
+
+            // Campos contables para débito automático
+            id_movimiento: ventasMovRef.id,
+            fecha: accountingTimestamp,
+            tipo_operacion: 'gasto_administrativo',
+            categoria: 'administrativo',
+            cuenta_contable: 'Gastos Administrativos',
+            monto: amount,
+            signo: -1,
+            afecta_caja: 'sí',
+            afectaCaja: true,
+            afecta_ventas: 'no',
+            afectaVentas: false,
+            afecta_cxc: 'no',
+            afectaCxC: false,
+            afecta_inventario: 'no',
+            afectaInventario: false,
+            es_control: 'no',
+            esControl: false,
+            origen: origin,
+            texto_original: `DEBITO ADM (${rubric.label})`,
+            usuario: username
           });
         }
       }
@@ -386,8 +603,10 @@ const CortesScreen: React.FC = () => {
                     <div className="space-y-2">
                       <p className="text-xs font-black uppercase tracking-widest text-rose-500 dark:text-rose-400 border-b border-slate-100 dark:border-white/5 pb-1">Egresos contables</p>
                       <div className="flex justify-between text-xs"><span>Gastos en mercancías (abarrotes, recargas):</span> <span>{formatMXN(parsedCut.expenses.mercancias)}</span></div>
+                      <div className="flex justify-between"><span>Sueldos / Pago empleados:</span> <span>{formatMXN(parsedCut.expenses.sueldos)}</span></div>
                       <div className="flex justify-between"><span>Gastos Fiesta:</span> <span>{formatMXN(parsedCut.expenses.fiesta)}</span></div>
-                      <div className="flex justify-between"><span>Consumo o gastos empleados:</span> <span>{formatMXN(parsedCut.expenses.empleados)}</span></div>
+                      <div className="flex justify-between"><span>Gastos administrativos:</span> <span>{formatMXN(parsedCut.expenses.gastosAdministrativos)}</span></div>
+                      <div className="flex justify-between"><span>Consumo de empleados:</span> <span>{formatMXN(parsedCut.expenses.consumoEmpleados)}</span></div>
                       <div className="flex justify-between"><span>Consumo personal:</span> <span>{formatMXN(parsedCut.expenses.consumoPersonal)}</span></div>
                       <div className="flex justify-between text-rose-500 dark:text-rose-400 font-black border-t border-slate-50 dark:border-white/5 pt-1"><span>Subtotal:</span> <span>{formatMXN(auditMetrics?.subtotalEgresos || 0)}</span></div>
                     </div>

@@ -54,6 +54,13 @@ const ToolsScreen: React.FC = () => {
           icon: 'shopping_basket',
           color: 'bg-amber-500',
           path: '/tools/orders'
+        },
+        {
+          title: 'Reportes e Inventario PDF',
+          description: 'Crea y descarga hojas imprimibles de stock y balances.',
+          icon: 'picture_as_pdf',
+          color: 'bg-indigo-500',
+          path: '/tools/pdf-reports'
         }
       ]
     }

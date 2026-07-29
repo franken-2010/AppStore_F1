@@ -4,6 +4,7 @@ import { HashRouter as Router, Routes, Route, Navigate } from 'react-router-dom'
 import { NotificationProvider } from './context/NotificationContext';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import ErrorBoundary from './components/ErrorBoundary';
+import NetworkStatus from './components/NetworkStatus';
 import LoginScreen from './screens/LoginScreen';
 import RegisterScreen from './screens/RegisterScreen';
 import DashboardScreen from './screens/DashboardScreen';
@@ -35,6 +36,7 @@ import EditProviderContactScreen from './screens/EditProviderContactScreen';
 import AddProviderScreen from './screens/AddProviderScreen';
 import OrdersScreen from './screens/OrdersScreen';
 import PermissionsScreen from './screens/PermissionsScreen';
+import PdfReportsScreen from './screens/PdfReportsScreen';
 
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user, loading } = useAuth();
@@ -45,9 +47,10 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) =
 const App: React.FC = () => {
   return (
     <ErrorBoundary>
-      <AuthProvider>
-        <NotificationProvider>
-          <Router>
+      <Router>
+        <AuthProvider>
+          <NotificationProvider>
+            <NetworkStatus />
             <Routes>
               <Route path="/" element={<ProtectedRoute><DashboardScreen /></ProtectedRoute>} />
               <Route path="/login" element={<LoginScreen />} />
@@ -63,6 +66,7 @@ const App: React.FC = () => {
               <Route path="/tools/product-edit/:productKey" element={<ProtectedRoute><EditProductScreen /></ProtectedRoute>} />
               <Route path="/tools/product-details/:productKey" element={<ProtectedRoute><ProductDetailsScreen /></ProtectedRoute>} />
               <Route path="/tools/orders" element={<ProtectedRoute><OrdersScreen /></ProtectedRoute>} />
+              <Route path="/tools/pdf-reports" element={<ProtectedRoute><PdfReportsScreen /></ProtectedRoute>} />
               
               <Route path="/accounting" element={<ProtectedRoute><FinanceAccountsScreen /></ProtectedRoute>} />
               <Route path="/finance-accounts" element={<ProtectedRoute><FinanceAccountsScreen /></ProtectedRoute>} />
@@ -88,9 +92,9 @@ const App: React.FC = () => {
               <Route path="/directorio/:providerId" element={<ProtectedRoute><ProviderDetailScreen /></ProtectedRoute>} />
               <Route path="/directorio/edit/:providerId" element={<ProtectedRoute><EditProviderContactScreen /></ProtectedRoute>} />
             </Routes>
-          </Router>
-        </NotificationProvider>
-      </AuthProvider>
+          </NotificationProvider>
+        </AuthProvider>
+      </Router>
     </ErrorBoundary>
   );
 };

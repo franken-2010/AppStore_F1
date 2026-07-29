@@ -90,13 +90,13 @@ const FinanceAccountsScreen: React.FC = () => {
     return (
       <div 
         onClick={() => navigate(`/account/history/${account.id}`)}
-        className="flex items-center justify-between py-4 px-5 border-b border-white/5 active:bg-white/5 transition-colors cursor-pointer"
+        className="flex items-center justify-between py-4 px-5 border-b border-slate-200 dark:border-white/5 active:bg-slate-100 dark:active:bg-white/5 transition-colors cursor-pointer"
       >
         <div className="flex flex-col gap-0.5">
-          <span className="text-[15px] font-medium text-slate-200">{account.name}</span>
-          <span className="text-[9px] text-slate-500 font-bold uppercase tracking-widest">{account.type}</span>
+          <span className="text-[15px] font-medium text-slate-800 dark:text-slate-200">{account.name}</span>
+          <span className="text-[9px] text-slate-500 dark:text-slate-400 font-bold uppercase tracking-widest">{account.type}</span>
         </div>
-        <span className={`text-[15px] font-medium ${isNegative ? 'text-red-400' : 'text-blue-400'}`}>
+        <span className={`text-[15px] font-medium ${isNegative ? 'text-rose-600 dark:text-rose-400' : 'text-blue-600 dark:text-blue-400'}`}>
           $ {formatValue(account.balance || 0)}
         </span>
       </div>
@@ -104,9 +104,9 @@ const FinanceAccountsScreen: React.FC = () => {
   };
 
   const SectionHeader = ({ title, color }: { title: string, color?: string }) => (
-    <div className="bg-[#0f172a] py-3 px-5 border-b border-white/5 flex items-center gap-3">
+    <div className="bg-slate-100/80 dark:bg-surface-dark/40 py-3 px-5 border-b border-slate-200 dark:border-white/5 flex items-center gap-3">
       {color && <div className="size-2 rounded-full" style={{ backgroundColor: color }} />}
-      <h3 className="text-[11px] font-bold uppercase tracking-widest text-slate-500">{title}</h3>
+      <h3 className="text-[11px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-400">{title}</h3>
     </div>
   );
 
@@ -145,55 +145,55 @@ const FinanceAccountsScreen: React.FC = () => {
   const { sections, renderedCount } = useMemo(() => renderCategorizedAccounts(), [visibleAccounts, categories]);
 
   return (
-    <div className="relative flex flex-col h-screen w-full max-w-md mx-auto bg-[#0f172a] font-display antialiased overflow-hidden pb-16">
+    <div className="relative flex flex-col h-screen w-full max-w-md mx-auto bg-background-light dark:bg-background-dark font-display antialiased overflow-hidden pb-16">
       <Sidebar isOpen={isSidebarOpen} onClose={() => setIsSidebarOpen(false)} />
       
-      <header className="flex items-center justify-between pt-12 px-5 pb-3 bg-[#0f172a]">
+      <header className="flex items-center justify-between pt-12 px-5 pb-3 bg-background-light dark:bg-background-dark border-b border-slate-200 dark:border-white/5">
         <div className="flex items-center gap-2">
-          <button onClick={() => setIsSidebarOpen(true)} className="p-1 -ml-1 text-slate-300">
+          <button onClick={() => setIsSidebarOpen(true)} className="p-1 -ml-1 text-slate-600 dark:text-slate-300">
             <span className="material-symbols-outlined text-[28px]">menu</span>
           </button>
-          <h1 className="text-xl font-medium text-white">Cuentas</h1>
+          <h1 className="text-xl font-bold text-slate-900 dark:text-white">Cuentas</h1>
         </div>
         <div className="flex items-center gap-2">
-          <button onClick={() => navigate('/finance-stats')} className="p-2 text-slate-300">
+          <button onClick={() => navigate('/finance-stats')} className="p-2 text-slate-600 dark:text-slate-300">
             <span className="material-symbols-outlined text-[24px]">bar_chart</span>
           </button>
           <div className="relative">
-            <button onClick={() => setShowMenu(!showMenu)} className="p-2 text-slate-300">
+            <button onClick={() => setShowMenu(!showMenu)} className="p-2 text-slate-600 dark:text-slate-300">
               <span className="material-symbols-outlined text-[24px]">more_vert</span>
             </button>
             {showMenu && (
-              <div className="absolute right-0 mt-2 w-52 bg-surface-dark border border-white/10 rounded-2xl shadow-2xl z-50 py-2 overflow-hidden animate-in fade-in zoom-in duration-150">
-                <button onClick={() => { setShowMenu(false); navigate('/account/upsert'); }} className="flex items-center gap-3 w-full px-5 py-3 text-sm font-bold text-slate-200 hover:bg-white/5"><span className="material-symbols-outlined text-xl">add</span> Nueva Cuenta</button>
-                <button onClick={() => { setShowMenu(false); navigate('/settings/account-categories'); }} className="flex items-center gap-3 w-full px-5 py-3 text-sm font-bold text-slate-200 hover:bg-white/5"><span className="material-symbols-outlined text-xl">category</span> Gestionar Categorías</button>
-                <button onClick={() => { setShowMenu(false); navigate('/account/visibility'); }} className="flex items-center gap-3 w-full px-5 py-3 text-sm font-bold text-slate-200 hover:bg-white/5"><span className="material-symbols-outlined text-xl">visibility</span> Visibilidad</button>
-                <button onClick={() => { setShowMenu(false); navigate('/account/delete'); }} className="flex items-center gap-3 w-full px-5 py-3 text-sm font-bold text-red-400 hover:bg-white/5"><span className="material-symbols-outlined text-xl">delete</span> Borrar</button>
+              <div className="absolute right-0 mt-2 w-52 bg-white dark:bg-surface-dark border border-slate-200 dark:border-white/10 rounded-2xl shadow-2xl z-50 py-2 overflow-hidden animate-in fade-in zoom-in duration-150">
+                <button onClick={() => { setShowMenu(false); navigate('/account/upsert'); }} className="flex items-center gap-3 w-full px-5 py-3 text-sm font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-white/5"><span className="material-symbols-outlined text-xl">add</span> Nueva Cuenta</button>
+                <button onClick={() => { setShowMenu(false); navigate('/settings/account-categories'); }} className="flex items-center gap-3 w-full px-5 py-3 text-sm font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-white/5"><span className="material-symbols-outlined text-xl">category</span> Gestionar Categorías</button>
+                <button onClick={() => { setShowMenu(false); navigate('/account/visibility'); }} className="flex items-center gap-3 w-full px-5 py-3 text-sm font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-white/5"><span className="material-symbols-outlined text-xl">visibility</span> Visibilidad</button>
+                <button onClick={() => { setShowMenu(false); navigate('/account/delete'); }} className="flex items-center gap-3 w-full px-5 py-3 text-sm font-bold text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10"><span className="material-symbols-outlined text-xl">delete</span> Borrar</button>
               </div>
             )}
           </div>
-          <div className="size-9 rounded-full bg-indigo-500 flex items-center justify-center text-[11px] font-black text-white ml-1 border-2 border-[#0f172a] shadow-lg">
+          <div className="size-9 rounded-full bg-indigo-500 flex items-center justify-center text-[11px] font-black text-white ml-1 border-2 border-slate-100 dark:border-background-dark shadow-lg">
             {profile?.displayName?.substring(0,2).toUpperCase() || 'AD'}
           </div>
         </div>
       </header>
 
-      <div className="px-5 py-6 grid grid-cols-3 gap-1 bg-[#0f172a] border-b border-white/5">
+      <div className="px-5 py-6 grid grid-cols-3 gap-1 bg-slate-50 dark:bg-background-dark border-b border-slate-200 dark:border-white/5">
         <div className="text-center">
           <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Capital</p>
-          <p className="text-[15px] font-bold text-blue-400">{formatValue(capital)}</p>
+          <p className="text-[15px] font-bold text-blue-600 dark:text-blue-400">{formatValue(capital)}</p>
         </div>
-        <div className="text-center border-x border-white/5">
+        <div className="text-center border-x border-slate-200 dark:border-white/5">
           <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">A deber</p>
-          <p className="text-[15px] font-bold text-red-400">{formatValue(aDeber)}</p>
+          <p className="text-[15px] font-bold text-rose-600 dark:text-rose-400">{formatValue(aDeber)}</p>
         </div>
         <div className="text-center">
           <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Balance</p>
-          <p className="text-[15px] font-bold text-white">{formatValue(balance)}</p>
+          <p className="text-[15px] font-bold text-slate-900 dark:text-white">{formatValue(balance)}</p>
         </div>
       </div>
 
-      <main className="flex-1 overflow-y-auto no-scrollbar bg-[#0f172a]">
+      <main className="flex-1 overflow-y-auto no-scrollbar bg-background-light dark:bg-background-dark">
         {loading ? (
           <div className="p-10 flex justify-center"><span className="material-symbols-outlined animate-spin text-slate-600">sync</span></div>
         ) : (

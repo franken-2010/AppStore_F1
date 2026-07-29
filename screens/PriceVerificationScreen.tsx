@@ -39,6 +39,23 @@ const PriceVerificationScreen: React.FC = () => {
     return text.split(' ').filter(t => t.length >= 2 || !isNaN(Number(t)));
   };
 
+  const formatMXN = (val: number | string | null | undefined) => {
+    if (val === null || val === undefined) return '---';
+    let numeric = 0;
+    if (typeof val === 'number') {
+      numeric = val;
+    } else {
+      const clean = String(val).replace(/[$,\s]/g, '');
+      numeric = parseFloat(clean) || 0;
+    }
+    return new Intl.NumberFormat('es-MX', { 
+      style: 'currency', 
+      currency: 'MXN',
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2
+    }).format(numeric);
+  };
+
   const scrubDocData = (doc: any) => {
     const data = doc.data();
     const rawPrice = data?.Precio_sug_red;
@@ -53,6 +70,10 @@ const PriceVerificationScreen: React.FC = () => {
       searchName: String(data.searchName || ''),
       searchTokens: Array.isArray(data.searchTokens) ? data.searchTokens.map(String) : [],
       Precio_sug_red: rawPrice,
+      Costo_base_principal: data.Costo_base_principal,
+      Costo_unidad: data.Costo_unidad,
+      Precio_sugerido: data.Precio_sugerido,
+      "Utilidad_%": data["Utilidad_%"],
       _safePrice: safePrice,
       _isPriceMissing: safePrice === null
     };
@@ -170,29 +191,65 @@ const PriceVerificationScreen: React.FC = () => {
 
         {error && <p className="text-red-500 text-[10px] font-black uppercase text-center animate-pulse">{error}</p>}
 
-        <div className="space-y-3 pb-20">
+        <div className="space-y-4 pb-20">
           {results.map((product, idx) => (
             <div 
               key={idx} 
               onClick={() => setSelectedProduct(product)}
-              className="p-5 bg-white dark:bg-surface-dark rounded-3xl shadow-sm flex items-center justify-between border border-slate-100 dark:border-white/5 active:scale-[0.98] transition-all cursor-pointer group"
+              className="p-6 bg-white dark:bg-surface-dark rounded-[2.5rem] shadow-sm border border-slate-100 dark:border-white/5 active:scale-[0.98] transition-all cursor-pointer group flex flex-col gap-5"
             >
-              <div className="flex-1 pr-4">
-                <p className="text-[13px] font-black text-slate-900 dark:text-white leading-tight uppercase group-hover:text-primary transition-colors">
-                  {product.Nombre_Completo || "Sin Nombre"}
-                </p>
-                <div className="flex flex-wrap items-center gap-2 mt-1.5">
-                  <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Sugerido F1</span>
-                  {product._isPriceMissing && (
-                    <span className="text-[8px] bg-amber-500/10 text-amber-600 px-2 py-0.5 rounded-lg font-black border border-amber-500/20">PRECIO NO DEFINIDO</span>
-                  )}
+              <div className="flex items-start justify-between">
+                <div className="flex-1 pr-4">
+                  <p className="text-[14px] font-black text-slate-900 dark:text-white leading-tight uppercase group-hover:text-primary transition-colors">
+                    {product.Nombre_Completo || "Sin Nombre"}
+                  </p>
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1">Ref: {product.id}</p>
+                </div>
+                <div className="text-right shrink-0">
+                   <div className="bg-primary/10 text-primary px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest">
+                     Sugerido F1
+                   </div>
                 </div>
               </div>
-              <div className="text-right shrink-0">
-                <p className="text-2xl font-black text-primary tracking-tighter">
-                  {product._isPriceMissing ? '---' : `$${product._safePrice.toFixed(2)}`}
-                </p>
+
+              <div className="grid grid-cols-2 gap-3">
+                {/* Sugerido Redondeado - Destacado */}
+                <div className="col-span-2 bg-primary/5 rounded-2xl p-4 border border-primary/10 flex items-center justify-between">
+                  <div className="space-y-0.5">
+                    <p className="text-[8px] font-black text-primary uppercase tracking-[0.2em]">Sugerido Final</p>
+                    <p className="text-2xl font-black text-primary tracking-tighter">
+                      {product._isPriceMissing ? '---' : `$${product._safePrice.toFixed(2)}`}
+                    </p>
+                  </div>
+                  <span className="material-symbols-outlined text-primary/40 text-3xl">payments</span>
+                </div>
+
+                {/* Otros Precios */}
+                <div className="bg-slate-50 dark:bg-white/5 rounded-xl p-3 border border-slate-100 dark:border-white/5">
+                  <p className="text-[7px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1">Costo Base</p>
+                  <p className="text-[13px] font-bold text-slate-900 dark:text-white">{formatMXN(product.Costo_base_principal)}</p>
+                </div>
+                <div className="bg-slate-50 dark:bg-white/5 rounded-xl p-3 border border-slate-100 dark:border-white/5">
+                  <p className="text-[7px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1">Por Unidad</p>
+                  <p className="text-[13px] font-bold text-slate-900 dark:text-white">{formatMXN(product.Costo_unidad)}</p>
+                </div>
+                <div className="bg-slate-50 dark:bg-white/5 rounded-xl p-3 border border-slate-100 dark:border-white/5">
+                  <p className="text-[7px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1">Sugerido Raw</p>
+                  <p className="text-[13px] font-bold text-slate-900 dark:text-white">{formatMXN(product.Precio_sugerido)}</p>
+                </div>
+                <div className="bg-slate-50 dark:bg-white/5 rounded-xl p-3 border border-slate-100 dark:border-white/5">
+                  <p className="text-[7px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1">Utilidad %</p>
+                  <p className="text-[13px] font-bold text-emerald-500">
+                    {product["Utilidad_%"] ? `${Math.round(product["Utilidad_%"] * 100)}%` : '---'}
+                  </p>
+                </div>
               </div>
+              
+              {product._isPriceMissing && (
+                <p className="text-[9px] font-black text-amber-600 bg-amber-500/10 px-3 py-1.5 rounded-lg text-center uppercase tracking-widest border border-amber-500/20">
+                  Precio Sugerido no definido
+                </p>
+              )}
             </div>
           ))}
 

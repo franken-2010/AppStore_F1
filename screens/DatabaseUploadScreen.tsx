@@ -51,7 +51,7 @@ const DatabaseUploadScreen: React.FC = () => {
   const [reindexSummary, setReindexSummary] = useState<any>(null);
   const [lastJob, setLastJob] = useState<{ id: string, totalRead: number, finishedAtMillis: number | null } | null>(null);
 
-  const REQUIRED_STABLE_IDS = ['ventas', 'fiesta', 'recargas', 'estancias', 'cxc', 'inventarios'];
+  const REQUIRED_STABLE_IDS = ['ventas', 'fiesta', 'recargas', 'estancias', 'cxc', 'inventarios', 'gastos_administrativos'];
 
   useEffect(() => {
     if (activeSubTab === 'diag') runDiagnostic();
@@ -418,13 +418,34 @@ const DatabaseUploadScreen: React.FC = () => {
         const text = ev.target?.result as string;
         const lines = text.split(/\r?\n/).filter(l => l.trim() !== '');
         if (lines.length < 2) return;
-        const headers = lines[0].split(',').map(h => h.trim().replace(/^"|"$/g, ''));
+
+        // Función para dividir una línea CSV respetando comillas
+        const parseCsvLine = (lineStr: string): string[] => {
+          const result: string[] = [];
+          let current = '';
+          let inQuotes = false;
+          for (let i = 0; i < lineStr.length; i++) {
+            const char = lineStr[i];
+            if (char === '"') {
+              inQuotes = !inQuotes;
+            } else if (char === ',' && !inQuotes) {
+              result.push(current.trim().replace(/^"|"$/g, ''));
+              current = '';
+            } else {
+              current += char;
+            }
+          }
+          result.push(current.trim().replace(/^"|"$/g, ''));
+          return result;
+        };
+
+        const headers = parseCsvLine(lines[0]);
         const dataLines = lines.slice(1);
         const result = dataLines.map(line => {
-          const values = line.split(',').map(val => val.trim().replace(/^"|"$/g, ''));
+          const values = parseCsvLine(line);
           const entry: any = {};
           headers.forEach((header, index) => {
-            let val: any = values[index] || "";
+            let val: any = values[index] !== undefined ? values[index] : "";
             if (val !== "" && !isNaN(val as any)) val = val.includes('.') ? parseFloat(val) : parseInt(val);
             entry[header] = val;
           });

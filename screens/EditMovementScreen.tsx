@@ -15,6 +15,7 @@ import {
 import { handleFirestoreError, OperationType } from '../services/errorHandling';
 import { AccountingAccount, AccountMovement } from '../types';
 import MoneyInputWithCalculator from '../components/MoneyInputWithCalculator';
+import { AccountingService } from '../services/AccountingService';
 
 const EditMovementScreen: React.FC = () => {
   const { accountId: docId, movementId } = useParams();
@@ -84,6 +85,39 @@ const EditMovementScreen: React.FC = () => {
         if (!currentMovSnap.exists()) throw new Error("El movimiento ya no existe.");
         const currentMov = currentMovSnap.data() as AccountMovement;
 
+        const checkBoolean = (val: any): boolean => {
+          return val === 'sí' || val === true;
+        };
+
+        const updatedContableFields = {
+          tipo_operacion: currentMov.tipo_operacion || 'ajuste_contable',
+          cuenta_contable: currentMov.cuenta_contable || 'Caja / Efectivo',
+          categoria: currentMov.categoria || 'otros',
+          monto: Number(formData.amount),
+          signo: currentMov.signo || (formData.type === 'INCOME' ? 1 : -1),
+          afecta_caja: checkBoolean(currentMov.afecta_caja) || checkBoolean(currentMov.afectaCaja),
+          afectaCaja: checkBoolean(currentMov.afecta_caja) || checkBoolean(currentMov.afectaCaja),
+          afecta_ventas: checkBoolean(currentMov.afecta_ventas) || checkBoolean(currentMov.afectaVentas),
+          afectaVentas: checkBoolean(currentMov.afecta_ventas) || checkBoolean(currentMov.afectaVentas),
+          afecta_cxc: checkBoolean(currentMov.afecta_cxc) || checkBoolean(currentMov.afectaCxC),
+          afectaCxC: checkBoolean(currentMov.afecta_cxc) || checkBoolean(currentMov.afectaCxC),
+          afecta_gasto: checkBoolean(currentMov.afecta_gasto),
+          afecta_costo: checkBoolean(currentMov.afecta_costo),
+          afecta_inventario: currentMov.afecta_inventario || 'no',
+          afectaInventario: checkBoolean(currentMov.afecta_inventario) || checkBoolean(currentMov.afectaInventario),
+          es_control: checkBoolean(currentMov.es_control) || checkBoolean(currentMov.esControl),
+          esControl: checkBoolean(currentMov.es_control) || checkBoolean(currentMov.esControl),
+          origen: currentMov.origen || 'manual',
+          texto_original: currentMov.texto_original || formData.title,
+          usuario: currentMov.usuario || user.displayName || 'Administrador',
+          type: formData.type
+        };
+
+        const validationError = AccountingService.validateAccountingMovement(updatedContableFields);
+        if (validationError) {
+          throw new Error(validationError);
+        }
+
         let oldImpact = 0;
         if (currentMov.status !== 'VOID') {
           const isOldIncome = currentMov.type === 'INCOME' || (currentMov.type as any) === 'INGRESO';
@@ -136,7 +170,29 @@ const EditMovementScreen: React.FC = () => {
             effectiveAt: Timestamp.fromDate(formData.effectiveAt),
             notes: formData.notes,
             updatedAt: serverTimestamp(),
-            ...(formData.status === 'VOID' && currentMov.status !== 'VOID' ? { voidedAt: serverTimestamp(), voidedBy: user.uid } : {})
+            ...(formData.status === 'VOID' && currentMov.status !== 'VOID' ? { voidedAt: serverTimestamp(), voidedBy: user.uid } : {}),
+
+            // Campos contables obligatorios actualizados
+            tipo_operacion: updatedContableFields.tipo_operacion,
+            cuenta_contable: updatedContableFields.cuenta_contable,
+            categoria: updatedContableFields.categoria,
+            monto: Number(formData.amount),
+            signo: updatedContableFields.signo,
+            afecta_caja: updatedContableFields.afecta_caja,
+            afectaCaja: updatedContableFields.afectaCaja,
+            afecta_ventas: updatedContableFields.afecta_ventas,
+            afectaVentas: updatedContableFields.afectaVentas,
+            afecta_cxc: updatedContableFields.afecta_cxc,
+            afectaCxC: updatedContableFields.afectaCxC,
+            afecta_gasto: updatedContableFields.afecta_gasto,
+            afecta_costo: updatedContableFields.afecta_costo,
+            afecta_inventario: updatedContableFields.afecta_inventario,
+            afectaInventario: updatedContableFields.afectaInventario,
+            es_control: updatedContableFields.es_control,
+            esControl: updatedContableFields.esControl,
+            origen: updatedContableFields.origen,
+            texto_original: updatedContableFields.texto_original,
+            usuario: updatedContableFields.usuario
           });
         } else {
           const oldAccSnap = await transaction.get(oldAccRef);
@@ -169,7 +225,27 @@ const EditMovementScreen: React.FC = () => {
             source: currentMov.source,
             createdAt: currentMov.createdAt,
             updatedAt: serverTimestamp(),
-            ...(formData.status === 'VOID' ? { voidedAt: serverTimestamp(), voidedBy: user.uid } : {})
+            ...(formData.status === 'VOID' ? { voidedAt: serverTimestamp(), voidedBy: user.uid } : {}),
+
+            // Campos contables obligatorios
+            tipo_operacion: updatedContableFields.tipo_operacion,
+            cuenta_contable: updatedContableFields.cuenta_contable,
+            categoria: updatedContableFields.categoria,
+            monto: Number(formData.amount),
+            signo: updatedContableFields.signo,
+            afecta_caja: updatedContableFields.afecta_caja,
+            afectaCaja: updatedContableFields.afectaCaja,
+            afecta_ventas: updatedContableFields.afecta_ventas,
+            afectaVentas: updatedContableFields.afectaVentas,
+            afecta_cxc: updatedContableFields.afecta_cxc,
+            afectaCxC: updatedContableFields.afectaCxC,
+            afecta_inventario: updatedContableFields.afecta_inventario,
+            afectaInventario: updatedContableFields.afectaInventario,
+            es_control: updatedContableFields.es_control,
+            esControl: updatedContableFields.esControl,
+            origen: updatedContableFields.origen,
+            texto_original: updatedContableFields.texto_original,
+            usuario: updatedContableFields.usuario
           });
         }
       });

@@ -31,6 +31,8 @@ const AccountHistoryScreen: React.FC = () => {
   const [selectedMovement, setSelectedMovement] = useState<AccountMovement | null>(null);
   
   const [currentDate, setCurrentDate] = useState(new Date());
+  const [searchTerm, setSearchTerm] = useState('');
+  const [typeFilter, setTypeFilter] = useState<'all' | 'income' | 'expense'>('all');
 
   const months = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
 
@@ -81,6 +83,7 @@ const AccountHistoryScreen: React.FC = () => {
           source: String(data.source || ''),
           status: String(data.status || 'ACTIVE'),
           createdAt: data.createdAt?.toMillis ? data.createdAt.toMillis() : null,
+          registeredAt: data.registeredAt?.toMillis ? data.registeredAt.toMillis() : null,
           notes: String(data.notes || ''),
           direction: data.direction,
           signedAmount: data.signedAmount,
@@ -100,6 +103,34 @@ const AccountHistoryScreen: React.FC = () => {
   const activeMovements = useMemo(() => {
     return movements.filter(m => m.status === 'ACTIVE' || !m.status);
   }, [movements]);
+
+  const processedMovements = useMemo(() => {
+    let result = movements.filter(m => m.status === 'ACTIVE' || !m.status);
+
+    if (typeFilter === 'income') {
+      result = result.filter(m => getMovementSign(m) === '+');
+    } else if (typeFilter === 'expense') {
+      result = result.filter(m => getMovementSign(m) === '-');
+    }
+
+    if (searchTerm.trim()) {
+      const term = searchTerm.toLowerCase();
+      result = result.filter(m => 
+        (m.conceptTitle || '').toLowerCase().includes(term) ||
+        (m.conceptSubtitle || '').toLowerCase().includes(term) ||
+        (m.notes || '').toLowerCase().includes(term) ||
+        getMovementSign(m).includes(term) ||
+        String(m.amount).includes(term)
+      );
+    }
+
+    // Ordenar por fecha y hora de registro de la operación (las más recientes primero)
+    return [...result].sort((a, b) => {
+      const valA = a.registeredAt || a.createdAt || 0;
+      const valB = b.registeredAt || b.createdAt || 0;
+      return valB - valA;
+    });
+  }, [movements, typeFilter, searchTerm]);
 
   const totalPeriodValue = useMemo(() => {
     return activeMovements.reduce((sum, m) => {
@@ -240,14 +271,73 @@ const AccountHistoryScreen: React.FC = () => {
         <div className={`size-12 rounded-2xl flex items-center justify-center ${totalPeriodValue >= 0 ? 'bg-blue-500/10 text-blue-400' : 'bg-rose-500/10 text-rose-400'}`}><span className="material-symbols-outlined text-2xl">{totalPeriodValue >= 0 ? 'account_balance_wallet' : 'trending_down'}</span></div>
       </div>
 
+      {/* Sección de Búsqueda y Filtros */}
+      <div className="px-5 pb-4 pt-1 bg-[#0a0f1d] border-b border-white/5 space-y-3">
+        {/* Barra de Búsqueda */}
+        <div className="relative flex items-center">
+          <span className="material-symbols-outlined absolute left-3.5 text-slate-500 text-[18px]">search</span>
+          <input
+            type="text"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            placeholder="Buscar por concepto, referencia o notas..."
+            className="w-full pl-9 pr-9 py-2 bg-white/5 border border-white/5 focus:border-blue-500/50 rounded-xl text-xs text-slate-200 placeholder-slate-500 outline-none transition-all"
+          />
+          {searchTerm && (
+            <button 
+              onClick={() => setSearchTerm('')} 
+              className="absolute right-3 p-1 text-slate-500 hover:text-slate-300 transition-colors flex items-center"
+            >
+              <span className="material-symbols-outlined text-[16px]">close</span>
+            </button>
+          )}
+        </div>
+
+        {/* Selector de Filtros de Tipo */}
+        <div className="flex gap-2">
+          <button
+            onClick={() => setTypeFilter('all')}
+            className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all border ${
+              typeFilter === 'all'
+                ? 'bg-blue-500/10 text-blue-400 border-blue-500/25 shadow-md shadow-blue-500/5'
+                : 'bg-white/5 text-slate-500 border-transparent hover:text-slate-300'
+            }`}
+          >
+            Todos
+          </button>
+          <button
+            onClick={() => setTypeFilter('income')}
+            className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all border ${
+              typeFilter === 'income'
+                ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/25 shadow-md shadow-emerald-500/5'
+                : 'bg-white/5 text-slate-500 border-transparent hover:text-slate-300'
+            }`}
+          >
+            Ingresos (+)
+          </button>
+          <button
+            onClick={() => setTypeFilter('expense')}
+            className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all border ${
+              typeFilter === 'expense'
+                ? 'bg-rose-500/10 text-rose-400 border-rose-500/25 shadow-md shadow-rose-500/5'
+                : 'bg-white/5 text-slate-500 border-transparent hover:text-slate-300'
+            }`}
+          >
+            Egresos (-)
+          </button>
+        </div>
+      </div>
+
       <main className="flex-1 overflow-y-auto no-scrollbar pb-32">
         {loading ? (
           <div className="p-20 flex justify-center"><span className="material-symbols-outlined animate-spin text-slate-600 text-3xl">sync</span></div>
         ) : activeMovements.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-24 text-center px-10 space-y-4 opacity-30"><span className="material-symbols-outlined text-5xl">history_toggle_off</span><p className="text-xs font-black uppercase tracking-widest">Sin registros este periodo</p></div>
+        ) : processedMovements.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-24 text-center px-10 space-y-4 opacity-30"><span className="material-symbols-outlined text-5xl">manage_search</span><p className="text-xs font-black uppercase tracking-widest">Ningún registro coincide con el filtro</p></div>
         ) : (
           <div className="divide-y divide-white/5">
-            {activeMovements.map(m => (
+            {processedMovements.map(m => (
               <div key={m.id} className="flex items-center px-5 py-4 gap-4 active:bg-white/5 transition-all group overflow-hidden">
                 <div onClick={() => setSelectedMovement(m)} className="flex-1 min-w-0 flex flex-col justify-center cursor-pointer">
                   <div className="flex items-center justify-between gap-2">
@@ -302,7 +392,24 @@ const AccountHistoryScreen: React.FC = () => {
               <div className="grid grid-cols-2 gap-4">
                 <div className="p-5 bg-white/5 rounded-2xl border border-white/5 space-y-1.5"><p className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Referencia</p><p className="text-[13px] font-bold text-slate-200 leading-tight">{selectedMovement.conceptSubtitle || 'Registro Manual'}</p></div>
                 <div className="p-5 bg-white/5 rounded-2xl border border-white/5 space-y-1.5"><p className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Canal</p><p className="text-[13px] font-bold text-blue-400 uppercase">{selectedMovement.source || 'Manual'}</p></div>
-                <div className="col-span-2 p-5 bg-white/5 rounded-2xl border border-white/5 flex justify-between items-center"><div className="flex items-center gap-3"><span className="material-symbols-outlined text-slate-500 text-xl">calendar_month</span><p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Fecha y Hora</p></div><span className="text-xs font-bold text-slate-200">{formatDate(selectedMovement.createdAt)}</span></div>
+                <div className="col-span-2 p-5 bg-white/5 rounded-2xl border border-white/5 flex flex-col gap-3">
+                  <div className="flex justify-between items-center">
+                    <div className="flex items-center gap-3">
+                      <span className="material-symbols-outlined text-slate-500 text-xl">calendar_month</span>
+                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Fecha Contable</p>
+                    </div>
+                    <span className="text-xs font-bold text-slate-200">{formatDate(selectedMovement.createdAt)}</span>
+                  </div>
+                  {selectedMovement.registeredAt && (
+                    <div className="flex justify-between items-center border-t border-white/5 pt-3 mt-1">
+                      <div className="flex items-center gap-3">
+                        <span className="material-symbols-outlined text-slate-500 text-xl">history</span>
+                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Hora de Registro</p>
+                      </div>
+                      <span className="text-xs font-bold text-blue-400">{formatDate(selectedMovement.registeredAt)}</span>
+                    </div>
+                  )}
+                </div>
               </div>
               {selectedMovement.notes && <div className="space-y-3"><label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Observaciones</label><div className="p-5 bg-white/5 rounded-2xl border border-white/5 italic text-[14px] text-slate-300 leading-relaxed shadow-inner">"{selectedMovement.notes}"</div></div>}
             </div>

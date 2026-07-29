@@ -60,12 +60,38 @@ const AddMovementScreen: React.FC = () => {
       const selectedRubric = currentOptions.find(o => o.id === formData.selectedRubricId);
       if (!selectedRubric) throw new Error("Rubro no válido.");
 
-      const accountInfo = await AccountResolver.assertAccount(user.uid, selectedRubric.accountId);
+      const username = user.displayName || 'Administrador';
+      const contableFields = AccountingService.getAccountingFields(
+        formData.selectedRubricId,
+        formData.amount,
+        formData.concept.trim(),
+        username,
+        'manual'
+      );
+
+      // Validaciones Obligatorias de Lógica Contable
+      const validationError = AccountingService.validateAccountingMovement(contableFields);
+      if (validationError) {
+        setStatus({ text: validationError, type: 'error' });
+        setLoading(false);
+        return;
+      }
+
+       const accountInfo = await AccountResolver.assertAccount(user.uid, selectedRubric.accountId);
       const accountDocId = accountInfo.accountDocId;
 
+      const isGastoAdm = selectedRubric.accountId === 'gastos_administrativos' && formData.type === 'EXPENSE';
+      let ventasAccountDocId: string | null = null;
+      if (isGastoAdm) {
+        const ventasAccountInfo = await AccountResolver.assertAccount(user.uid, 'ventas');
+        ventasAccountDocId = ventasAccountInfo.accountDocId;
+      }
+
       const invMirrorTitle = AccountingService.getInventoryMirrorTitle(formData.selectedRubricId);
+      const isEmployeeConsumption = formData.selectedRubricId === 'ex_consumo_empleados';
+      const isSaleIncome = formData.type === 'INCOME' && ['ventas', 'fiesta', 'recargas', 'cxc'].includes(selectedRubric.accountId);
       let invAccountDocId: string | null = null;
-      if (invMirrorTitle) {
+      if (invMirrorTitle || isEmployeeConsumption || isSaleIncome) {
         const invAccountInfo = await AccountResolver.assertAccount(user.uid, 'inventarios');
         invAccountDocId = invAccountInfo.accountDocId;
       }
@@ -73,6 +99,7 @@ const AddMovementScreen: React.FC = () => {
       await runTransaction(db, async (transaction) => {
         const accountRef = doc(db, "users", user.uid, "accounts", accountDocId);
         const invRef = invAccountDocId ? doc(db, "users", user.uid, "accounts", invAccountDocId) : null;
+        const ventasRef = ventasAccountDocId ? doc(db, "users", user.uid, "accounts", ventasAccountDocId) : null;
 
         const accSnap = await transaction.get(accountRef);
         if (!accSnap.exists()) throw new Error("Cuenta no encontrada.");
@@ -81,6 +108,12 @@ const AddMovementScreen: React.FC = () => {
         if (invRef) {
           invSnap = await transaction.get(invRef);
           if (!invSnap.exists()) throw new Error("Inventarios no disponible.");
+        }
+
+        let ventasSnap = null;
+        if (ventasRef) {
+          ventasSnap = await transaction.get(ventasRef);
+          if (!ventasSnap.exists()) throw new Error("Ventas no disponible.");
         }
 
         const currentBalance = Number(accSnap.data()?.balance || 0);
@@ -98,6 +131,10 @@ const AddMovementScreen: React.FC = () => {
         } else if (formData.selectedRubricId === 'in_cxc_pago') {
           direction = 'IN';
           impact = amount;
+        } else if (formData.selectedRubricId === 'ex_consumo_empleados') {
+          // Consumo empleados no tiene entrada ni salida de caja (afecta_caja: no)
+          direction = 'OUT';
+          impact = 0;
         }
 
         const newBalance = currentBalance + impact;
@@ -107,47 +144,220 @@ const AddMovementScreen: React.FC = () => {
           ? formData.concept.trim().toUpperCase() 
           : (formData.type === 'INCOME' ? `INGRESO: ${selectedRubric.label}` : `EGRESO: ${selectedRubric.label}`);
 
-        transaction.set(newMovRef, {
+        // Combinar datos operativos estándar con los campos canónicos de la lógica contable
+        const finalMovementPayload = {
           uid: user.uid,
           accountId: selectedRubric.accountId,
-          amount: amount,
+          amount: contableFields.amount ?? amount,
           type: formData.type,
           direction: direction,
-          signedAmount: impact,
+          signedAmount: contableFields.signo === -1 ? -(contableFields.amount ?? amount) : (contableFields.amount ?? amount),
           rubro: formData.selectedRubricId,
           conceptTitle: conceptTitle,
           conceptSubtitle: "Registro Manual",
           source: 'manual',
           status: 'ACTIVE',
-          createdAt: serverTimestamp()
-        });
+          createdAt: serverTimestamp(),
+          registeredAt: serverTimestamp(),
+          effectiveAt: serverTimestamp(),
+          
+          // Campos contables obligatorios
+          id_movimiento: newMovRef.id,
+          fecha: serverTimestamp(),
+          tipo_operacion: contableFields.tipo_operacion,
+          centro_utilidad: contableFields.centro_utilidad,
+          cuenta_contable: contableFields.cuenta_contable,
+          monto: contableFields.amount ?? amount,
+          signo: contableFields.signo,
+          afecta_caja: contableFields.afecta_caja,
+          afectaCaja: contableFields.afecta_caja,
+          afecta_ventas: contableFields.afecta_ventas,
+          afectaVentas: contableFields.afecta_ventas,
+          afecta_cxc: contableFields.afecta_cxc,
+          afectaCxC: contableFields.afecta_cxc,
+          afecta_gasto: contableFields.afecta_gasto,
+          afecta_costo: contableFields.afecta_costo,
+          es_control: contableFields.es_control,
+          esControl: contableFields.es_control,
+          origen: 'manual',
+          texto_original: formData.concept.trim() || conceptTitle,
+          usuario: username,
+          
+          // Detalles adicionales para consumo empleados
+          ...(isEmployeeConsumption ? {
+            consumo_empleados_valor_venta: amount,
+            consumo_empleados_costo_real: Number((amount * 0.82).toFixed(2))
+          } : {})
+        };
+
+        transaction.set(newMovRef, finalMovementPayload);
+
+        // Si es consumo de empleados o cortesía personal, guardar también el registro de control
+        if (formData.selectedRubricId === 'ex_consumo_empleados' || formData.selectedRubricId === 'ex_personal') {
+          const controlMovRef = doc(collection(db, "users", user.uid, "accounts", accountDocId, "movements"));
+          const controlContableFields = AccountingService.getAccountingFields(
+            formData.selectedRubricId,
+            amount,
+            formData.concept.trim(),
+            username,
+            'manual',
+            formData.concept.trim() || conceptTitle,
+            true // asControlRecord = true
+          );
+
+          const controlMovementPayload = {
+            uid: user.uid,
+            accountId: selectedRubric.accountId,
+            amount: amount,
+            type: formData.type,
+            direction: 'IN',
+            signedAmount: amount,
+            rubro: formData.selectedRubricId,
+            conceptTitle: `CONTROL: ${conceptTitle}`,
+            conceptSubtitle: "Cuenta de Control",
+            source: 'manual',
+            status: 'ACTIVE',
+            createdAt: serverTimestamp(),
+            registeredAt: serverTimestamp(),
+            effectiveAt: serverTimestamp(),
+
+            // Campos contables obligatorios
+            id_movimiento: controlMovRef.id,
+            fecha: serverTimestamp(),
+            tipo_operacion: controlContableFields.tipo_operacion,
+            centro_utilidad: controlContableFields.centro_utilidad,
+            cuenta_contable: controlContableFields.cuenta_contable,
+            monto: amount,
+            signo: controlContableFields.signo,
+            afecta_caja: controlContableFields.afecta_caja,
+            afectaCaja: controlContableFields.afecta_caja,
+            afecta_ventas: controlContableFields.afecta_ventas,
+            afectaVentas: controlContableFields.afecta_ventas,
+            afecta_cxc: controlContableFields.afecta_cxc,
+            afectaCxC: controlContableFields.afecta_cxc,
+            afecta_gasto: controlContableFields.afecta_gasto,
+            afecta_costo: controlContableFields.afecta_costo,
+            es_control: controlContableFields.es_control,
+            esControl: controlContableFields.es_control,
+            origen: 'manual',
+            texto_original: formData.concept.trim() || conceptTitle,
+            usuario: username
+          };
+
+          transaction.set(controlMovRef, controlMovementPayload);
+        }
 
         transaction.update(accountRef, {
           balance: newBalance,
           updatedAt: serverTimestamp()
         });
 
-        if (invRef && invMirrorTitle) {
+        if (invRef && (invMirrorTitle || isEmployeeConsumption || isSaleIncome)) {
           const invMovRef = doc(collection(db, "users", user.uid, "accounts", invAccountDocId!, "movements"));
           const currentInvBalance = Number(invSnap!.data()?.balance || 0);
           
+          const isInvIn = !!invMirrorTitle;
+          
+          let invAmount = amount;
+          if (isEmployeeConsumption) {
+            invAmount = Number((amount * 0.82).toFixed(2)); // Costo real = Valor venta * 0.82
+          } else if (!isInvIn && isSaleIncome) {
+            invAmount = Number((amount * 0.8).toFixed(2));
+          }
+          
+          const invImpact = isInvIn ? invAmount : -invAmount;
+          const invTitle = invMirrorTitle || (isEmployeeConsumption ? 'SALIDA INV (CONSUMO EMPLEADOS)' : `SALIDA INV (${selectedRubric.label.toUpperCase()})`);
+
           transaction.set(invMovRef, {
             uid: user.uid,
             accountId: 'inventarios',
-            amount: amount,
-            type: 'INCOME',
-            direction: 'IN',
-            signedAmount: amount,
+            amount: invAmount,
+            type: isInvIn ? 'INCOME' : 'EXPENSE',
+            direction: isInvIn ? 'IN' : 'OUT',
+            signedAmount: invImpact,
             rubro: 'inventarios',
-            conceptTitle: invMirrorTitle,
+            conceptTitle: invTitle,
             conceptSubtitle: "Auto-ajuste F1",
             source: 'auto_inventory',
             status: 'ACTIVE',
-            createdAt: serverTimestamp()
+            createdAt: serverTimestamp(),
+            registeredAt: serverTimestamp(),
+            effectiveAt: serverTimestamp(),
+
+            // Campos contables para inventario espejo
+            id_movimiento: invMovRef.id,
+            fecha: serverTimestamp(),
+            tipo_operacion: isEmployeeConsumption ? 'consumo_empleados' : 'compra_mercancia',
+            categoria: contableFields.categoria,
+            cuenta_contable: 'Inventario',
+            monto: invAmount,
+            signo: isInvIn ? 1 : -1,
+            afecta_caja: 'no',
+            afectaCaja: false,
+            afecta_ventas: 'no',
+            afectaVentas: false,
+            afecta_cxc: 'no',
+            afectaCxC: false,
+            afecta_inventario: 'sí',
+            afectaInventario: true,
+            es_control: 'no',
+            esControl: false,
+            origen: 'manual',
+            texto_original: invTitle,
+            usuario: username
           });
 
           transaction.update(invRef, {
-            balance: currentInvBalance + amount,
+            balance: currentInvBalance + invImpact,
+            updatedAt: serverTimestamp()
+          });
+        }
+
+        if (ventasRef && isGastoAdm) {
+          const ventasMovRef = doc(collection(db, "users", user.uid, "accounts", ventasAccountDocId!, "movements"));
+          const currentVentasBalance = Number(ventasSnap!.data()?.balance || 0);
+
+          transaction.set(ventasMovRef, {
+            uid: user.uid,
+            accountId: 'ventas',
+            amount: amount,
+            type: 'EXPENSE',
+            direction: 'OUT',
+            signedAmount: -amount,
+            rubro: 'ventas',
+            conceptTitle: `DEBITO ADM (${conceptTitle})`,
+            conceptSubtitle: "Débito Automático",
+            source: 'auto_debit',
+            status: 'ACTIVE',
+            createdAt: serverTimestamp(),
+            registeredAt: serverTimestamp(),
+            effectiveAt: serverTimestamp(),
+
+            // Campos contables para débito automático
+            id_movimiento: ventasMovRef.id,
+            fecha: serverTimestamp(),
+            tipo_operacion: 'gasto_administrativo',
+            categoria: 'administrativo',
+            cuenta_contable: 'Gastos Administrativos',
+            monto: amount,
+            signo: -1,
+            afecta_caja: 'sí',
+            afectaCaja: true,
+            afecta_ventas: 'no',
+            afectaVentas: false,
+            afecta_cxc: 'no',
+            afectaCxC: false,
+            afecta_inventario: 'no',
+            afectaInventario: false,
+            es_control: 'no',
+            esControl: false,
+            origen: 'manual',
+            texto_original: `DEBITO ADM (${conceptTitle})`,
+            usuario: username
+          });
+
+          transaction.update(ventasRef, {
+            balance: currentVentasBalance - amount,
             updatedAt: serverTimestamp()
           });
         }

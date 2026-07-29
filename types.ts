@@ -46,6 +46,7 @@ export interface AccountCategory {
   accountingType: AccountType;
   order: number;
   color?: string;
+  enableDirectAdminExpenses?: boolean;
 }
 
 export interface AccountIndex {
@@ -91,6 +92,7 @@ export interface AccountMovement {
   source: string;
   status?: 'ACTIVE' | 'DELETED' | 'MOVED' | 'VOID';
   createdAt: any; 
+  registeredAt?: any;
   effectiveAt: any; 
   notes?: string;
   groupId?: string;
@@ -101,12 +103,39 @@ export interface AccountMovement {
   rubro?: string;
   cutId?: string;
   dateKey?: string; // Campo YYYY-MM-DD para consultas rápidas
+
+  // Lógica Contable Interna (Requerimientos de Cuenta)
+  id_movimiento?: string;
+  fecha?: any;
+  tipo_operacion?: 'venta_contado' | 'venta_credito' | 'cobranza_cxc' | 'compra_mercancia' | 'gasto_operativo' | 'gasto_administrativo' | 'consumo_empleados' | 'cortesia' | 'sobrante_caja' | 'faltante_caja' | 'ajuste_contable';
+  centro_utilidad?: 'Abarrotes' | 'Fiesta' | 'Recargas' | 'Estancias' | 'Otros' | string;
+  categoria?: string; // Para compatibilidad
+  cuenta_contable?: string;
+  monto?: number;
+  signo?: 1 | -1;
+  afecta_caja?: boolean;
+  afectaCaja?: boolean; // Para compatibilidad
+  afecta_ventas?: boolean;
+  afectaVentas?: boolean; // Para compatibilidad
+  afecta_cxc?: boolean;
+  afectaCxC?: boolean; // Para compatibilidad
+  afecta_gasto?: boolean;
+  afecta_costo?: boolean;
+  afecta_inventario?: 'sí' | 'no'; // Para compatibilidad
+  afectaInventario?: boolean; // Para compatibilidad
+  es_control?: boolean;
+  esControl?: boolean; // Para compatibilidad
+  origen?: 'manual' | 'voz' | 'IA';
+  texto_original?: string;
+  usuario?: string;
 }
 
 export interface DashboardConfig {
   showBalance: boolean;
+  showPerformance: boolean;
   showLogistics: boolean;
   showClosings: boolean;
+  performanceAccounts: string[]; // IDs de cuentas a mostrar en Rendimiento
 }
 
 export interface UserProfile {

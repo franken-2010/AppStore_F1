@@ -27,7 +27,8 @@ const AccountCategorySettingsScreen: React.FC = () => {
   const [formData, setFormData] = useState({
     name: '',
     accountingType: 'Activo' as AccountType,
-    color: '#6366f1'
+    color: '#6366f1',
+    enableDirectAdminExpenses: false
   });
 
   const PRESET_COLORS = [
@@ -61,6 +62,7 @@ const AccountCategorySettingsScreen: React.FC = () => {
           name: formData.name.trim(),
           accountingType: formData.accountingType,
           color: formData.color,
+          enableDirectAdminExpenses: formData.enableDirectAdminExpenses,
           updatedAt: serverTimestamp()
         });
       } else {
@@ -68,11 +70,12 @@ const AccountCategorySettingsScreen: React.FC = () => {
           name: formData.name.trim(),
           accountingType: formData.accountingType,
           color: formData.color,
+          enableDirectAdminExpenses: formData.enableDirectAdminExpenses,
           order: categories.length,
           createdAt: serverTimestamp()
         });
       }
-      setFormData({ name: '', accountingType: 'Activo', color: '#6366f1' });
+      setFormData({ name: '', accountingType: 'Activo', color: '#6366f1', enableDirectAdminExpenses: false });
       setEditingId(null);
     } catch (e: any) { 
       handleFirestoreError(e, OperationType.WRITE, `users/${user.uid}/categories`);
@@ -133,12 +136,27 @@ const AccountCategorySettingsScreen: React.FC = () => {
             </div>
           </div>
 
+          {(formData.name.trim().toLowerCase() === 'estancias' || formData.name.trim().toLowerCase() === 'estancia') && (
+            <div className="flex items-center gap-3 p-3 bg-white/5 rounded-xl border border-white/5 animate-in slide-in-from-top-2">
+              <input 
+                type="checkbox"
+                id="enableDirectAdminExpenses"
+                checked={formData.enableDirectAdminExpenses}
+                onChange={e => setFormData({...formData, enableDirectAdminExpenses: e.target.checked})}
+                className="size-4 rounded border-white/10 text-primary focus:ring-primary bg-slate-900"
+              />
+              <label htmlFor="enableDirectAdminExpenses" className="text-xs font-bold text-slate-300 cursor-pointer">
+                Habilitar Gastos Administrativos Directos
+              </label>
+            </div>
+          )}
+
           <div className="flex gap-2 pt-2">
             <button onClick={handleSave} className="flex-1 bg-primary py-3 rounded-xl font-black text-sm shadow-lg active:scale-95 transition-all">
               {editingId ? 'Actualizar' : 'Guardar'}
             </button>
             {editingId && (
-              <button onClick={() => {setEditingId(null); setFormData({name:'', accountingType:'Activo', color: '#6366f1'});}} className="px-4 bg-white/10 rounded-xl">
+              <button onClick={() => {setEditingId(null); setFormData({name:'', accountingType:'Activo', color: '#6366f1', enableDirectAdminExpenses: false});}} className="px-4 bg-white/10 rounded-xl">
                 <span className="material-symbols-outlined">close</span>
               </button>
             )}
@@ -154,12 +172,17 @@ const AccountCategorySettingsScreen: React.FC = () => {
                 <div className="size-3 rounded-full shadow-sm" style={{ backgroundColor: cat.color || '#6366f1' }} />
                 <div className="flex flex-col">
                   <span className="text-sm font-bold">{cat.name}</span>
-                  <span className="text-[9px] font-black uppercase text-slate-500 tracking-tighter">{cat.accountingType}</span>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[9px] font-black uppercase text-slate-500 tracking-tighter">{cat.accountingType}</span>
+                    {cat.enableDirectAdminExpenses && (
+                      <span className="text-[8px] font-black uppercase text-amber-400 bg-amber-400/10 px-1.5 py-0.5 rounded tracking-widest">Gastos Adm. Directos</span>
+                    )}
+                  </div>
                 </div>
               </div>
               <div className="flex gap-1">
                 <button 
-                  onClick={() => { setEditingId(cat.id!); setFormData({name: cat.name, accountingType: cat.accountingType, color: cat.color || '#6366f1'}); }}
+                  onClick={() => { setEditingId(cat.id!); setFormData({name: cat.name, accountingType: cat.accountingType, color: cat.color || '#6366f1', enableDirectAdminExpenses: cat.enableDirectAdminExpenses || false}); }}
                   className="size-9 bg-white/5 rounded-xl flex items-center justify-center text-blue-400"
                 >
                   <span className="material-symbols-outlined text-lg">edit</span>

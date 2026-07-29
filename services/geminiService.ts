@@ -55,10 +55,12 @@ export class GeminiService {
       - "cxc" -> ventas a credito realizadas (ingreso no efectivo).
       - "mercancias" -> gastos abarrotes, gastos recargas.
       - "fiesta" (en expenses) -> gastos en fiesta, gasto fiesta, fiesta, compra fiesta, mercancía fiesta, producto fiesta (solo si es egreso/gasto). PRIORIDAD: Si el gasto menciona "fiesta", asígnale este campo y NO a mercancias.
-      - "empleados" -> sueldos, pagos personal.
+      - "gastosAdministrativos" -> SOLO gastos de administración explícitos o que mencionen "gastos administrativos", "renta del local" o "mantenimiento del local". (OJO: No metas aquí el consumo o sueldos de empleados).
+      - "sueldos" -> gastos por sueldos de empleados, pago de empleados, nomina, salarios, sueldos o textos similares.
+      - "consumoEmpleados" -> consumo o productos que los empleados tomaron o consumieron de la propia tienda, o deudas de empleados por consumo en la tienda, o textos que digan "consumo de empleados". (OJO: No confundir con sueldos o pago de empleados).
       - "consumoPersonal" -> gastos del dueño o uso personal.
       - "dineroEntregado" -> efectivo final reportado.
-
+ 
       Reporte: ${String(rawText)}`;
 
       const response = await ai.models.generateContent({
@@ -86,7 +88,9 @@ export class GeminiService {
                 properties: { 
                   mercancias: { type: Type.NUMBER }, 
                   fiesta: { type: Type.NUMBER },
-                  empleados: { type: Type.NUMBER }, 
+                  gastosAdministrativos: { type: Type.NUMBER }, 
+                  sueldos: { type: Type.NUMBER },
+                  consumoEmpleados: { type: Type.NUMBER },
                   consumoPersonal: { type: Type.NUMBER } 
                 } 
               },

@@ -144,10 +144,14 @@ const AccountUpsertScreen: React.FC = () => {
         // Si hay un saldo inicial, crear el movimiento correspondiente para el historial
         if (Number(formData.balance) !== 0) {
           const initialMovRef = doc(collection(accountDocRef, "movements"));
+          const balAmount = Math.abs(Number(formData.balance));
+          const balSign = Number(formData.balance) > 0 ? 1 : -1;
+          const username = user.displayName || 'Administrador';
+
           batch.set(initialMovRef, {
             uid: user.uid,
             accountId: stableAccountId,
-            amount: Math.abs(Number(formData.balance)),
+            amount: balAmount,
             type: Number(formData.balance) > 0 ? 'INCOME' : 'EXPENSE',
             direction: Number(formData.balance) > 0 ? 'IN' : 'OUT',
             signedAmount: Number(formData.balance),
@@ -156,7 +160,30 @@ const AccountUpsertScreen: React.FC = () => {
             source: 'manual',
             status: 'ACTIVE',
             createdAt: serverTimestamp(),
-            effectiveAt: serverTimestamp()
+            effectiveAt: serverTimestamp(),
+
+            // Campos contables obligatorios
+            id_movimiento: initialMovRef.id,
+            fecha: serverTimestamp(),
+            tipo_operacion: 'ajuste_contable',
+            centro_utilidad: 'Otros',
+            categoria: 'otros',
+            cuenta_contable: formData.name,
+            monto: balAmount,
+            signo: balSign as 1 | -1,
+            afecta_caja: true,
+            afectaCaja: true,
+            afecta_ventas: false,
+            afectaVentas: false,
+            afecta_cxc: false,
+            afectaCxC: false,
+            afecta_gasto: false,
+            afecta_costo: false,
+            es_control: false,
+            esControl: false,
+            origen: 'manual',
+            texto_original: 'SALDO INICIAL',
+            usuario: username
           });
         }
       } else {

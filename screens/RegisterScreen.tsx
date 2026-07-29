@@ -23,9 +23,9 @@ const RegisterScreen: React.FC = () => {
     
     // 1. Categorías por defecto
     const categories = [
-      { name: 'OPERACIÓN', accountingType: 'Capital', order: 0 },
-      { name: 'EFECTIVO', accountingType: 'Activo', order: 1 },
-      { name: 'AHORROS', accountingType: 'Ahorro', order: 2 }
+      { name: 'OPERACIÓN', accountingType: 'Capital', order: 0, enableDirectAdminExpenses: false },
+      { name: 'EFECTIVO', accountingType: 'Activo', order: 1, enableDirectAdminExpenses: false },
+      { name: 'AHORROS', accountingType: 'Ahorro', order: 2, enableDirectAdminExpenses: false }
     ];
 
     const categoryRefs: string[] = [];
