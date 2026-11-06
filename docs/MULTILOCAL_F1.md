@@ -1,34 +1,67 @@
-# Abarrotes F1 — Primer incremento multilocal (experimental)
+# Abarrotes F1 — Desarrollo multilocal experimental
 
-Rama: `desarrollo-independiente`. No conectar directamente a Firebase de producción.
+**Rama:** `desarrollo-independiente` — NO fusionar todavía con `main`.
+**Producción:** no desplegada ni conectada a la base de datos real.
 
-## Alcance implementado
-- Identificadores estables para Local 1 (Abarrotes, Fiesta, Recargas, Estancias) y Local 2 (Frutas y verduras, Pan y galletas, Comida preparada).
-- Función pura `calculateCashClosing` para cortes por local en efectivo, con venta a crédito opcional y cobranza de cartera diferenciada; no existen medios de pago electrónicos en esta versión.
-- Diferencias positivas quedan como `surplusPendingIdentification`; negativas como `shortagePendingInvestigation`. El indicador `adjustedGeneralReceipts` sirve para control de efectivo, **no es una venta contable ni utilidad**.
-- Función pura `allocateOverheadExpenses`: gastos directos por categoría, gastos de local distribuidos entre sus categorías y gastos de empresa repartidos por ingresos elegibles entre locales. Los cálculos se realizan en centavos y conservan los residuos de redondeo.
-- Si no existen ingresos elegibles, los gastos comunes quedan pendientes, sin asignarse por defecto a Abarrotes.
+## Estructura
 
-## Alcance NO implementado
-- No hay cambios en las rutas de `App.tsx`, `CortesScreen.tsx`, `AccountingService.ts`, Firestore ni sus reglas.
-- No se importan ni alteran registros anteriores.
-- No se previene aún el doble registro de un corte en base de datos.
-- No se ha conectado el motor al dashboard ni a los reportes.
-- No hay despliegue ni alojamiento configurado.
-- No existe un sistema de inventarios físicos por artículo.
+- Local 1: Abarrotes, Fiesta, Recargas y Estancias.
+- Local 2: Frutas y verduras, Pan y galletas, Comida preparada.
+- Dos cortes independientes; una única vista administrativa consolidada.
+- Ventas en efectivo. No se incorporan transferencias bancarias ni tarjetas.
+- Ventas a crédito, si las hay, deben separarse de la cobranza de créditos anteriores; no incrementar dos veces las ventas.
 
-## Precauciones antes de conectar datos reales
-1. Validar que un corte pueda ser guardado una sola vez por local, fecha y turno, o reemplazado exclusivamente mediante ajustes auditables.
-2. Revisar `firestore.rules` y un esquema de migración compatible con datos históricos.
-3. Separar caja física, compras, ventas, cuentas por cobrar y movimientos espejo para evitar sumas duplicadas.
-4. Determinar bases de distribución para Recargas: comisión reconocida vs. monto bruto recargado; el motor exige que los ingresos elegibles lleguen calculados.
-5. Distribuir gastos compartidos solo entre operaciones activas durante el periodo, no automáticamente entre locales sin actividad.
-6. Agregar pruebas integradas con datos simulados de los servicios existentes.
-7. Mantener intacta la rama `main` y realizar respaldos de Firestore antes de una activación.
+## Archivos de esta etapa
 
-## Prueba local
-Compilar ambos archivos con TypeScript e iniciar el JavaScript de prueba:
+| Archivo | Propósito |
+| --- | --- |
+| `services/multiStoreAccounting.ts` | Motor puro de conciliación de caja, validación de categoría/local y reparto de gastos |
+| `screens/MultiStorePreviewScreen.tsx` | Pantalla editable de prueba, sin Firebase |
+| `tests/multiStoreAccounting.test.ts` | Casos de prueba de caja, sobrantes, faltantes y gastos |
+| `App.tsx` | Ruta privada `/tools/multilocal-preview` |
+| `screens/ToolsScreen.tsx` | Acceso al simulador desde Herramientas |
+| `.github/workflows/verificar-desarrollo.yml` | Verificación automática sin despliegue |
+
+## Criterios contables aplicados
+
+1. **Caja:** efectivo esperado = fondo inicial + ventas en efectivo + cobranzas + traspasos de entrada − compras pagadas − gastos pagados − traspasos de salida − retiros.
+2. **Sobrante:** diferencia positiva no identificada. Aumenta únicamente un indicador operacional de caja ajustada; NO se reconoce automáticamente como venta por categoría ni como utilidad.
+3. **Faltante:** diferencia negativa que requiere investigación.
+4. **Gastos compartidos:** distribuir proporcionalmente según ingresos elegibles entre las categorías de los locales beneficiados.
+5. **Gastos de un solo local:** distribuir entre sus categorías, no contra todos los negocios.
+6. **Gastos directos de una categoría:** imputar solo a esa categoría.
+7. **Sin ingresos elegibles:** dejar gastos compartidos sin distribuir, nunca cargarlos automáticamente a Abarrotes.
+8. **Recargas:** el simulador usa ventas brutas como base temporal; antes de producción validar si el ingreso elegible debe ser la comisión.
+9. **Rotación:** no calcular existencias ni merma física por artículo sin conteos. La velocidad de ventas y la rentabilidad estimada son indicadores distintos.
+
+## Uso del simulador
+
+Entrar a `Herramientas > Simulador multilocal` en una compilación de la **rama experimental**. Cambiar de local, editar ventas por categoría y los importes de caja. En la parte inferior se observa el reparto de gastos y el consolidado.
+
+**Esta pantalla no importa `services/firebase.ts`, no consulta, no escribe, no borra, y sus cálculos se pierden al recargar.** El corte real anterior sigue en `/cortes`; no está conectado al nuevo motor.
+
+## Verificaciones
+
 ```bash
-tsc --strict --target ES2022 --module commonjs --skipLibCheck --outDir .test-output services/multiStoreAccounting.ts tests/multiStoreAccounting.test.ts
-node .test-output/tests/multiStoreAccounting.test.js
+npm ci
+npm run lint
+npm run test:multilocal
+npm run build
 ```
+
+Se ha configurado un flujo GitHub Actions para estas comprobaciones en la rama de desarrollo, sin desplegar nada.
+
+## Próximo incremento protegido: guardado de cortes reales
+
+Antes de modificar `CortesScreen.tsx` o Firestore:
+
+1. Crear un **respaldo comprobado** del proyecto Firestore de producción.
+2. Crear y verificar reglas de acceso para `users/{uid}/stores`, `sales_categories` y cortes multilocales sin abrir permisos de otros usuarios.
+3. Usar `makeDailyClosingId(storeId, dateKey)` para obtener un ID fijo por local y fecha. **El ID no impide por sí mismo duplicados**: el guardado debe comprobar existencia en una **transacción atómica** de Firestore y rechazar cortes duplicados; los cambios posteriores serán ajustes auditables.
+4. Garantizar que el documento de corte y los movimientos de caja se registren con integridad. Si una operación requiere múltiples lotes, usar un protocolo de estados y reintentos idempotentes.
+5. Incluir `storeId`, `categoryId`, `closingId`, `source`, `registeredAt`, `effectiveAt` en movimientos nuevos con tipos seguros.
+6. No editar ni atribuir por defecto a Local 1 los registros históricos sin verificar su procedencia.
+7. No aplicar el porcentaje fijo de costo del inventario antiguo al Local 2.
+8. Probar cortes con sobrante/faltante, cero ingresos, compra en efectivo, cobranza, venta a crédito, periodos con un solo local y gastos compartidos.
+
+El simulador **no calcula utilidad operativa**, porque todavía no hay costos de ventas completos, mermas ni sueldos/rentas reales asignados.
