@@ -13,7 +13,9 @@ import {
   onSnapshot, 
   orderBy, 
   limit,
-  doc
+  doc,
+  getDoc,
+  getDocs
 } from "firebase/firestore";
 import { handleFirestoreError, OperationType } from '../services/errorHandling';
 import { AccountMovement, AccountingAccount } from '../types';
@@ -21,6 +23,7 @@ import { AccountResolver } from '../services/AccountResolver';
 import { AccountingService } from '../services/AccountingService';
 import DashboardCustomizer from '../components/DashboardCustomizer';
 import InventoryImpactModal from '../components/InventoryImpactModal';
+import OperatingProfitabilityPanel from '../components/OperatingProfitabilityPanel';
 
 type DashboardPeriodType = 'hoy' | 'semana' | 'mes' | 'anio' | 'custom';
 
@@ -36,6 +39,22 @@ const DashboardScreen: React.FC = () => {
   const [movementsToday, setMovementsToday] = useState<AccountMovement[]>([]);
   const [lastCorte, setLastCorte] = useState<any>(null);
   const [invAccount, setInvAccount] = useState<AccountingAccount | null>(null);
+
+  // Financial Engine Settings & Catalog for Operating Profitability Analysis
+  const [costMargins, setCostMargins] = useState<Record<string, number>>({
+    abarrotes: 83.33,
+    fiesta: 75.00,
+    recargas: 95.00,
+    estancias: 50.00,
+    otros: 80.00
+  });
+  const [sobrantesComoVentas, setSobrantesComoVentas] = useState(false);
+  const [catalog, setCatalog] = useState<Array<{
+    productKey: string;
+    Nombre_Completo: string;
+    Costo_unidad: number;
+    Categoria: string;
+  }>>([]);
 
   const [periodType, setPeriodType] = useState<DashboardPeriodType>('hoy');
   const [customStart, setCustomStart] = useState<string>(() => {
@@ -193,8 +212,56 @@ const DashboardScreen: React.FC = () => {
     };
   }, [user?.uid, dateRange.start.getTime(), dateRange.end.getTime()]);
 
+  // Load Financial Engine Settings and Costs Catalog for Rentabilidad Analysis
+  useEffect(() => {
+    if (!user?.uid) return;
+    const loadSettingsAndCatalog = async () => {
+      try {
+        const settingsSnap = await getDoc(doc(db, "users", user.uid, "settings", "financial_engine"));
+        if (settingsSnap.exists()) {
+          const data = settingsSnap.data();
+          if (data.costMargins) setCostMargins(data.costMargins);
+          if (data.sobrantesComoVentas !== undefined) setSobrantesComoVentas(data.sobrantesComoVentas);
+        }
+
+        const prodsSnap = await getDocs(collection(db, "products"));
+        const costsSnap = await getDocs(collection(db, "costs_catalog"));
+        
+        const prodsMap = new Map<string, string>();
+        prodsSnap.docs.forEach(d => {
+          const data = d.data();
+          prodsMap.set(d.id, data.Categoría || data.Categoria || 'Abarrotes');
+        });
+
+        const catData = costsSnap.docs.map(d => {
+          const data = d.data();
+          const productKey = d.id;
+          return {
+            productKey,
+            Nombre_Completo: String(data.Nombre_Completo || ''),
+            Costo_unidad: data.Costo_unidad ? parseFloat(String(data.Costo_unidad).replace(/[$,]/g, '')) : 0,
+            Categoria: prodsMap.get(productKey) || 'Abarrotes'
+          };
+        });
+        setCatalog(catData);
+      } catch (err) {
+        console.error("Error loading dashboard profitability settings:", err);
+      }
+    };
+    loadSettingsAndCatalog();
+  }, [user?.uid]);
+
   const totals = useMemo(() => AccountingService.calculateTotals(movementsToday), [movementsToday]);
   const statsByAccount = useMemo(() => AccountingService.groupStatsByAccount(movementsToday), [movementsToday]);
+
+  // Automated Operating Profitability Analysis (Ventas - COGS = Utilidad Bruta - Gastos Operativos = Utilidad Operativa)
+  const operatingProfitability = useMemo(() => {
+    return AccountingService.calculateOperatingProfitability(movementsToday, {
+      catalog,
+      costMargins,
+      sobrantesComoVentas
+    });
+  }, [movementsToday, catalog, costMargins, sobrantesComoVentas]);
 
   const salesStats = useMemo(() => {
     const salesAccounts = ['ventas', 'fiesta', 'estancias', 'recargas'];
@@ -482,24 +549,33 @@ const DashboardScreen: React.FC = () => {
           </div>
         </section>
 
+        {/* PANEL: ANÁLISIS DE RENTABILIDAD OPERATIVA (AUTOMATIZADO) */}
+        <section className="animate-in fade-in duration-300">
+          <OperatingProfitabilityPanel 
+            data={operatingProfitability} 
+            periodLabel={periodLabel}
+            onNavigateToStats={() => navigate('/finance-stats')}
+          />
+        </section>
+
         {/* SECCIÓN: ANÁLISIS Y RENDIMIENTO DEL NEGOCIO */}
         <section className="animate-in fade-in duration-300 space-y-4">
           {/* Opción 3: Relación de Gastos Operativos */}
-          <div id="metric-eficiencia-caja" className="bg-white dark:bg-surface-dark border border-slate-200 dark:border-white/5 rounded-[2rem] p-6 shadow-sm relative overflow-hidden flex items-center justify-between">
-            <div>
+          <div id="metric-eficiencia-caja" className="bg-white dark:bg-surface-dark border border-slate-200 dark:border-white/5 rounded-[2rem] p-6 shadow-sm relative overflow-hidden flex flex-col sm:flex-row sm:items-center justify-between gap-3 min-w-0">
+            <div className="min-w-0">
               <div className="flex items-center gap-1.5 text-slate-500 dark:text-slate-400 mb-1.5">
-                <span className="material-symbols-outlined text-base">percent</span>
-                <p className="text-[9px] font-black uppercase tracking-tight">Relación Gastos/Ingresos {periodLabel}</p>
+                <span className="material-symbols-outlined text-base shrink-0">percent</span>
+                <p className="text-[9px] font-black uppercase tracking-tight truncate">Relación Gastos/Ingresos {periodLabel}</p>
               </div>
               <h3 className="text-2xl font-black font-mono tracking-tight text-amber-600 dark:text-[#fbe567] break-all leading-none">
                 {loading ? '...' : `${relacionGastosIngresos.toFixed(1)}%`}
               </h3>
             </div>
-            <div className="text-right shrink-0">
+            <div className="text-left sm:text-right shrink-0 min-w-0">
               <p className="text-[8px] font-bold text-slate-400 uppercase tracking-tight">
                 De los ingresos del periodo
               </p>
-              <p className="text-[10px] font-mono text-slate-500 dark:text-slate-400 mt-1">
+              <p className="text-[10px] font-mono text-slate-500 dark:text-slate-400 mt-0.5 break-all">
                 {formatMXN(totals.expense)} / {formatMXN(totals.income)}
               </p>
             </div>

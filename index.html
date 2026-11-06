@@ -4,8 +4,11 @@
 <head>
     <meta charset="utf-8"/>
     <meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" name="viewport"/>
-    <title>Miscelánea F1 Intelligence</title>
-    <link rel="manifest" href="./manifest.json">
+    <title>Abarrotes F1</title>
+    <meta name="description" content="Sistema inteligente de gestión para Abarrotes y Miscelánea F1 con análisis de IA y control financiero."/>
+    <meta property="og:title" content="Abarrotes F1"/>
+    <meta property="og:description" content="Sistema inteligente de gestión para Abarrotes y Miscelánea F1 con análisis de IA y control financiero."/>
+    <link rel="manifest" href="/manifest.json">
     <meta name="theme-color" content="#2563eb">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -112,27 +115,22 @@
 </head>
 <body class="bg-background-light dark:bg-background-dark font-display text-slate-900 dark:text-white transition-colors duration-200 antialiased selection:bg-primary selection:text-white">
     <div id="root"></div>
-    <script type="module" src="./index.tsx"></script>
+    <script type="module" src="/index.tsx"></script>
     <script>
-      // Only register Service Worker if NOT in development to prevent caching of dynamic Vite dev files
-      const isDevEnv = window.location.hostname.includes('localhost') || 
-                       window.location.hostname.includes('127.0.0.1') || 
-                       window.location.hostname.includes('ais-dev-') ||
-                       window.location.hostname.includes('ais-pre-');
+      // Clear any legacy service workers and caches completely
       if ('serviceWorker' in navigator) {
-        if (isDevEnv) {
-          navigator.serviceWorker.getRegistrations().then((registrations) => {
-            for (const registration of registrations) {
-              registration.unregister().then(() => console.log('🔄 SW unregistered for development'));
-            }
-          });
-        } else {
-          window.addEventListener('load', () => {
-            navigator.serviceWorker.register('./sw.js').then(reg => {
-              console.log('SW Registered', reg.scope);
-            }).catch(err => console.log('SW registration failed', err));
-          });
-        }
+        navigator.serviceWorker.getRegistrations().then((registrations) => {
+          for (const registration of registrations) {
+            registration.unregister();
+          }
+        });
+      }
+      if ('caches' in window) {
+        caches.keys().then((names) => {
+          for (const name of names) {
+            caches.delete(name);
+          }
+        });
       }
     </script>
 </body>

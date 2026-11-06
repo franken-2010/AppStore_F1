@@ -1,160 +1,55 @@
-
-import { GoogleGenAI, Type } from "@google/genai";
 import { ChatMessage } from "../types";
+import {
+  NetworkService,
+  GeminiDiagnosticReport,
+  GeminiServerStatus,
+  logGemini403Diagnostic,
+  is403PermissionError,
+  safeJsonFetch,
+  CLEAR_403_USER_MESSAGE,
+} from "./networkService";
 
+export {
+  NetworkService,
+  logGemini403Diagnostic,
+  is403PermissionError,
+  safeJsonFetch,
+  CLEAR_403_USER_MESSAGE,
+};
+export type { GeminiDiagnosticReport, GeminiServerStatus };
+
+/**
+ * GeminiService delegates all calls to NetworkService,
+ * applying the 403 diagnostic interception routine.
+ */
 export class GeminiService {
+  /**
+   * Retrieves server-side status of Gemini configuration and active engine
+   */
+  static async getStatus(): Promise<GeminiServerStatus> {
+    return NetworkService.getGeminiStatus();
+  }
+
+  /**
+   * Diagnostic routine to test and verify the Gemini API health and credentials
+   */
+  static async runDiagnostic(): Promise<GeminiDiagnosticReport> {
+    return NetworkService.runGeminiDiagnostic();
+  }
+
   static async chatWithContext(messages: ChatMessage[], userName: string): Promise<string> {
-    try {
-      const apiKey = String(process.env.API_KEY || '');
-      if (!apiKey) return "Error: API Key no configurada.";
-
-      const ai = new GoogleGenAI({ apiKey });
-      
-      const history = messages
-        .filter(m => m.role === 'user' || m.role === 'model')
-        .map(m => ({
-          role: m.role as 'user' | 'model',
-          parts: [{ text: String(m.text || '').trim() }]
-        }));
-
-      while (history.length > 0 && history[0].role !== 'user') {
-        history.shift();
-      }
-
-      if (history.length === 0) return "No hay historial válido para procesar.";
-
-      const response = await ai.models.generateContent({
-        model: 'gemini-3-pro-preview',
-        contents: history,
-        config: {
-          systemInstruction: `Eres F1-AI, asistente de "Abarrotes F1". Admin: ${String(userName)}. Ayuda con el inventario y finanzas de la tienda. Sé conciso y profesional.`,
-        }
-      });
-
-      return response.text || "Lo siento, no pude procesar tu solicitud.";
-    } catch (error: any) {
-      console.error("AI Chat Error:", error?.message || "Unknown error");
-      return `Error al conectar con F1-AI: ${error?.message || ''}`;
-    }
+    return NetworkService.chatWithContext(messages, userName);
   }
 
   static async parseCorteText(rawText: string, fecha: string): Promise<any> {
-    try {
-      const apiKey = String(process.env.API_KEY || '');
-      const ai = new GoogleGenAI({ apiKey });
-      const promptText = `Analiza este reporte de corte del día ${String(fecha)} y extrae los montos numéricos. 
-      Ignora símbolos de pesos, comas, acentos y mayúsculas. 
-      Si un concepto no existe, usa 0. 
-      
-      REGLAS DE MAPEO:
-      - "ventas" -> ventas efectivo normales.
-      - "fiesta" -> ventas rubro fiesta.
-      - "recargas" -> ventas tiempo aire.
-      - "estancias" -> ingresos por estancias.
-      - "pagoClientes" -> cobros de deudas, pagos cxc, clientes pagaron.
-      - "cxc" -> ventas a credito realizadas (ingreso no efectivo).
-      - "mercancias" -> gastos abarrotes, gastos recargas.
-      - "fiesta" (en expenses) -> gastos en fiesta, gasto fiesta, fiesta, compra fiesta, mercancía fiesta, producto fiesta (solo si es egreso/gasto). PRIORIDAD: Si el gasto menciona "fiesta", asígnale este campo y NO a mercancias.
-      - "gastosAdministrativos" -> SOLO gastos de administración explícitos o que mencionen "gastos administrativos", "renta del local" o "mantenimiento del local". (OJO: No metas aquí el consumo o sueldos de empleados).
-      - "sueldos" -> gastos por sueldos de empleados, pago de empleados, nomina, salarios, sueldos o textos similares.
-      - "consumoEmpleados" -> consumo o productos que los empleados tomaron o consumieron de la propia tienda, o deudas de empleados por consumo en la tienda, o textos que digan "consumo de empleados". (OJO: No confundir con sueldos o pago de empleados).
-      - "consumoPersonal" -> gastos del dueño o uso personal.
-      - "dineroEntregado" -> efectivo final reportado.
- 
-      Reporte: ${String(rawText)}`;
-
-      const response = await ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
-        contents: { parts: [{ text: promptText }] },
-        config: {
-          systemInstruction: `Eres un extractor de datos contables F1. Devuelve un JSON estricto con el schema canonical.`,
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              income: { 
-                type: Type.OBJECT, 
-                properties: { 
-                  ventas: { type: Type.NUMBER }, 
-                  fiesta: { type: Type.NUMBER }, 
-                  recargas: { type: Type.NUMBER }, 
-                  estancias: { type: Type.NUMBER }, 
-                  pagoClientes: { type: Type.NUMBER }, 
-                  cxc: { type: Type.NUMBER }
-                } 
-              },
-              expenses: { 
-                type: Type.OBJECT, 
-                properties: { 
-                  mercancias: { type: Type.NUMBER }, 
-                  fiesta: { type: Type.NUMBER },
-                  gastosAdministrativos: { type: Type.NUMBER }, 
-                  sueldos: { type: Type.NUMBER },
-                  consumoEmpleados: { type: Type.NUMBER },
-                  consumoPersonal: { type: Type.NUMBER } 
-                } 
-              },
-              cash: {
-                type: Type.OBJECT,
-                properties: {
-                  dineroEntregado: { type: Type.NUMBER }
-                }
-              }
-            },
-            required: ["income", "expenses", "cash"]
-          }
-        }
-      });
-      
-      return JSON.parse(response.text || '{}');
-    } catch (error: any) {
-      console.error("Parse Error:", error?.message || "Unknown error");
-      throw new Error(error?.message || "Error analizando reporte");
-    }
+    return NetworkService.parseCorteText(rawText, fecha);
   }
 
   static async parseOrderText(rawText: string): Promise<any> {
-    try {
-      const apiKey = String(process.env.API_KEY || '');
-      const ai = new GoogleGenAI({ apiKey });
-      const response = await ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
-        contents: { parts: [{ text: String(rawText) }] },
-        config: {
-          systemInstruction: `Eres un experto en logística para "Abarrotes F1". Tu tarea es extraer items de una lista de pedido.
-          REGLAS:
-          1. Identifica el nombre del producto de forma clara (rawName).
-          2. Extrae la cantidad (qty) y la unidad (unit: pza, kg, caja, bulto, etc).
-          3. Identifica notas o especificaciones (notes).
-          4. Genera una lista de palabras clave de búsqueda (searchKeywords). Estas deben ser solo los términos más descriptivos del producto (marca, tipo, tamaño/peso) para facilitar el match en una base de datos.
-          5. Si un item no es claro, trata de inferir el producto más probable.`,
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              items: {
-                type: Type.ARRAY,
-                items: {
-                  type: Type.OBJECT,
-                  properties: {
-                    rawName: { type: Type.STRING },
-                    qty: { type: Type.NUMBER },
-                    unit: { type: Type.STRING },
-                    notes: { type: Type.ARRAY, items: { type: Type.STRING } },
-                    searchKeywords: { type: Type.ARRAY, items: { type: Type.STRING } }
-                  },
-                  required: ["rawName", "qty", "unit", "notes", "searchKeywords"]
-                }
-              }
-            },
-            required: ["items"]
-          }
-        }
-      });
-      return JSON.parse(response.text || '{"items":[]}');
-    } catch (error: any) {
-      console.error("Order Parser Error:", error?.message || "Unknown error");
-      throw new Error(error?.message || "Error procesando pedido");
-    }
+    return NetworkService.parseOrderText(rawText);
+  }
+
+  static async generateAvatar(prompt?: string): Promise<string> {
+    return NetworkService.generateAvatar(prompt);
   }
 }

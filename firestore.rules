@@ -1,0 +1,477 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // =========================================================================
+    // 0. GLOBAL DEFAULT-DENY CATCH-ALL (Zero-Trust Safety Net)
+    // =========================================================================
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // =========================================================================
+    // 1. GLOBAL SECURITY PRIMITIVES
+    // =========================================================================
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isValidId(id) {
+      return id is string
+        && id.size() >= 1
+        && id.size() <= 128
+        && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    // Verified Admin: explicit /admins/{uid} document OR verified owner email
+    // Strictly requires email_verified == true to prevent email spoofing.
+    function isBootstrappedOwnerEmail() {
+      return isSignedIn()
+        && request.auth.token.email == 'darionaviar@gmail.com'
+        && request.auth.token.email_verified == true;
+    }
+
+    function isVerifiedAdmin() {
+      return isSignedIn() && (
+        isBootstrappedOwnerEmail() ||
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+      );
+    }
+
+    // =========================================================================
+    // 2. ENTITY VALIDATION BLUEPRINTS (Anti-Update-Gap & Volumetric Bounds)
+    // =========================================================================
+    function isValidAdminRecord(data) {
+      return data is map
+        && data.keys().hasAll(['uid', 'email'])
+        && data.keys().hasOnly(['uid', 'email', 'grantedAt'])
+        && data.uid is string && data.uid.size() >= 1 && data.uid.size() <= 128
+        && data.email is string && data.email.size() >= 3 && data.email.size() <= 254
+        && (!('grantedAt' in data) || data.grantedAt is timestamp);
+    }
+
+    function isValidDashboardConfig(cfg) {
+      return cfg is map
+        && cfg.keys().size() <= 10
+        && (!('showBalance' in cfg) || cfg.showBalance is bool)
+        && (!('showPerformance' in cfg) || cfg.showPerformance is bool)
+        && (!('showLogistics' in cfg) || cfg.showLogistics is bool)
+        && (!('showClosings' in cfg) || cfg.showClosings is bool)
+        && (!('performanceAccounts' in cfg) || (
+          cfg.performanceAccounts is list
+          && cfg.performanceAccounts.size() <= 30
+          && (cfg.performanceAccounts.size() == 0 || (cfg.performanceAccounts[0] is string && cfg.performanceAccounts[0].size() <= 128))
+        ));
+    }
+
+    function isValidUserProfile(data) {
+      return data is map
+        && data.keys().hasAll(['uid', 'email', 'displayName', 'role'])
+        && data.keys().hasOnly(['uid', 'email', 'displayName', 'photoURL', 'role', 'dashboardConfig', 'createdAt', 'updatedAt'])
+        && data.uid is string && data.uid.size() >= 1 && data.uid.size() <= 128
+        && data.email is string && data.email.size() >= 3 && data.email.size() <= 254
+        && data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 120
+        && data.role is string && data.role.size() <= 20 && (data.role == 'operator' || data.role == 'admin')
+        && (!('photoURL' in data) || (data.photoURL is string && data.photoURL.size() <= 900000))
+        && (!('dashboardConfig' in data) || isValidDashboardConfig(data.dashboardConfig))
+        && (!('createdAt' in data) || data.createdAt is timestamp)
+        && (!('updatedAt' in data) || data.updatedAt is timestamp);
+    }
+
+    function isValidCategory(data) {
+      return data is map
+        && data.keys().hasAll(['name', 'accountingType'])
+        && data.keys().size() <= 10
+        && data.name is string && data.name.size() >= 1 && data.name.size() <= 100
+        && data.accountingType is string && data.accountingType.size() >= 1 && data.accountingType.size() <= 40
+        && (!('order' in data) || data.order is number)
+        && (!('color' in data) || (data.color is string && data.color.size() <= 40))
+        && (!('enableDirectAdminExpenses' in data) || data.enableDirectAdminExpenses is bool)
+        && (!('createdAt' in data) || data.createdAt is timestamp)
+        && (!('updatedAt' in data) || data.updatedAt is timestamp);
+    }
+
+    function isValidAccount(data) {
+      return data is map
+        && data.keys().hasAll(['name', 'type', 'balance'])
+        && data.keys().size() <= 20
+        && data.name is string && data.name.size() >= 1 && data.name.size() <= 120
+        && data.type is string && data.type.size() >= 1 && data.type.size() <= 40
+        && data.balance is number
+        && (!('accountId' in data) || (data.accountId is string && data.accountId.size() <= 128))
+        && (!('code' in data) || (data.code is string && data.code.size() <= 60))
+        && (!('categoryId' in data) || data.categoryId == null || (data.categoryId is string && data.categoryId.size() <= 128))
+        && (!('initialBalance' in data) || data.initialBalance is number)
+        && (!('order' in data) || data.order is number)
+        && (!('isVisible' in data) || data.isVisible is bool)
+        && (!('isContable' in data) || data.isContable is bool)
+        && (!('inventoryMin' in data) || data.inventoryMin == null || data.inventoryMin is number)
+        && (!('inventoryMax' in data) || data.inventoryMax == null || data.inventoryMax is number)
+        && (!('description' in data) || (data.description is string && data.description.size() <= 500))
+        && (!('createdAt' in data) || data.createdAt is timestamp)
+        && (!('updatedAt' in data) || data.updatedAt is timestamp);
+    }
+
+    function isValidMovement(data) {
+      return data is map
+        && data.keys().size() >= 2
+        && data.keys().size() <= 45
+        && data.uid is string && data.uid.size() >= 1 && data.uid.size() <= 128
+        && data.amount is number
+        && (!('accountId' in data) || (data.accountId is string && data.accountId.size() <= 128))
+        && (!('type' in data) || (data.type is string && data.type.size() <= 32))
+        && (!('direction' in data) || (data.direction is string && data.direction.size() <= 10))
+        && (!('signedAmount' in data) || data.signedAmount is number)
+        && (!('rubro' in data) || (data.rubro is string && data.rubro.size() <= 80))
+        && (!('conceptTitle' in data) || (data.conceptTitle is string && data.conceptTitle.size() <= 240))
+        && (!('conceptSubtitle' in data) || (data.conceptSubtitle is string && data.conceptSubtitle.size() <= 300))
+        && (!('notes' in data) || (data.notes is string && data.notes.size() <= 2000))
+        && (!('texto_original' in data) || (data.texto_original is string && data.texto_original.size() <= 4000))
+        && (!('source' in data) || (data.source is string && data.source.size() <= 80))
+        && (!('status' in data) || (data.status is string && data.status.size() <= 40))
+        && (!('createdAt' in data) || data.createdAt is timestamp);
+    }
+
+    function isValidAccountIndex(data) {
+      return data is map
+        && data.keys().hasAll(['accountId', 'accountDocId', 'isActive'])
+        && data.keys().size() <= 15
+        && data.accountId is string && data.accountId.size() >= 1 && data.accountId.size() <= 128
+        && data.accountDocId is string && data.accountDocId.size() >= 1 && data.accountDocId.size() <= 128
+        && data.isActive is bool
+        && (!('name' in data) || (data.name is string && data.name.size() <= 120))
+        && (!('type' in data) || (data.type is string && data.type.size() <= 40));
+    }
+
+    function isValidCorte(data) {
+      return data is map
+        && data.keys().size() >= 2
+        && data.keys().size() <= 15
+        && data.fecha is string && data.fecha.size() >= 1 && data.fecha.size() <= 32
+        && (!('admin' in data) || (data.admin is string && data.admin.size() <= 120))
+        && (!('status' in data) || (data.status is string && data.status.size() <= 40))
+        && (!('audit' in data) || (data.audit is map && data.audit.keys().size() <= 30))
+        && (!('createdAt' in data) || data.createdAt is timestamp);
+    }
+
+    function isValidNotification(data) {
+      return data is map
+        && data.keys().hasAll(['title', 'message'])
+        && data.keys().size() <= 12
+        && data.title is string && data.title.size() >= 1 && data.title.size() <= 160
+        && data.message is string && data.message.size() <= 1000
+        && (!('uid' in data) || (data.uid is string && data.uid.size() <= 128))
+        && (!('type' in data) || (data.type is string && data.type.size() <= 40))
+        && (!('read' in data) || data.read is bool);
+    }
+
+    function isValidOrderHistory(data) {
+      return data is map
+        && data.keys().hasAll(['uid', 'rawInput', 'finalText'])
+        && data.keys().size() <= 12
+        && data.uid is string && data.uid.size() >= 1 && data.uid.size() <= 128
+        && data.rawInput is string && data.rawInput.size() <= 25000
+        && data.finalText is string && data.finalText.size() <= 30000
+        && (!('notFoundCount' in data) || data.notFoundCount is number);
+    }
+
+    function isValidPriceUpdateJob(data) {
+      return data is map
+        && data.keys().hasAll(['uid', 'status'])
+        && data.keys().size() <= 15
+        && data.uid is string && data.uid.size() >= 1 && data.uid.size() <= 128
+        && data.status is string && data.status.size() <= 40
+        && (!('itemsPreview' in data) || (data.itemsPreview is list && data.itemsPreview.size() <= 200));
+    }
+
+    function isValidSetting(data) {
+      return data is map
+        && data.keys().size() <= 15
+        && (!('costMargins' in data) || (data.costMargins is map && data.costMargins.keys().size() <= 20))
+        && (!('sobrantesComoVentas' in data) || data.sobrantesComoVentas is bool);
+    }
+
+    function isValidSupplierContact(data) {
+      return data is map
+        && data.keys().hasAll(['uid', 'supplierName', 'isActive'])
+        && data.keys().hasOnly([
+          'uid', 'supplierName', 'contactName', 'whatsappPhone',
+          'phoneRaw', 'searchName', 'isActive', 'createdAt', 'updatedAt'
+        ])
+        && data.uid is string && data.uid.size() >= 1 && data.uid.size() <= 128
+        && data.supplierName is string && data.supplierName.size() >= 1 && data.supplierName.size() <= 160
+        && data.isActive is bool
+        && (!('contactName' in data) || (data.contactName is string && data.contactName.size() <= 160))
+        && (!('whatsappPhone' in data) || (data.whatsappPhone is string && data.whatsappPhone.size() <= 32))
+        && (!('phoneRaw' in data) || (data.phoneRaw is string && data.phoneRaw.size() <= 40))
+        && (!('searchName' in data) || (data.searchName is string && data.searchName.size() <= 320));
+    }
+
+    function isValidCatalogDoc(data) {
+      return data is map
+        && data.keys().size() >= 1
+        && data.keys().size() <= 60
+        && (!('ProductKey' in data) || (data.ProductKey is string && data.ProductKey.size() <= 128))
+        && (!('Nombre_Completo' in data) || (data.Nombre_Completo is string && data.Nombre_Completo.size() <= 300))
+        && (!('searchName' in data) || (data.searchName is string && data.searchName.size() <= 300))
+        && (!('searchTokens' in data) || (
+          data.searchTokens is list
+          && data.searchTokens.size() <= 60
+          && (data.searchTokens.size() == 0 || (data.searchTokens[0] is string && data.searchTokens[0].size() <= 80))
+        ));
+    }
+
+    function isValidCounter(data) {
+      return data is map
+        && data.keys().hasOnly(['lastProductoID'])
+        && data.lastProductoID is number
+        && data.lastProductoID >= 0;
+    }
+
+    function isValidAdminJob(data) {
+      return data is map
+        && data.keys().hasAll(['type', 'status'])
+        && data.keys().size() <= 15
+        && data.type is string && data.type.size() >= 1 && data.type.size() <= 80
+        && data.status is string && data.status.size() >= 1 && data.status.size() <= 40
+        && (!('uid' in data) || (data.uid is string && data.uid.size() <= 128));
+    }
+
+    // =========================================================================
+    // 3. ADMINISTRATOR REGISTRY (/admins/{adminId})
+    // =========================================================================
+    match /admins/{adminId} {
+      allow get: if isSignedIn() && isValidId(adminId) && (request.auth.uid == adminId || isVerifiedAdmin());
+      allow list: if false;
+      allow create, update: if isVerifiedAdmin() && isValidId(adminId) && isValidAdminRecord(incoming());
+      allow delete: if isVerifiedAdmin() && isValidId(adminId);
+    }
+
+    // =========================================================================
+    // 4. USER PROFILES & PRIVATE TENANT SUBCOLLECTIONS (/users/{userId}/...)
+    // =========================================================================
+    match /users/{userId} {
+      // Strictly isolate PII (email, displayName, avatar) to the account owner or verified admin
+      allow get: if isSignedIn() && isValidId(userId) && (isOwner(userId) || isVerifiedAdmin());
+      allow list: if false;
+
+      // Prevent self-assigned admin privileges during registration
+      allow create: if isOwner(userId)
+        && isValidId(userId)
+        && isValidUserProfile(incoming())
+        && incoming().uid == request.auth.uid
+        && (incoming().role == 'operator' || (incoming().role == 'admin' && isVerifiedAdmin()));
+
+      // Action-Based Update Pattern: block role/uid/email tampering by non-admins
+      allow update: if isSignedIn()
+        && isValidId(userId)
+        && isValidUserProfile(incoming())
+        && (
+          isVerifiedAdmin() ||
+          (
+            isOwner(userId)
+            && incoming().uid == existing().uid
+            && incoming().role == existing().role
+            && incoming().email == existing().email
+            && (
+              incoming().diff(existing()).affectedKeys().hasOnly(['photoURL']) ||
+              incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'photoURL']) ||
+              incoming().diff(existing()).affectedKeys().hasOnly(['dashboardConfig'])
+            )
+          )
+        );
+
+      allow delete: if isVerifiedAdmin() && isValidId(userId);
+
+      // 4.1 Accounting Categories
+      match /categories/{categoryId} {
+        allow get: if isValidId(userId) && isValidId(categoryId) && (isOwner(userId) || isVerifiedAdmin());
+        allow list: if isOwner(userId) && existing().size() >= 0;
+        allow create: if isOwner(userId) && isValidId(userId) && isValidId(categoryId) && isValidCategory(incoming());
+        allow update: if isOwner(userId) && isValidId(userId) && isValidId(categoryId) && isValidCategory(incoming());
+        allow delete: if isOwner(userId) && isValidId(userId) && isValidId(categoryId);
+      }
+
+      // 4.2 Accounting Accounts & Nested Movements
+      match /accounts/{accountId} {
+        allow get: if isValidId(userId) && isValidId(accountId) && (isOwner(userId) || isVerifiedAdmin());
+        allow list: if isOwner(userId) && existing().size() >= 0;
+        allow create: if isOwner(userId) && isValidId(userId) && isValidId(accountId) && isValidAccount(incoming());
+        allow update: if isOwner(userId) && isValidId(userId) && isValidId(accountId) && isValidAccount(incoming());
+        allow delete: if isOwner(userId) && isValidId(userId) && isValidId(accountId);
+
+        match /movements/{movementId} {
+          allow get: if isValidId(userId) && isValidId(accountId) && isValidId(movementId) && (isOwner(userId) || isVerifiedAdmin());
+          allow list: if isOwner(userId) && existing().size() >= 0;
+          allow create: if isOwner(userId)
+            && isValidId(userId)
+            && isValidId(accountId)
+            && isValidId(movementId)
+            && isValidMovement(incoming())
+            && incoming().uid == request.auth.uid;
+          allow update: if isOwner(userId)
+            && isValidId(userId)
+            && isValidId(accountId)
+            && isValidId(movementId)
+            && isValidMovement(incoming())
+            && incoming().uid == request.auth.uid;
+          allow delete: if isOwner(userId) && isValidId(userId) && isValidId(accountId) && isValidId(movementId);
+        }
+      }
+
+      // 4.3 Canonical Account Index
+      match /accountIndex/{indexId} {
+        allow get: if isValidId(userId) && isValidId(indexId) && (isOwner(userId) || isVerifiedAdmin());
+        allow list: if isOwner(userId) && existing().size() >= 0;
+        allow create, update: if isOwner(userId) && isValidId(userId) && isValidId(indexId) && isValidAccountIndex(incoming());
+        allow delete: if isOwner(userId) && isValidId(userId) && isValidId(indexId);
+      }
+
+      // 4.4 Daily Closings (Cortes)
+      match /cortes/{corteId} {
+        allow get: if isValidId(userId) && isValidId(corteId) && (isOwner(userId) || isVerifiedAdmin());
+        allow list: if isOwner(userId) && existing().size() >= 0;
+        allow create, update: if isOwner(userId) && isValidId(userId) && isValidId(corteId) && isValidCorte(incoming());
+        allow delete: if isOwner(userId) && isValidId(userId) && isValidId(corteId);
+      }
+
+      // 4.5 User Notifications
+      match /notifications/{notificationId} {
+        allow get: if isValidId(userId) && isValidId(notificationId) && (isOwner(userId) || isVerifiedAdmin());
+        allow list: if isOwner(userId) && existing().size() >= 0;
+        allow create, update: if isOwner(userId)
+          && isValidId(userId)
+          && isValidId(notificationId)
+          && isValidNotification(incoming())
+          && (!('uid' in incoming()) || incoming().uid == request.auth.uid);
+        allow delete: if isOwner(userId) && isValidId(userId) && isValidId(notificationId);
+      }
+
+      // 4.6 AI Order History
+      match /orders_history/{orderId} {
+        allow get: if isValidId(userId) && isValidId(orderId) && (isOwner(userId) || isVerifiedAdmin());
+        allow list: if isOwner(userId) && existing().size() >= 0;
+        allow create, update: if isOwner(userId)
+          && isValidId(userId)
+          && isValidId(orderId)
+          && isValidOrderHistory(incoming())
+          && incoming().uid == request.auth.uid;
+        allow delete: if isOwner(userId) && isValidId(userId) && isValidId(orderId);
+      }
+
+      // 4.7 Batch Price Update Jobs
+      match /price_update_jobs/{jobId} {
+        allow get: if isValidId(userId) && isValidId(jobId) && (isOwner(userId) || isVerifiedAdmin());
+        allow list: if isOwner(userId) && existing().size() >= 0;
+        allow create, update: if isOwner(userId)
+          && isValidId(userId)
+          && isValidId(jobId)
+          && isValidPriceUpdateJob(incoming())
+          && incoming().uid == request.auth.uid;
+        allow delete: if isOwner(userId) && isValidId(userId) && isValidId(jobId);
+      }
+
+      // 4.8 Financial Engine Settings
+      match /settings/{settingId} {
+        allow get: if isValidId(userId) && isValidId(settingId) && (isOwner(userId) || isVerifiedAdmin());
+        allow list: if isOwner(userId) && existing().size() >= 0;
+        allow create, update: if isOwner(userId) && isValidId(userId) && isValidId(settingId) && isValidSetting(incoming());
+        allow delete: if isOwner(userId) && isValidId(userId) && isValidId(settingId);
+      }
+    }
+
+    // =========================================================================
+    // 5. COLLECTION GROUP RULE FOR MOVEMENTS (Cross-Account Financial Reports)
+    // =========================================================================
+    match /{path=**}/movements/{movementId} {
+      allow get: if isSignedIn() && isValidId(movementId) && (existing().uid == request.auth.uid || isVerifiedAdmin());
+      allow list: if isSignedIn() && existing().uid == request.auth.uid;
+    }
+
+    // =========================================================================
+    // 6. USER-ISOLATED SUPPLIERS DIRECTORY (/suppliers_directory/{supplierId})
+    // =========================================================================
+    match /suppliers_directory/{supplierId} {
+      allow get: if isSignedIn() && isValidId(supplierId) && (existing().uid == request.auth.uid || isVerifiedAdmin());
+      allow list: if isSignedIn() && existing().uid == request.auth.uid;
+
+      allow create: if isSignedIn()
+        && isValidId(supplierId)
+        && isValidSupplierContact(incoming())
+        && incoming().uid == request.auth.uid;
+
+      allow update: if isSignedIn()
+        && isValidId(supplierId)
+        && isValidSupplierContact(incoming())
+        && (
+          isVerifiedAdmin() ||
+          (
+            existing().uid == request.auth.uid
+            && incoming().uid == existing().uid
+          )
+        );
+
+      allow delete: if isSignedIn()
+        && isValidId(supplierId)
+        && (existing().uid == request.auth.uid || isVerifiedAdmin());
+    }
+
+    // =========================================================================
+    // 7. STORE-WIDE CATALOGS (Read: Authenticated Store Staff, Write: Admin)
+    // =========================================================================
+    match /products/{productKey} {
+      allow get: if isSignedIn() && isValidId(productKey);
+      allow list: if isSignedIn() && existing().size() > 0;
+      allow create, update: if isVerifiedAdmin() && isValidId(productKey) && isValidCatalogDoc(incoming());
+      allow delete: if isVerifiedAdmin() && isValidId(productKey);
+    }
+
+    match /providers/{productKey} {
+      allow get: if isSignedIn() && isValidId(productKey);
+      allow list: if isSignedIn() && existing().size() > 0;
+      allow create, update: if isVerifiedAdmin() && isValidId(productKey) && isValidCatalogDoc(incoming());
+      allow delete: if isVerifiedAdmin() && isValidId(productKey);
+    }
+
+    match /costs_catalog/{productKey} {
+      allow get: if isSignedIn() && isValidId(productKey);
+      allow list: if isSignedIn() && existing().size() > 0;
+      allow create, update: if isVerifiedAdmin() && isValidId(productKey) && isValidCatalogDoc(incoming());
+      allow delete: if isVerifiedAdmin() && isValidId(productKey);
+    }
+
+    // =========================================================================
+    // 8. SEQUENTIAL COUNTERS & ADMIN MAINTENANCE JOBS (Admin-Only)
+    // =========================================================================
+    match /counters/{counterId} {
+      allow get: if isVerifiedAdmin() && isValidId(counterId);
+      allow list: if false;
+      allow create, update: if isVerifiedAdmin() && isValidId(counterId) && isValidCounter(incoming());
+      allow delete: if isVerifiedAdmin() && isValidId(counterId);
+    }
+
+    match /admin_jobs/{jobId} {
+      allow get: if isVerifiedAdmin() && isValidId(jobId);
+      // Avoid exists() inside allow list to prevent O(n) read charges
+      allow list: if isSignedIn() && (
+        existing().uid == request.auth.uid ||
+        (isBootstrappedOwnerEmail() && existing().size() > 0)
+      );
+      allow create, update: if isVerifiedAdmin() && isValidId(jobId) && isValidAdminJob(incoming());
+      allow delete: if isVerifiedAdmin() && isValidId(jobId);
+    }
+  }
+}

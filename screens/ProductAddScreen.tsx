@@ -170,8 +170,13 @@ const ProductAddScreen: React.FC = () => {
       // C2) costs_catalog
       const costRef = doc(db, "costs_catalog", ProductKey);
       batch.set(costRef, {
-        ProductKey, ProductoID: newProductoID, Nombre_Completo,
-        Uni_por_caja: uniPorCajaNum, "Utilidad_%": formData.utilidad,
+        ProductKey, 
+        ProductoID: newProductoID, 
+        Nombre_Completo,
+        Proveedor: formData.proveedor,
+        Categoría: formData.categoria,
+        Uni_por_caja: uniPorCajaNum, 
+        "Utilidad_%": formData.utilidad,
         Costo_base_principal: formatCurrency(costoBaseNum),
         Costo_unidad: formatCurrency(costoUnidadNum),
         Precio_sugerido: formatCurrency(precioSugeridoNum),

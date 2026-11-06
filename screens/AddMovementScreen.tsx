@@ -349,8 +349,9 @@ const AddMovementScreen: React.FC = () => {
             afectaCxC: false,
             afecta_inventario: 'no',
             afectaInventario: false,
-            es_control: 'no',
-            esControl: false,
+            afecta_gasto: false,
+            es_control: 'sí',
+            esControl: true,
             origen: 'manual',
             texto_original: `DEBITO ADM (${conceptTitle})`,
             usuario: username

@@ -65,5 +65,13 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
 
   const jsonError = safeStringify(errInfo);
   console.error('Firestore Error: ', jsonError);
+
+  // Si es un error de conectividad o modo offline de Firebase, no lanzar excepción fatal no capturada
+  const errMsg = String(errInfo.error).toLowerCase();
+  if (errMsg.includes('offline') || errMsg.includes('backend') || errMsg.includes('could not reach') || errMsg.includes('unavailable')) {
+    console.warn('Firestore operando en modo offline o reintentando conexión:', errInfo.error);
+    return;
+  }
+
   throw new Error(jsonError);
 }

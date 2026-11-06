@@ -37,6 +37,7 @@ import {
 } from 'recharts';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import OperatingProfitabilityPanel from '../components/OperatingProfitabilityPanel';
 import { 
   ArrowLeft, 
   TrendingUp, 
@@ -338,6 +339,16 @@ const FinanceStatsTotalsScreen: React.FC = () => {
           const d = doc.data() as any;
           if (d.status === 'DELETED' || d.status === 'VOID' || d.status === 'MOVED') return;
           if (d.accountId === 'inventarios') return; // Exclude inventory
+          if (d.source === 'auto_debit' || d.source === 'auto_inventory' || d.source === 'auto_debit_cxc') return;
+
+          const concept = (d.conceptTitle || '').toLowerCase();
+          const account = (d.cuenta_contable || '').toLowerCase();
+          const opType = d.tipo_operacion || '';
+          const rubric = d.rubro || d.accountId || '';
+
+          if (concept.startsWith('control:') || account.includes('valor venta')) return;
+          if (opType === 'consumo_empleados' || opType === 'cortesia' || rubric === 'ex_consumo_empleados' || rubric === 'ex_personal') return;
+          if (opType === 'venta_credito' || rubric === 'in_cxc_venta') return;
           
           if (getAfectaCaja(d)) {
             const amt = Number(d.amount || 0);
@@ -385,230 +396,13 @@ const FinanceStatsTotalsScreen: React.FC = () => {
     handleSaveSettings(costMargins, newVal);
   };
 
-  // MOTOR 1: ESTADO DE RESULTADOS (Rentabilidad)
+  // MOTOR 1: ESTADO DE RESULTADOS (Rentabilidad Operativa Centralizada)
   const rentabilidadEngine = useMemo(() => {
-    let ventasContado = 0;
-    let ventasCredito = 0;
-    let exactCatalogCosts = 0;
-    let estimatedCategoryCosts = 0;
-    
-    const ventasPorCentro: Record<string, { contado: number, credito: number, total: number }> = {
-      Abarrotes: { contado: 0, credito: 0, total: 0 },
-      Fiesta: { contado: 0, credito: 0, total: 0 },
-      Recargas: { contado: 0, credito: 0, total: 0 },
-      Estancias: { contado: 0, credito: 0, total: 0 }
-    };
-
-    const costoPorCentro: Record<string, number> = {
-      Abarrotes: 0,
-      Fiesta: 0,
-      Recargas: 0,
-      Estancias: 0
-    };
-
-    const gastosPorCentro: Record<string, number> = {
-      Abarrotes: 0,
-      Fiesta: 0,
-      Recargas: 0,
-      Estancias: 0
-    };
-
-    let sueldos = 0;
-    let bonos = 0;
-    let renta = 0;
-    let gastosAdministrativos = 0;
-    let consumoEmpleados = 0;
-    let cortesias = 0;
-    let faltantes = 0;
-    let otrosGastos = 0;
-
-    movements.forEach(m => {
-      if (m.status === 'VOID' || m.status === 'DELETED' || m.status === 'MOVED') return;
-      if (m.accountId === 'inventarios') return; // Strict boundary: no inventory modifications
-
-      const amount = Number(m.amount) || 0;
-      const concept = (m.conceptTitle || '').toLowerCase();
-      const opType = m.tipo_operacion || '';
-      const rubric = m.rubro || m.accountId || '';
-      const account = (m.cuenta_contable || '').toLowerCase();
-      const center = getCentroUtilidad(m);
-
-      const isControl = getEsControl(m);
-      const isSale = getAfectaVentas(m);
-      const isCxC = getAfectaCxC(m);
-
-      // Check if it's a sale
-      const isContadoSale = (isSale && !isCxC && !isControl) || opType === 'venta_contado';
-      const isCreditSale = (isSale && isCxC && !isControl) || opType === 'venta_credito';
-      const isSobranteVenta = (opType === 'sobrante_caja' || rubric === 'in_sobrante') && sobrantesComoVentas;
-
-      let isAnySale = false;
-      let saleCenter = center;
-
-      if (isContadoSale || isSobranteVenta) {
-        const actualCenter = isSobranteVenta ? 'Abarrotes' : center;
-        ventasContado += amount;
-        if (ventasPorCentro[actualCenter]) {
-          ventasPorCentro[actualCenter].contado += amount;
-          ventasPorCentro[actualCenter].total += amount;
-        }
-        isAnySale = true;
-        saleCenter = actualCenter;
-      } else if (isCreditSale) {
-        ventasCredito += amount;
-        if (ventasPorCentro[center]) {
-          ventasPorCentro[center].credito += amount;
-          ventasPorCentro[center].total += amount;
-        }
-        isAnySale = true;
-        saleCenter = center;
-      }
-
-      // Cost of sales calculation
-      if (isAnySale) {
-        let matchedCost = 0;
-        let isMatched = false;
-
-        // A. Structured product array
-        if ((m as any).productos && Array.isArray((m as any).productos)) {
-          (m as any).productos.forEach((p: any) => {
-            matchedCost += Number(p.costo || p.cost || 0) * Number(p.cantidad || p.qty || 1);
-          });
-          isMatched = true;
-        } else if ((m as any).items && Array.isArray((m as any).items)) {
-          (m as any).items.forEach((p: any) => {
-            matchedCost += Number(p.costo || p.cost || 0) * Number(p.cantidad || p.qty || 1);
-          });
-          isMatched = true;
-        } else {
-          // B. Exact concept title string match to costs_catalog
-          const matchedProd = catalog.find(p => p.Nombre_Completo.toLowerCase() === m.conceptTitle.trim().toLowerCase());
-          if (matchedProd) {
-            let qty = 1;
-            const qtyMatch = m.conceptTitle.match(/(\d+)\s*x/i) || m.conceptTitle.match(/x\s*(\d+)/i);
-            if (qtyMatch) qty = parseInt(qtyMatch[1]) || 1;
-            
-            matchedCost = matchedProd.Costo_unidad * qty;
-            isMatched = true;
-          }
-        }
-
-        if (isMatched) {
-          exactCatalogCosts += matchedCost;
-          if (costoPorCentro[saleCenter] !== undefined) {
-            costoPorCentro[saleCenter] += matchedCost;
-          }
-        } else {
-          // C. Fallback: Configurable average cost percentage
-          const costPct = costMargins[saleCenter.toLowerCase()] || costMargins.abarrotes || 83.33;
-          const estimatedCost = Number((amount * (costPct / 100)).toFixed(2));
-          estimatedCategoryCosts += estimatedCost;
-          if (costoPorCentro[saleCenter] !== undefined) {
-            costoPorCentro[saleCenter] += estimatedCost;
-          }
-        }
-      }
-
-      // Expenses classification
-      const isExpense = m.type === 'EXPENSE' || m.direction === 'OUT' || getAfectaGasto(m);
-      if (isExpense && !isAnySale) {
-        const isPurchase = opType === 'compra_mercancia' || rubric === 'ex_mercancias' || rubric === 'ex_fiesta' || rubric === 'ex_recargas';
-        if (!isPurchase) {
-          let expenseAmount = amount;
-          let isClassifiedExpense = false;
-
-          if (opType === 'consumo_empleados' || account === 'consumo empleados' || rubric === 'ex_consumo_empleados') {
-            expenseAmount = amount * 0.82;
-            consumoEmpleados += expenseAmount;
-            isClassifiedExpense = true;
-          } else if (opType === 'cortesia' || account === 'cortesías' || rubric === 'ex_personal') {
-            expenseAmount = amount * 0.82;
-            cortesias += expenseAmount;
-            isClassifiedExpense = true;
-          } else if (account === 'renta' || rubric === 'ex_renta') {
-            renta += amount;
-            isClassifiedExpense = true;
-          } else if (account === 'sueldos' || rubric === 'ex_empleados') {
-            sueldos += amount;
-            isClassifiedExpense = true;
-          } else if (concept.includes('bono') || account === 'bonos') {
-            bonos += amount;
-            isClassifiedExpense = true;
-          } else if (opType === 'faltante_caja' || rubric === 'ex_faltante') {
-            faltantes += amount;
-            isClassifiedExpense = true;
-          } else if (account === 'gastos administrativos' || rubric === 'ex_mantenimiento' || rubric === 'ex_gastos_administrativos' || rubric === 'ex_estancias_admin' || account === 'gastos administrativos estancias') {
-            gastosAdministrativos += amount;
-            isClassifiedExpense = true;
-          } else {
-            otrosGastos += amount;
-            isClassifiedExpense = true;
-          }
-
-          if (isClassifiedExpense) {
-            if (gastosPorCentro[center] !== undefined) {
-              gastosPorCentro[center] += expenseAmount;
-            }
-          }
-        }
-      }
+    return AccountingService.calculateOperatingProfitability(movements, {
+      catalog,
+      costMargins,
+      sobrantesComoVentas
     });
-
-    const ventasTotales = ventasContado + ventasCredito;
-    const costoVentasTotal = exactCatalogCosts + estimatedCategoryCosts;
-    const utilidadBruta = ventasTotales - costoVentasTotal;
-    const totalGastosOperativos = sueldos + bonos + renta + gastosAdministrativos + consumoEmpleados + cortesias + faltantes + otrosGastos;
-    const utilidadOperativa = utilidadBruta - totalGastosOperativos;
-
-    const margenBruto = ventasTotales > 0 ? (utilidadBruta / ventasTotales) * 100 : 0;
-    const margenOperativo = ventasTotales > 0 ? (utilidadOperativa / ventasTotales) * 100 : 0;
-
-    const centrosList = Object.keys(ventasPorCentro).map(center => {
-      const v = ventasPorCentro[center];
-      const c = costoPorCentro[center] || 0;
-      const exp = gastosPorCentro[center] || 0;
-      const ub = v.total - c;
-      const mb = v.total > 0 ? (ub / v.total) * 100 : 0;
-      const uop = ub - exp;
-      const mop = v.total > 0 ? (uop / v.total) * 100 : 0;
-      const part = ventasTotales > 0 ? (v.total / ventasTotales) * 100 : 0;
-      return {
-        name: center,
-        ventas: v.total,
-        ventasContado: v.contado,
-        ventasCredito: v.credito,
-        costo: c,
-        utilidadBruta: ub,
-        margenBruto: mb,
-        gastosOperativos: exp,
-        utilidadOperativa: uop,
-        margenOperativo: mop,
-        participacion: part
-      };
-    });
-
-    return {
-      ventasTotales,
-      ventasContado,
-      ventasCredito,
-      costoVentasTotal,
-      exactCatalogCosts,
-      estimatedCategoryCosts,
-      utilidadBruta,
-      totalGastosOperativos,
-      utilidadOperativa,
-      margenBruto,
-      margenOperativo,
-      sueldos,
-      bonos,
-      renta,
-      gastosAdministrativos,
-      consumoEmpleados,
-      cortesias,
-      faltantes,
-      otrosGastos,
-      centrosList
-    };
   }, [movements, catalog, costMargins, sobrantesComoVentas]);
 
   // MOTOR 2: FLUJO DE CAJA (Cash Flow)
@@ -630,47 +424,81 @@ const FinanceStatsTotalsScreen: React.FC = () => {
     movements.forEach(m => {
       if (m.status === 'VOID' || m.status === 'DELETED' || m.status === 'MOVED') return;
       if (m.accountId === 'inventarios') return;
+      if (m.source === 'auto_debit' || m.source === 'auto_inventory' || m.source === 'auto_debit_cxc') return;
+
+      const concept = (m.conceptTitle || '').toLowerCase();
+      const account = (m.cuenta_contable || '').toLowerCase();
+      if (concept.startsWith('control:') || account.includes('valor venta')) return;
 
       const affectsCash = getAfectaCaja(m);
       if (!affectsCash) return;
 
       const amount = Number(m.amount) || 0;
-      const concept = (m.conceptTitle || '').toLowerCase();
       const opType = m.tipo_operacion || '';
       const rubric = m.rubro || m.accountId || '';
-      const account = (m.cuenta_contable || '').toLowerCase();
 
       // Exclude employee consumption and courtesies (no real physical cash outflow)
       const isConsumo = opType === 'consumo_empleados' || account === 'consumo empleados' || rubric === 'ex_consumo_empleados';
       const isCortesias = opType === 'cortesia' || account === 'cortesías' || rubric === 'ex_personal';
       if (isConsumo || isCortesias) return;
 
+      // Exclude credit sales since no cash entered the register
+      if (opType === 'venta_credito' || rubric === 'in_cxc_venta') return;
+
       const isDirectionIn = m.direction === 'IN' || m.type === 'INCOME';
 
       if (isDirectionIn) {
-        if (opType === 'venta_contado' || (getAfectaVentas(m) && !getAfectaCxC(m))) {
-          ventasCobradas += amount;
-        } else if (opType === 'cobranza_cxc' || rubric === 'in_cxc_pago') {
+        // 1. Cobranza de crédito / CxC Pago de clientes
+        const isCobranza = 
+          opType === 'cobranza_cxc' || 
+          rubric === 'in_cxc_pago' || 
+          account.includes('cobranza') || 
+          account.includes('pago cliente') ||
+          concept.includes('cobranza') || 
+          concept.includes('pago cliente') || 
+          concept.includes('pago cxc') ||
+          concept.includes('cxc pago');
+
+        // 2. Sobrantes de caja
+        const isSobrante = 
+          opType === 'sobrante_caja' || 
+          rubric === 'in_sobrante' || 
+          account.includes('sobrante') || 
+          concept.includes('sobrante');
+
+        // 3. Ventas de contado
+        const isVentaContado = 
+          opType === 'venta_contado' || 
+          rubric === 'in_ventas' || 
+          rubric === 'in_fiesta' || 
+          rubric === 'in_recargas' || 
+          rubric === 'in_estancias' ||
+          account.includes('venta') ||
+          concept.includes('venta');
+
+        if (isCobranza) {
           cobranzaCxC += amount;
-        } else if (opType === 'sobrante_caja' || rubric === 'in_sobrante') {
+        } else if (isSobrante) {
           sobrantes += amount;
+        } else if (isVentaContado || (getAfectaVentas(m) && !getAfectaCxC(m))) {
+          ventasCobradas += amount;
         } else {
           otrosIngresos += amount;
         }
       } else {
-        if (opType === 'compra_mercancia' || rubric === 'ex_mercancias' || rubric === 'ex_fiesta') {
+        if (opType === 'compra_mercancia' || rubric === 'ex_mercancias' || rubric === 'ex_fiesta' || account.includes('costo abarrotes') || account.includes('costo fiesta')) {
           compras += amount;
         } else if (rubric === 'ex_recargas' || account.includes('recarga') || concept.includes('recarga')) {
           recargas += amount;
-        } else if (account === 'sueldos' || rubric === 'ex_empleados') {
+        } else if (account === 'sueldos' || rubric === 'ex_empleados' || concept.includes('sueldo') || concept.includes('empleado')) {
           sueldos += amount;
         } else if (concept.includes('bono') || account === 'bonos') {
           bonos += amount;
-        } else if (account === 'renta' || rubric === 'ex_renta') {
+        } else if (account === 'renta' || rubric === 'ex_renta' || concept.includes('renta')) {
           renta += amount;
-        } else if (opType === 'faltante_caja' || rubric === 'ex_faltante') {
+        } else if (opType === 'faltante_caja' || rubric === 'ex_faltante' || account.includes('faltante') || concept.includes('faltante')) {
           faltantes += amount;
-        } else if (account === 'gastos administrativos' || rubric === 'ex_mantenimiento' || rubric === 'ex_gastos_administrativos' || rubric === 'ex_estancias_admin' || account === 'gastos administrativos estancias') {
+        } else if (account === 'gastos administrativos' || rubric === 'ex_mantenimiento' || rubric === 'ex_gastos_administrativos' || rubric === 'ex_estancias_admin' || account === 'gastos administrativos estancias' || concept.includes('mantenimiento') || concept.includes('administrativo')) {
           gastosAdministrativos += amount;
         } else {
           otrosEgresos += amount;
@@ -1126,6 +954,13 @@ const FinanceStatsTotalsScreen: React.FC = () => {
           // MOTOR 1 ENGINE VIEW
           <div className="space-y-6 animate-in fade-in duration-300">
             
+            {/* Automated Operating Profitability Panel */}
+            <OperatingProfitabilityPanel 
+              data={rentabilidadEngine} 
+              periodLabel={periodType === 'day' ? 'del Día' : periodType === 'week' ? 'de la Semana' : periodType === 'month' ? 'del Mes' : 'del Año'} 
+              showDetailsDefault={false} 
+            />
+
             {/* Profitability Banner */}
             <div className="bg-white dark:bg-slate-900 rounded-3xl p-5 border border-slate-200 dark:border-slate-800 relative overflow-hidden group">
               <p className="text-[9px] font-black uppercase tracking-wider text-slate-500 mb-1">Resultado de Rentabilidad Neto</p>

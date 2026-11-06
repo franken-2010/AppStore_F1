@@ -7,10 +7,20 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
+# Dependencies & Build Outputs
 node_modules
 dist
 dist-ssr
+server-build
 *.local
+
+# Environment Secrets (never commit real keys)
+.env
+.env.*
+!.env.example
+
+# Security Drafts
+DRAFT_firestore.rules
 
 # Editor directories and files
 .vscode/*

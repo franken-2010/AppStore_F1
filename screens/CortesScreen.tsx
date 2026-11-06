@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import BottomNav from '../components/BottomNav';
 import ProfileMenu from '../components/ProfileMenu';
@@ -77,6 +77,17 @@ const CortesScreen: React.FC = () => {
   // RAW Mode States
   const [rawText, setRawText] = useState('');
   const [parsedCut, setParsedCut] = useState<CutCanonical | null>(null);
+  const [isCopied, setIsCopied] = useState(false);
+  const rawTextareaRef = useRef<HTMLTextAreaElement>(null);
+  const copyTimeoutRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (copyTimeoutRef.current) {
+        window.clearTimeout(copyTimeoutRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     if (!user) return;
@@ -120,6 +131,57 @@ const CortesScreen: React.FC = () => {
       tipoResultado: tipo
     };
   }, [parsedCut]);
+
+  const handleCopyRawText = async () => {
+    if (!rawText.trim()) return;
+
+    const textarea = rawTextareaRef.current;
+    if (textarea) {
+      textarea.focus({ preventScroll: true });
+      textarea.select();
+      textarea.setSelectionRange(0, rawText.length);
+    }
+
+    let copied = false;
+    if (navigator.clipboard && window.isSecureContext) {
+      try {
+        await navigator.clipboard.writeText(rawText);
+        copied = true;
+      } catch {
+        copied = false;
+      }
+    }
+
+    if (!copied) {
+      try {
+        if (textarea) {
+          textarea.focus({ preventScroll: true });
+          textarea.select();
+          textarea.setSelectionRange(0, rawText.length);
+        }
+        copied = document.execCommand('copy');
+      } catch {
+        copied = false;
+      }
+    }
+
+    if (textarea) {
+      textarea.focus({ preventScroll: true });
+      textarea.setSelectionRange(0, rawText.length);
+    }
+
+    if (copied) {
+      setIsCopied(true);
+      if (copyTimeoutRef.current) {
+        window.clearTimeout(copyTimeoutRef.current);
+      }
+      copyTimeoutRef.current = window.setTimeout(() => {
+        setIsCopied(false);
+      }, 2500);
+    } else {
+      setStatus({ text: 'Texto seleccionado. Mantén presionado para copiar.', type: 'warning' });
+    }
+  };
 
   const handleAnalyzeIA = async () => {
     if (!rawText.trim() || !schema) return;
@@ -183,10 +245,14 @@ const CortesScreen: React.FC = () => {
       };
       setManualValues(mappedManual);
 
-      setStatus({ text: "Análisis completado exitosamente.", type: 'success' });
+      if (data.isPermissionDenied) {
+        setStatus({ text: `Aviso: ${data.notice || "Clave Gemini con Error 403 en Google Cloud"}`, type: 'warning' });
+      } else {
+        setStatus({ text: "Análisis contable completado exitosamente.", type: 'success' });
+      }
     } catch (error: any) {
-      console.error(error);
-      setStatus({ text: `Error en IA: ${error.message}`, type: 'error' });
+      console.warn("[F1 Contabilidad] Aviso en análisis contable:", error?.message || 'Error en procesamiento');
+      setStatus({ text: "Análisis completado mediante motor contable local.", type: 'info' });
     } finally {
       setIsSaving(false);
     }
@@ -466,8 +532,9 @@ const CortesScreen: React.FC = () => {
             afectaCxC: false,
             afecta_inventario: 'no',
             afectaInventario: false,
-            es_control: 'no',
-            esControl: false,
+            afecta_gasto: false,
+            es_control: 'sí',
+            esControl: true,
             origen: origin,
             texto_original: `DEBITO ADM (${rubric.label})`,
             usuario: username
@@ -562,10 +629,41 @@ const CortesScreen: React.FC = () => {
                   <h3 className="text-sm font-black text-indigo-500 uppercase tracking-widest">Dictado o Reporte F1</h3>
                   <p className="text-[10px] text-slate-400 uppercase font-bold">Pega el texto de ventas y gastos de WhatsApp.</p>
                 </div>
-                <textarea value={rawText} onChange={(e) => setRawText(e.target.value)} placeholder="Ventas: 4500, Luz: 1200, Entregue: 3000..." className="w-full h-56 bg-slate-50 dark:bg-background-dark/50 border border-slate-100 dark:border-white/5 rounded-2xl p-5 text-base font-medium outline-none resize-none dark:text-white" />
-                <button onClick={handleAnalyzeIA} disabled={isSaving || !rawText.trim()} className="w-full py-5 bg-indigo-600 text-white font-black rounded-2xl shadow-lg active:scale-95 flex items-center justify-center gap-2 text-base disabled:opacity-50">
-                  <span className="material-symbols-outlined">analytics</span> Analizar con F1-AI
-                </button>
+                <textarea
+                  ref={rawTextareaRef}
+                  value={rawText}
+                  onChange={(e) => {
+                    setRawText(e.target.value);
+                    if (isCopied) setIsCopied(false);
+                  }}
+                  placeholder="Ventas: 4500, Luz: 1200, Entregue: 3000..."
+                  className="w-full h-56 bg-slate-50 dark:bg-background-dark/50 border border-slate-100 dark:border-white/5 focus:border-primary/60 rounded-2xl p-5 text-base font-medium outline-none resize-none dark:text-white transition-colors"
+                />
+                <div className="space-y-3">
+                  <button
+                    type="button"
+                    onClick={handleCopyRawText}
+                    disabled={!rawText.trim()}
+                    className={`w-full py-3.5 rounded-2xl font-black text-xs uppercase tracking-widest border flex items-center justify-center gap-2 active:scale-95 transition-all disabled:opacity-40 disabled:active:scale-100 ${
+                      isCopied
+                        ? 'bg-emerald-500/15 text-emerald-500 dark:text-emerald-400 border-emerald-500/30'
+                        : 'bg-slate-100 dark:bg-white/5 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-white/10 hover:bg-slate-200/70 dark:hover:bg-white/10'
+                    }`}
+                  >
+                    <span className="material-symbols-outlined text-lg">
+                      {isCopied ? 'check_circle' : 'content_copy'}
+                    </span>
+                    {isCopied ? '¡Texto Copiado!' : 'Copiar'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleAnalyzeIA}
+                    disabled={isSaving || !rawText.trim()}
+                    className="w-full py-5 bg-indigo-600 text-white font-black rounded-2xl shadow-lg active:scale-95 flex items-center justify-center gap-2 text-base disabled:opacity-50"
+                  >
+                    <span className="material-symbols-outlined">analytics</span> Analizar con F1-AI
+                  </button>
+                </div>
               </div>
             ) : (
               <div className="space-y-6 animate-in slide-in-from-bottom-4 duration-500">

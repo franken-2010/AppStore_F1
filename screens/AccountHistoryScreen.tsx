@@ -100,6 +100,39 @@ const AccountHistoryScreen: React.FC = () => {
     return () => unsub();
   }, [user?.uid, docId, dateRange]);
 
+  const formatCurrency = (val: number) => new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(val);
+
+  const getMovementSign = (m: any) => {
+    if (m.direction === 'OUT') return '-';
+    if (m.direction === 'IN') return '+';
+    
+    // Fallback para registros antiguos o sin direction
+    const isIncome = m.type === 'INCOME' || (m.type as any) === 'INGRESO';
+    const isCxcVenta = m.rubro === 'in_cxc_venta' || (m.accountId === 'cxc' && m.conceptTitle?.toUpperCase().includes('VENTA'));
+    
+    if (isCxcVenta) return '-';
+    return isIncome ? '+' : '-';
+  };
+
+  const getMovementColor = (m: any) => {
+    const sign = getMovementSign(m);
+    return sign === '+' ? 'text-blue-400' : 'text-red-400';
+  };
+
+  const getMovementColorEmerald = (m: any) => {
+    const sign = getMovementSign(m);
+    return sign === '+' ? 'text-emerald-400' : 'text-rose-400';
+  };
+
+  const formatDate = (ts: any) => {
+    if (!ts) return '---';
+    const date = typeof ts === 'number' ? new Date(ts) : (ts.toDate ? ts.toDate() : new Date(ts));
+    return date.toLocaleString('es-MX', { 
+      day: '2-digit', month: 'short', year: 'numeric',
+      hour: '2-digit', minute: '2-digit'
+    });
+  };
+
   const activeMovements = useMemo(() => {
     return movements.filter(m => m.status === 'ACTIVE' || !m.status);
   }, [movements]);
@@ -203,39 +236,6 @@ const AccountHistoryScreen: React.FC = () => {
     } finally {
       setVoiding(null);
     }
-  };
-
-  const formatCurrency = (val: number) => new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(val);
-
-  const getMovementSign = (m: any) => {
-    if (m.direction === 'OUT') return '-';
-    if (m.direction === 'IN') return '+';
-    
-    // Fallback para registros antiguos o sin direction
-    const isIncome = m.type === 'INCOME' || (m.type as any) === 'INGRESO';
-    const isCxcVenta = m.rubro === 'in_cxc_venta' || (m.accountId === 'cxc' && m.conceptTitle?.toUpperCase().includes('VENTA'));
-    
-    if (isCxcVenta) return '-';
-    return isIncome ? '+' : '-';
-  };
-
-  const getMovementColor = (m: any) => {
-    const sign = getMovementSign(m);
-    return sign === '+' ? 'text-blue-400' : 'text-red-400';
-  };
-
-  const getMovementColorEmerald = (m: any) => {
-    const sign = getMovementSign(m);
-    return sign === '+' ? 'text-emerald-400' : 'text-rose-400';
-  };
-
-  const formatDate = (ts: any) => {
-    if (!ts) return '---';
-    const date = typeof ts === 'number' ? new Date(ts) : (ts.toDate ? ts.toDate() : new Date(ts));
-    return date.toLocaleString('es-MX', { 
-      day: '2-digit', month: 'short', year: 'numeric',
-      hour: '2-digit', minute: '2-digit'
-    });
   };
 
   return (

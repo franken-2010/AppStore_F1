@@ -1,7 +1,20 @@
 
 import { initializeApp, getApps, getApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
-import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, getFirestore } from "firebase/firestore";
+import { 
+  initializeFirestore, 
+  getFirestore, 
+  persistentLocalCache, 
+  persistentMultipleTabManager,
+  setLogLevel 
+} from "firebase/firestore";
+
+// Silenciar advertencias internas de conexión y timeouts de Firestore en la consola
+try {
+  setLogLevel('silent');
+} catch (e) {
+  // Ignorar en caso de restricciones de entorno
+}
 
 /**
  * Configuración oficial del proyecto adminf1-2213b
@@ -19,24 +32,28 @@ const firebaseConfig = {
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
 export const auth = getAuth(app);
 
-// Inicialización avanzada de Firestore con soporte offline y fallback seguro para entornos iFrame/restringidos
-let firestoreInstance;
+// Inicialización de Firestore optimizada para contenedores web, iframes y entornos sandboxed
+let firestoreInstance: any;
+
 try {
   firestoreInstance = initializeFirestore(app, {
+    experimentalAutoDetectLongPolling: true,
     localCache: persistentLocalCache({
       tabManager: persistentMultipleTabManager()
-    }),
-    experimentalForceLongPolling: true // Mitiga problemas de conexión/timeout en iFrames y redes móviles
+    })
   });
 } catch (error) {
-  console.warn("No se pudo inicializar Firestore con cache offline (posiblemente un iframe restrictivo o ya inicializado):", error);
   try {
-    // Intentar obtener la instancia ya existente o crear una estándar
-    firestoreInstance = getFirestore(app);
+    firestoreInstance = initializeFirestore(app, {
+      experimentalAutoDetectLongPolling: true
+    });
   } catch (err2) {
-    console.error("Fallo definitivo al inicializar Firestore:", err2);
+    firestoreInstance = getFirestore(app);
   }
 }
 
 export const db = firestoreInstance;
+
+
+
 

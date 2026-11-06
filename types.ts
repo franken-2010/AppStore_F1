@@ -146,3 +146,55 @@ export interface UserProfile {
   role: string;
   dashboardConfig?: DashboardConfig;
 }
+
+export interface OperatingProfitabilityResult {
+  ventasTotales: number;
+  ventasContado: number;
+  ventasCredito: number;
+  costoVentasTotal: number;
+  exactCatalogCosts: number;
+  estimatedCategoryCosts: number;
+  utilidadBruta: number;
+  margenBruto: number; // %
+
+  // Gastos Operativos Desglosados y Automatizados
+  sueldos: number;
+  renta: number;
+  consumoEmpleados: number; // Valuado al 82% real
+  cortesias: number; // Valuado al 82% real
+  bonos: number;
+  gastosAdministrativos: number;
+  faltantes: number;
+  otrosGastos: number;
+  totalGastosOperativos: number;
+  gastosOperativosPercent: number; // % sobre ventas
+
+  // Utilidad Operativa Final (EBIT)
+  utilidadOperativa: number;
+  margenOperativo: number; // %
+
+  // Rendimiento por Centro de Utilidad
+  centrosList: Array<{
+    name: string;
+    ventas: number;
+    ventasContado: number;
+    ventasCredito: number;
+    costo: number;
+    utilidadBruta: number;
+    margenBruto: number;
+    gastosOperativos: number;
+    utilidadOperativa: number;
+    margenOperativo: number;
+    participacion: number;
+  }>;
+
+  // Validación y Coherencia Contable
+  isCoherentWithWeeklyReport: boolean;
+  validationDetails: {
+    grossProfitCheck: boolean;
+    operatingExpensesCheck: boolean;
+    operatingProfitCheck: boolean;
+    auditStatus: 'VALIDATED' | 'DISCREPANCY';
+    message: string;
+  };
+}

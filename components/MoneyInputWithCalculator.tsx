@@ -1,5 +1,4 @@
-
-import React, { useState, useCallback, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 
 interface MoneyInputWithCalculatorProps {
   label: string;
@@ -9,6 +8,93 @@ interface MoneyInputWithCalculatorProps {
   onChange: (field: string, value: string) => void;
   placeholder?: string;
   className?: string;
+}
+
+/**
+ * Pure, deterministic arithmetic evaluator supporting +, -, *, /, unary leading minus, and decimals.
+ * Never invokes eval() or new Function().
+ */
+function evaluateSafeArithmetic(rawExpr: string): number {
+  const sanitized = rawExpr.replace(/\s+/g, '').replace(/[+\-*/]+$/, '');
+  if (!sanitized) return 0;
+
+  if (sanitized.length > 100 || !/^[0-9+\-*/.]+$/.test(sanitized)) {
+    throw new Error('Expresión aritmética no válida');
+  }
+
+  // Tokenize numbers (with optional unary minus at start or after an operator) and binary operators
+  const tokens: Array<number | '+' | '-' | '*' | '/'> = [];
+  let i = 0;
+
+  while (i < sanitized.length) {
+    const ch = sanitized[i];
+    const isUnarySign =
+      (ch === '-' || ch === '+') &&
+      (tokens.length === 0 || typeof tokens[tokens.length - 1] === 'string');
+
+    if ((ch >= '0' && ch <= '9') || ch === '.' || isUnarySign) {
+      let numStr = '';
+      if (isUnarySign) {
+        numStr += ch;
+        i++;
+      }
+      let dotCount = 0;
+      let digitCount = 0;
+      while (i < sanitized.length && ((sanitized[i] >= '0' && sanitized[i] <= '9') || sanitized[i] === '.')) {
+        if (sanitized[i] === '.') dotCount++;
+        else digitCount++;
+        if (dotCount > 1) throw new Error('Número decimal malformado');
+        numStr += sanitized[i];
+        i++;
+      }
+      if (digitCount === 0) throw new Error('Operando numérico vacío');
+      const parsed = Number(numStr);
+      if (!Number.isFinite(parsed)) throw new Error('Número fuera de rango');
+      tokens.push(parsed);
+    } else if (ch === '+' || ch === '-' || ch === '*' || ch === '/') {
+      tokens.push(ch);
+      i++;
+    } else {
+      throw new Error('Carácter no permitido');
+    }
+  }
+
+  if (tokens.length === 0 || typeof tokens[0] !== 'number') {
+    throw new Error('Expresión incompleta');
+  }
+
+  // Pass 1: Multiplication & Division
+  const pass1: Array<number | '+' | '-'> = [tokens[0]];
+  for (let idx = 1; idx < tokens.length; idx += 2) {
+    const op = tokens[idx];
+    const rhs = tokens[idx + 1];
+    if (typeof rhs !== 'number') throw new Error('Operando faltante');
+
+    if (op === '*' || op === '/') {
+      const lhs = pass1.pop() as number;
+      if (op === '/' && rhs === 0) throw new Error('División entre cero');
+      const computed = op === '*' ? lhs * rhs : lhs / rhs;
+      if (!Number.isFinite(computed)) throw new Error('Resultado infinito');
+      pass1.push(computed);
+    } else if (op === '+' || op === '-') {
+      pass1.push(op, rhs);
+    } else {
+      throw new Error('Operador inválido');
+    }
+  }
+
+  // Pass 2: Addition & Subtraction
+  let acc = pass1[0] as number;
+  for (let idx = 1; idx < pass1.length; idx += 2) {
+    const op = pass1[idx];
+    const rhs = pass1[idx + 1] as number;
+    acc = op === '+' ? acc + rhs : acc - rhs;
+  }
+
+  if (!Number.isFinite(acc)) {
+    throw new Error('Resultado fuera de rango');
+  }
+  return acc;
 }
 
 const MoneyInputWithCalculator: React.FC<MoneyInputWithCalculatorProps> = ({
@@ -21,7 +107,7 @@ const MoneyInputWithCalculator: React.FC<MoneyInputWithCalculatorProps> = ({
   className = ""
 }) => {
   const [showModal, setShowModal] = useState(false);
-  
+
   // Calculator States
   const [expression, setExpression] = useState('');
   const [calcResult, setCalcResult] = useState<number | null>(null);
@@ -31,7 +117,6 @@ const MoneyInputWithCalculator: React.FC<MoneyInputWithCalculatorProps> = ({
   const expressionRef = useRef<HTMLDivElement>(null);
   const resultRef = useRef<HTMLDivElement>(null);
 
-  // Auto-scroll to end when expression or result changes
   useEffect(() => {
     if (expressionRef.current) {
       expressionRef.current.scrollLeft = expressionRef.current.scrollWidth;
@@ -41,39 +126,28 @@ const MoneyInputWithCalculator: React.FC<MoneyInputWithCalculatorProps> = ({
     }
   }, [expression, calcResult]);
 
-  const formatNumber = (num: number) => 
+  const formatNumber = (num: number) =>
     new Intl.NumberFormat('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(num);
 
   const handleCalcAction = (val: string) => {
     setCalcError(false);
-    
-    // Clear All
+
     if (val === 'C') {
       setExpression('');
       setCalcResult(null);
       return;
     }
 
-    // Backspace
     if (val === '⌫') {
       setExpression(prev => prev.slice(0, -1));
       setCalcResult(null);
       return;
     }
 
-    // Evaluate Result
     if (val === '=') {
       if (!expression) return;
       try {
-        // Cleanup trailing operators like "5+5+" -> "5+5"
-        let sanitized = expression.replace(/[+\-*/]+$/, '');
-        
-        // Evaluate using Function constructor (safer and more robust than eval)
-        // eslint-disable-next-line no-new-func
-        const result = new Function(`return ${sanitized}`)();
-        
-        if (!isFinite(result)) throw new Error("Infinite result");
-        
+        const result = evaluateSafeArithmetic(expression);
         const roundedResult = Number(result.toFixed(2));
         setCalcResult(roundedResult);
         setExpression(roundedResult.toString());
@@ -90,29 +164,25 @@ const MoneyInputWithCalculator: React.FC<MoneyInputWithCalculatorProps> = ({
     const lastChar = expression.slice(-1);
     const isLastCharOperator = operators.includes(lastChar);
 
-    // Handle Decimal Point
     if (val === '.') {
       const lastNumberPart = expression.split(/[+\-*/]/).pop() || '';
-      if (lastNumberPart.includes('.')) return; // Already has a dot
+      if (lastNumberPart.includes('.')) return;
       setExpression(prev => prev + (prev === '' || isLastCharOperator ? '0.' : '.'));
       return;
     }
 
-    // Handle Operators
     if (isOperator) {
-      if (expression === '' && val !== '-') return; // Only minus can start an empty expr
+      if (expression === '' && val !== '-') return;
       if (isLastCharOperator) {
-        setExpression(prev => prev.slice(0, -1) + val); // Replace last operator
+        setExpression(prev => prev.slice(0, -1) + val);
       } else {
         setExpression(prev => prev + val);
       }
-      setCalcResult(null); // Reset result state to allow continuing operation
+      setCalcResult(null);
       return;
     }
 
-    // Handle Numbers
     if (calcResult !== null && !isOperator) {
-      // If we just got a result and start typing a number, restart
       setExpression(val);
       setCalcResult(null);
     } else {
@@ -126,14 +196,13 @@ const MoneyInputWithCalculator: React.FC<MoneyInputWithCalculatorProps> = ({
       finalValue = calcResult.toString();
     } else if (expression) {
       try {
-        let sanitized = expression.replace(/[+\-*/]+$/, '');
-        const result = new Function(`return ${sanitized}`)();
-        if (isFinite(result)) finalValue = result.toFixed(2);
-      } catch (e) {
+        const result = evaluateSafeArithmetic(expression);
+        if (Number.isFinite(result)) finalValue = result.toFixed(2);
+      } catch {
         finalValue = "0";
       }
     }
-    
+
     onChange(field, finalValue);
     closeModal();
   };
@@ -194,15 +263,14 @@ const MoneyInputWithCalculator: React.FC<MoneyInputWithCalculatorProps> = ({
           </header>
 
           <main className="flex-1 flex flex-col p-6 overflow-hidden bg-[#0a0f1d]">
-            {/* Pantalla ampliada (35% aprox) con scroll horizontal y tipografía ajustada */}
             <div className="h-[35%] bg-white/5 rounded-[2.5rem] p-6 mb-4 flex flex-col justify-end text-right border border-white/5 shadow-inner overflow-hidden">
-              <div 
+              <div
                 ref={expressionRef}
                 className="text-slate-500 text-xs font-bold mb-1 overflow-x-auto whitespace-nowrap no-scrollbar h-5"
               >
                 {expression || '0'}
               </div>
-              <div 
+              <div
                 ref={resultRef}
                 className={`text-4xl font-black tracking-tighter leading-normal overflow-x-auto whitespace-nowrap no-scrollbar py-1 ${calcError ? 'text-rose-500' : 'text-white'}`}
               >
@@ -210,7 +278,6 @@ const MoneyInputWithCalculator: React.FC<MoneyInputWithCalculatorProps> = ({
               </div>
             </div>
 
-            {/* Teclado compacto */}
             <div className="flex-1 grid grid-cols-4 gap-2.5">
               <CalcBtn v="C" c="bg-rose-500/10 text-rose-500" />
               <CalcBtn v="⌫" c="bg-white/5 text-slate-400" />
@@ -236,7 +303,6 @@ const MoneyInputWithCalculator: React.FC<MoneyInputWithCalculatorProps> = ({
               <CalcBtn v="." c="bg-white/5 text-white" />
             </div>
 
-            {/* Acción Final con márgenes optimizados */}
             <div className="mt-6 mb-2">
               <button
                 type="button"

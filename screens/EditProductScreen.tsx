@@ -188,6 +188,8 @@ const EditProductScreen: React.FC = () => {
       batch.set(costRef, {
         Nombre_Completo,
         Nombre_Completo_norm: normName,
+        Proveedor: formData.Proveedor_principal,
+        Categoría: formData.Categoría,
         Uni_por_caja: uniPorCajaNum,
         "Utilidad_%": formData.Utilidad,
         Costo_base_principal: formatCurrency(costoBaseNum),

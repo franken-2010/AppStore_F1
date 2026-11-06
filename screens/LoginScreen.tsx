@@ -30,6 +30,13 @@ const LoginScreen: React.FC = () => {
   const isPWA = (window as any).isPWA;
 
   useEffect(() => {
+    // Purgar cualquier clave heredada en texto plano de versiones anteriores
+    try {
+      localStorage.removeItem('biometric_key');
+    } catch {
+      // Ignorar restricciones de almacenamiento
+    }
+
     // Si ya hay una sesión, redirigir al Dashboard
     const unsub = auth.onAuthStateChanged(user => {
       if (user) navigate('/dashboard');
@@ -77,16 +84,17 @@ const LoginScreen: React.FC = () => {
       });
 
       if (credential) {
-        const savedEmail = localStorage.getItem('biometric_email');
-        const savedPass = localStorage.getItem('biometric_key'); 
-        
-        if (savedEmail && savedPass) {
-          await setPersistence(auth, browserLocalPersistence);
-          await signInWithEmailAndPassword(auth, savedEmail, savedPass);
+        if (auth.currentUser) {
           navigate('/dashboard');
-        } else {
-          setError({ message: 'Huella válida pero falta sincronización de credenciales.' });
+          return;
         }
+        const savedEmail = localStorage.getItem('biometric_email');
+        if (savedEmail) {
+          setEmail(savedEmail);
+        }
+        setError({
+          message: 'Huella verificada. Por seguridad no se guardan contraseñas en el navegador; inicia sesión con Google o ingresa tu contraseña una vez activando "Recordar usuario".'
+        });
       }
     } catch (err: any) {
       console.error("Biometric login error:", err.message || String(err));

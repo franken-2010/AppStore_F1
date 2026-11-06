@@ -42,7 +42,9 @@ const PdfReportsScreen: React.FC = () => {
 
   // States for Inventory Catalog Option
   const [catalogSearch, setCatalogSearch] = useState('');
-  const [catalogLimit, setCatalogLimit] = useState<number>(200);
+  const [catalogLimit, setCatalogLimit] = useState<number>(500);
+  const [catalogType, setCatalogType] = useState<'admin' | 'commercial'>('admin');
+  const [catalogFormat, setCatalogFormat] = useState<'compact' | 'standard'>('compact');
 
   // States for Inventory Adjustments Option
   const [adjustmentsDays, setAdjustmentsDays] = useState<number>(30);
@@ -382,11 +384,11 @@ const PdfReportsScreen: React.FC = () => {
 
       // Page numbers footers callback
       const pagesCount = doc.internal.pages.length;
-      for (let i = 1; i < pagesCount; i++) {
+      for (let i = 1; i <= pagesCount; i++) {
         doc.setPage(i);
         doc.setFontSize(7);
         doc.setTextColor(150, 150, 150);
-        doc.text(`Página ${i} de ${pagesCount - 1} • Reporte de Operaciones Abarrotes F-1`, pageWidth - 80, doc.internal.pageSize.height - 10);
+        doc.text(`Página ${i} de ${pagesCount} • Reporte de Operaciones Abarrotes F-1`, pageWidth - 80, doc.internal.pageSize.height - 10);
       }
 
       doc.save(`F1_Reporte_Financiero_${financePeriod}_${Date.now()}.pdf`);
@@ -691,98 +693,467 @@ const PdfReportsScreen: React.FC = () => {
   const generateCatalogPdf = async () => {
     setGeneratingType('catalog');
     try {
-      // 1. Fetch catalog
-      const q = query(
-        collection(db, "costs_catalog"),
-        orderBy("Nombre_Completo", "asc"),
-        limit(catalogLimit)
-      );
-      const snap = await getDocs(q);
-      let candidates = snap.docs.map(doc => {
-        const data = doc.data();
-        return {
-          id: doc.id,
-          Nombre_Completo: String(data.Nombre_Completo || ''),
-          Costo_base_principal: data.Costo_base_principal != null ? Number(data.Costo_base_principal) : null,
-          Costo_unidad: data.Costo_unidad != null ? Number(data.Costo_unidad) : null,
-          Precio_sugerido: data.Precio_sugerido != null ? Number(data.Precio_sugerido) : null,
-          Precio_sug_red: data.Precio_sug_red != null ? Number(data.Precio_sug_red) : null,
-          utilidad: data["Utilidad_%"] != null ? Number(data["Utilidad_%"]) : null,
-          proveedor: data.Proveedor || data.supplierName || 'General'
+      const parseNumeric = (val: any): number | null => {
+        if (val === null || val === undefined) return null;
+        if (typeof val === 'number') return isNaN(val) ? null : val;
+        const clean = String(val).replace(/[$,\s]/g, '');
+        const num = parseFloat(clean);
+        return isNaN(num) ? null : num;
+      };
+
+      const normalize = (text: string) => {
+        return String(text || '')
+          .toLowerCase()
+          .normalize("NFD")
+          .replace(/[\u0300-\u036f]/g, "")
+          .replace(/ñ/g, "n")
+          .replace(/[^a-z0-9\s]/g, " ")
+          .replace(/\s+/g, " ")
+          .trim();
+      };
+
+      // 1. Fetch concurrently from all product & supplier related collections
+      const [costsRes, prodsRes, provsRes] = await Promise.allSettled([
+        getDocs(collection(db, "costs_catalog")),
+        getDocs(collection(db, "products")),
+        getDocs(collection(db, "providers"))
+      ]);
+
+      // Auxiliary maps to cross-reference data across collections
+      const providersMap = new Map<string, string>();
+      const categoriesMap = new Map<string, string>();
+      const namesMap = new Map<string, string>();
+      const costsMap = new Map<string, number>();
+
+      if (prodsRes.status === 'fulfilled' && prodsRes.value) {
+        prodsRes.value.docs.forEach(d => {
+          const data = d.data();
+          const key = d.id;
+          const prov = data.Proveedor_principal || data.Proveedor || data.proveedor || data.supplierName || data.proveedor_principal || '';
+          const cat = data.Categoría || data.Categoria || data.categoria || '';
+          const name = data.Nombre_Completo || `${data.Producto || ''} ${data.Presentación || ''}`.trim() || data.nombre || '';
+          if (prov) providersMap.set(key, prov);
+          if (cat) categoriesMap.set(key, cat);
+          if (name) namesMap.set(key, name);
+        });
+      }
+
+      if (provsRes.status === 'fulfilled' && provsRes.value) {
+        provsRes.value.docs.forEach(d => {
+          const data = d.data();
+          const key = d.id;
+          const altKey = data.ProductKey;
+          const prov = data.Proveedor || data.supplierName || data.proveedor || data.name || '';
+          const cost = parseNumeric(data.Costo_actual || data.costo);
+          if (prov) {
+            if (!providersMap.has(key)) providersMap.set(key, prov);
+            if (altKey && !providersMap.has(altKey)) providersMap.set(altKey, prov);
+          }
+          if (cost !== null) {
+            if (!costsMap.has(key)) costsMap.set(key, cost);
+            if (altKey && !costsMap.has(altKey)) costsMap.set(altKey, cost);
+          }
+        });
+      }
+
+      // Merge into a comprehensive unified candidate map
+      const candidatesMap = new Map<string, any>();
+
+      // Pass 1: Costs catalog entries
+      if (costsRes.status === 'fulfilled' && costsRes.value) {
+        costsRes.value.docs.forEach(d => {
+          const data = d.data();
+          const key = d.id;
+          const altKey = data.ProductKey || key;
+          
+          const prov = data.Proveedor || data.supplierName || data.proveedor || providersMap.get(key) || providersMap.get(altKey) || 'General';
+          const cat = data.Categoría || data.Categoria || categoriesMap.get(key) || categoriesMap.get(altKey) || 'Abarrotes';
+          const name = data.Nombre_Completo || namesMap.get(key) || namesMap.get(altKey) || data.nombre || key;
+          
+          const costoUnidad = parseNumeric(data.Costo_unidad) ?? parseNumeric(data.Costo_base_principal) ?? costsMap.get(key) ?? costsMap.get(altKey) ?? null;
+          const costoBase = parseNumeric(data.Costo_base_principal) ?? costoUnidad;
+          const precioSugRed = parseNumeric(data.Precio_sug_red);
+          const precioSug = parseNumeric(data.Precio_sugerido) ?? precioSugRed;
+          const utilidad = parseNumeric(data["Utilidad_%"]);
+
+          candidatesMap.set(key, {
+            id: key,
+            ProductKey: altKey,
+            Nombre_Completo: String(name),
+            Costo_base_principal: costoBase,
+            Costo_unidad: costoUnidad,
+            Precio_sugerido: precioSug,
+            Precio_sug_red: precioSugRed,
+            utilidad: utilidad,
+            proveedor: String(prov),
+            categoria: String(cat),
+            rawSearch: `${name} ${prov} ${cat} ${key} ${altKey}`
+          });
+        });
+      }
+
+      // Pass 2: Products collection items not yet in candidatesMap
+      if (prodsRes.status === 'fulfilled' && prodsRes.value) {
+        prodsRes.value.docs.forEach(d => {
+          const key = d.id;
+          if (!candidatesMap.has(key)) {
+            const data = d.data();
+            const altKey = data.ProductKey || key;
+            const prov = data.Proveedor_principal || data.Proveedor || data.proveedor || data.supplierName || providersMap.get(key) || 'General';
+            const cat = data.Categoría || data.Categoria || 'Abarrotes';
+            const name = data.Nombre_Completo || `${data.Producto || ''} ${data.Presentación || ''}`.trim() || data.nombre || key;
+            const cost = parseNumeric(data.Costo_unidad || data.Costo_base_principal || data.costo) ?? costsMap.get(key) ?? null;
+            const price = parseNumeric(data.Precio_sug_red || data.Precio_sugerido || data.precio);
+
+            candidatesMap.set(key, {
+              id: key,
+              ProductKey: altKey,
+              Nombre_Completo: String(name),
+              Costo_base_principal: cost,
+              Costo_unidad: cost,
+              Precio_sugerido: price,
+              Precio_sug_red: price,
+              utilidad: parseNumeric(data["Utilidad_%"] || data.utilidad),
+              proveedor: String(prov),
+              categoria: String(cat),
+              rawSearch: `${name} ${prov} ${cat} ${key} ${altKey}`
+            });
+          }
+        });
+      }
+
+      // Pass 3: Providers collection items not yet in candidatesMap
+      if (provsRes.status === 'fulfilled' && provsRes.value) {
+        provsRes.value.docs.forEach(d => {
+          const key = d.id;
+          const data = d.data();
+          const altKey = data.ProductKey || key;
+          if (!candidatesMap.has(key) && !candidatesMap.has(altKey)) {
+            const prov = data.Proveedor || data.supplierName || 'General';
+            const name = data.Nombre_Completo || data.nombre || key;
+            const cost = parseNumeric(data.Costo_actual || data.costo);
+
+            candidatesMap.set(key, {
+              id: key,
+              ProductKey: altKey,
+              Nombre_Completo: String(name),
+              Costo_base_principal: cost,
+              Costo_unidad: cost,
+              Precio_sugerido: cost ? cost * 1.2 : null,
+              Precio_sug_red: cost ? Math.ceil(cost * 1.2) : null,
+              utilidad: 0.20,
+              proveedor: String(prov),
+              categoria: 'Abarrotes',
+              rawSearch: `${name} ${prov} ${key} ${altKey}`
+            });
+          }
+        });
+      }
+
+      let candidates = Array.from(candidatesMap.values());
+
+      // Filter by search text across the complete inventory
+      const trimmedSearch = catalogSearch.trim();
+      if (trimmedSearch) {
+        const normQuery = normalize(trimmedSearch);
+        const queryTokens = normQuery.split(' ').filter(Boolean);
+
+        candidates = candidates.filter(c => {
+          const normRaw = normalize(c.rawSearch);
+          const normProv = normalize(c.proveedor);
+          const normName = normalize(c.Nombre_Completo);
+          const normId = normalize(c.id);
+          const normKey = normalize(c.ProductKey);
+          const normCat = normalize(c.categoria);
+
+          // Direct match against provider, product name, id, key or category
+          if (
+            normProv.includes(normQuery) || 
+            normName.includes(normQuery) || 
+            normId.includes(normQuery) || 
+            normKey.includes(normQuery) || 
+            normCat.includes(normQuery)
+          ) {
+            return true;
+          }
+
+          // Multi-token match across all fields
+          return queryTokens.every(t => normRaw.includes(t));
+        });
+      }
+
+      // Sort alphabetically by product name
+      candidates.sort((a, b) => a.Nombre_Completo.localeCompare(b.Nombre_Completo, 'es', { sensitivity: 'base' }));
+
+      // Apply export limit if specified
+      const totalFound = candidates.length;
+      if (catalogLimit && catalogLimit > 0 && candidates.length > catalogLimit) {
+        candidates = candidates.slice(0, catalogLimit);
+      }
+
+      // 2. Setup PDF based on format (Compact 2-columns vs Standard)
+      const doc = new jsPDF({ unit: 'mm', format: 'letter' });
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight();
+      const safeSearchSuffix = trimmedSearch ? `_${trimmedSearch.replace(/[^a-zA-Z0-9]/g, '_')}` : '';
+      const isCommercial = catalogType === 'commercial';
+
+      if (catalogFormat === 'compact') {
+        // COMPACT 2-COLUMN LAYOUT (Paper saving - matches sample PDF template)
+        const ROWS_PER_COL = 58;
+        const ITEMS_PER_PAGE = ROWS_PER_COL * 2; // 116 items per page
+        const totalPages = Math.max(1, Math.ceil(candidates.length / ITEMS_PER_PAGE));
+
+        const headers = isCommercial 
+          ? [['CLAVE', 'PRODUCTO', 'VENTA']]
+          : [['PRODUCTO', 'COMPRA', 'VENTA', 'UTILIDAD']];
+
+        const colStyles = isCommercial ? {
+          0: { cellWidth: 22.5, textColor: [100, 100, 100] as [number, number, number] },
+          1: { cellWidth: 55 },
+          2: { cellWidth: 20, halign: 'right' as const, fontStyle: 'bold' as const }
+        } : {
+          0: { cellWidth: 48.5 },
+          1: { cellWidth: 15, halign: 'right' as const },
+          2: { cellWidth: 15, halign: 'right' as const },
+          3: { cellWidth: 19, halign: 'right' as const }
         };
-      });
 
-      // Filter by Search text if any
-      if (catalogSearch.trim()) {
-        const term = catalogSearch.toLowerCase();
-        candidates = candidates.filter(c => 
-          c.Nombre_Completo.toLowerCase().includes(term) ||
-          c.id.toLowerCase().includes(term) ||
-          String(c.proveedor).toLowerCase().includes(term)
-        );
-      }
+        for (let p = 0; p < totalPages; p++) {
+          if (p > 0) doc.addPage();
 
-      // 2. Setup PDF
-      const doc = new jsPDF();
-      const pageWidth = doc.internal.pageSize.width;
-      
-      // Header Decoration
-      doc.setFillColor(16, 185, 129); // Emerald / Mint for stock
-      doc.rect(0, 0, pageWidth, 38, 'F');
-      
-      // Title
-      doc.setTextColor(255, 255, 255);
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(20);
-      doc.text("CATÁLOGO DE INVENTARIO Y PRECIOS", 14, 18);
-      
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(9);
-      doc.text(`Artículos catalogados en base de datos • Máx. exportable: ${catalogLimit}`, 14, 25);
-      doc.text(`Generado el: ${new Date().toLocaleString('es-MX')} • Registros encontrados: ${candidates.length}`, 14, 30);
+          const pageCandidates = candidates.slice(p * ITEMS_PER_PAGE, (p + 1) * ITEMS_PER_PAGE);
+          const leftColItems = pageCandidates.slice(0, Math.min(ROWS_PER_COL, Math.ceil(pageCandidates.length / 2)));
+          const rightColItems = pageCandidates.slice(leftColItems.length);
 
-      // Data Rows
-      const catalogRows = candidates.map((c, i) => {
-        const cost = c.Costo_unidad || c.Costo_base_principal || 0;
-        const price = c.Precio_sug_red || c.Precio_sugerido || 0;
-        const profit = price - cost;
-        const profitPercent = c.utilidad || (price > 0 ? (profit / price) * 100 : 0);
-        
-        return [
-          String(i + 1),
-          c.id,
-          c.Nombre_Completo,
-          c.proveedor,
-          formatMXN(cost),
-          formatMXN(price),
-          `${profitPercent.toFixed(1)}%`
-        ];
-      });
+          // Page Header Top Line
+          doc.setFont('helvetica', 'bold');
+          doc.setFontSize(10.5);
+          doc.setTextColor(20, 20, 20);
 
-      autoTable(doc, {
-        startY: 44,
-        head: [['#', 'Código/Clave', 'Nombre del Articulo / Descripción', 'Proveedor', 'Costo Unit.', 'P. Sugerido', 'Margen %']],
-        body: catalogRows.length > 0 ? catalogRows : [['-', '-', 'Ninguno coincide con el filtro de búsqueda', '-', '-', '-', '-']],
-        theme: 'striped',
-        styles: { fontSize: 8, cellPadding: 3 },
-        headStyles: { fillColor: [16, 185, 129], fontStyle: 'bold', textColor: 255 },
-        columnStyles: {
-          4: { halign: 'right' },
-          5: { halign: 'right', fontStyle: 'bold' },
-          6: { halign: 'center' }
+          const titlePrefix = isCommercial ? 'CATÁLOGO COMERCIAL' : 'INVENTARIO';
+          const providerLabel = trimmedSearch ? trimmedSearch.toUpperCase() : 'GENERAL';
+          const titleText = `${titlePrefix} ${providerLabel} - LISTA COMPACTA`;
+          doc.text(titleText, 8, 10);
+
+          // Page & count info on the right
+          doc.setFont('helvetica', 'normal');
+          doc.setFontSize(8.5);
+          doc.setTextColor(60, 60, 60);
+          const infoRight = `${candidates.length} productos | Página ${p + 1} de ${totalPages}`;
+          doc.text(infoRight, pageWidth - 8, 10, { align: 'right' });
+
+          // Subtitle line
+          doc.setFontSize(7.5);
+          doc.setTextColor(90, 90, 90);
+          const subText = isCommercial
+            ? "Lista de precios sugeridos de venta al público • Importes en MXN"
+            : "Utilidad unitaria = precio sugerido de venta - precio de compra";
+          doc.text(subText, 8, 14.5);
+
+          // Subtle divider line
+          doc.setDrawColor(220, 220, 220);
+          doc.setLineWidth(0.2);
+          doc.line(8, 16, pageWidth - 8, 16);
+
+          // Format data rows
+          const buildRow = (c: any) => {
+            const cost = c.Costo_unidad ?? c.Costo_base_principal ?? 0;
+            const price = c.Precio_sug_red ?? c.Precio_sugerido ?? 0;
+            const profit = price - cost;
+            if (isCommercial) {
+              return [
+                c.id,
+                c.Nombre_Completo,
+                formatMXN(price)
+              ];
+            } else {
+              return [
+                c.Nombre_Completo,
+                formatMXN(cost),
+                formatMXN(price),
+                formatMXN(profit)
+              ];
+            }
+          };
+
+          const leftRows = leftColItems.map(buildRow);
+          const rightRows = rightColItems.map(buildRow);
+
+          // Render Left Table
+          autoTable(doc, {
+            startY: 17.5,
+            margin: { left: 8, right: pageWidth - (8 + 97.5) },
+            tableWidth: 97.5,
+            head: headers,
+            body: leftRows.length > 0 ? leftRows : [[
+              isCommercial ? '-' : (trimmedSearch ? `Sin coincidencias para "${trimmedSearch}"` : 'Sin artículos'),
+              '-',
+              '-',
+              ...(isCommercial ? [] : ['-'])
+            ]],
+            theme: 'plain',
+            pageBreak: 'avoid',
+            styles: { 
+              fontSize: 6.6, 
+              cellPadding: { top: 0.65, bottom: 0.65, left: 0.8, right: 0.8 }, 
+              textColor: [30, 30, 30],
+              overflow: 'ellipsize',
+              lineColor: [230, 230, 230],
+              lineWidth: 0.1
+            },
+            headStyles: { 
+              fillColor: [245, 245, 245], 
+              textColor: [20, 20, 20], 
+              fontStyle: 'bold',
+              fontSize: 6.8,
+              cellPadding: { top: 1, bottom: 1, left: 0.8, right: 0.8 }
+            },
+            alternateRowStyles: {
+              fillColor: [252, 252, 252]
+            },
+            columnStyles: colStyles
+          });
+
+          // Render Right Table
+          if (rightRows.length > 0) {
+            autoTable(doc, {
+              startY: 17.5,
+              margin: { left: 110, right: 8 },
+              tableWidth: 97.5,
+              head: headers,
+              body: rightRows,
+              theme: 'plain',
+              pageBreak: 'avoid',
+              styles: { 
+                fontSize: 6.6, 
+                cellPadding: { top: 0.65, bottom: 0.65, left: 0.8, right: 0.8 }, 
+                textColor: [30, 30, 30],
+                overflow: 'ellipsize',
+                lineColor: [230, 230, 230],
+                lineWidth: 0.1
+              },
+              headStyles: { 
+                fillColor: [245, 245, 245], 
+                textColor: [20, 20, 20], 
+                fontStyle: 'bold',
+                fontSize: 6.8,
+                cellPadding: { top: 1, bottom: 1, left: 0.8, right: 0.8 }
+              },
+              alternateRowStyles: {
+                fillColor: [252, 252, 252]
+              },
+              columnStyles: colStyles
+            });
+          }
+
+          // Footer on this page
+          doc.setFontSize(6.8);
+          doc.setTextColor(140, 140, 140);
+          const footerText = isCommercial
+            ? "Abarrotes F-1 • Lista de Precios de Venta al Público. Importes en MXN."
+            : "Valores tomados del catálogo enviado. Importes en MXN.";
+          doc.text(footerText, 8, pageHeight - 6);
         }
-      });
 
-      // Page numbers footers callback
-      const pagesCount = doc.internal.pages.length;
-      for (let i = 1; i < pagesCount; i++) {
-        doc.setPage(i);
-        doc.setFontSize(7);
-        doc.setTextColor(150, 150, 150);
-        doc.text(`Página ${i} de ${pagesCount - 1} • Auditoría Inventario de Caja F-1`, pageWidth - 70, doc.internal.pageSize.height - 10);
+        const reportName = isCommercial ? 'Comercial' : 'Administrativo';
+        doc.save(`F1_Inventario_${reportName}_Compacto${safeSearchSuffix}_${Date.now()}.pdf`);
+      } else {
+        // STANDARD TABLE LAYOUT (Full width detailed table)
+        doc.setFillColor(16, 185, 129); // Emerald header
+        doc.rect(0, 0, pageWidth, 40, 'F');
+        
+        doc.setTextColor(255, 255, 255);
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(18);
+        doc.text(isCommercial ? "CATÁLOGO COMERCIAL DE PRECIOS" : "CATÁLOGO DE INVENTARIO Y COSTOS", 14, 16);
+        
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(8.5);
+        const filterLabel = trimmedSearch ? `Filtro aplicado: "${trimmedSearch}"` : 'Todos los proveedores y productos';
+        doc.text(`Criterio: ${filterLabel} • Límite máximo: ${catalogLimit}`, 14, 23);
+        doc.text(`Generado el: ${new Date().toLocaleString('es-MX')} • Registros encontrados: ${totalFound} (Exportados: ${candidates.length})`, 14, 29);
+        doc.text(`Abarrotes F-1 • ${isCommercial ? 'Lista de Precios al Mostrador' : 'Auditoría de Costos, Precios y Rentabilidad'}`, 14, 35);
+
+        // Data Rows
+        const catalogRows = candidates.map((c, i) => {
+          const cost = c.Costo_unidad ?? c.Costo_base_principal ?? 0;
+          const price = c.Precio_sug_red ?? c.Precio_sugerido ?? 0;
+          const profit = price - cost;
+          const profitPercent = c.utilidad ?? (price > 0 ? (profit / price) * 100 : 0);
+          
+          if (isCommercial) {
+            return [
+              String(i + 1),
+              c.id,
+              c.Nombre_Completo,
+              c.proveedor,
+              formatMXN(price)
+            ];
+          } else {
+            return [
+              String(i + 1),
+              c.id,
+              c.Nombre_Completo,
+              c.proveedor,
+              formatMXN(cost),
+              formatMXN(price),
+              `${profitPercent.toFixed(1)}%`
+            ];
+          }
+        });
+
+        const stdHead = isCommercial
+          ? [['#', 'Código/Clave', 'Nombre del Articulo / Descripción', 'Proveedor', 'Precio Venta']]
+          : [['#', 'Código/Clave', 'Nombre del Articulo / Descripción', 'Proveedor', 'Costo Unit.', 'P. Sugerido', 'Margen %']];
+
+        const stdColStyles = isCommercial ? {
+          0: { cellWidth: 12, halign: 'center' as const },
+          1: { cellWidth: 32 },
+          2: { cellWidth: 'auto' as const },
+          3: { cellWidth: 40 },
+          4: { cellWidth: 30, halign: 'right' as const, fontStyle: 'bold' as const }
+        } : {
+          0: { cellWidth: 10, halign: 'center' as const },
+          1: { cellWidth: 28 },
+          2: { cellWidth: 'auto' as const },
+          3: { cellWidth: 32 },
+          4: { cellWidth: 22, halign: 'right' as const },
+          5: { cellWidth: 22, halign: 'right' as const, fontStyle: 'bold' as const },
+          6: { cellWidth: 18, halign: 'center' as const }
+        };
+
+        autoTable(doc, {
+          startY: 46,
+          head: stdHead,
+          body: catalogRows.length > 0 ? catalogRows : [[
+            '-', 
+            '-', 
+            trimmedSearch 
+              ? `No se encontraron productos con el filtro "${trimmedSearch}". Verifica el nombre o proveedor.` 
+              : 'Base de datos sin registros de productos.', 
+            '-', 
+            '-', 
+            ...(isCommercial ? [] : ['-', '-'])
+          ]],
+          theme: 'striped',
+          styles: { fontSize: 8, cellPadding: 3 },
+          headStyles: { fillColor: [16, 185, 129], fontStyle: 'bold', textColor: 255 },
+          columnStyles: stdColStyles
+        });
+
+        // Page numbers footers callback
+        const pagesCount = doc.internal.pages.length;
+        for (let i = 1; i <= pagesCount; i++) {
+          doc.setPage(i);
+          doc.setFontSize(7);
+          doc.setTextColor(150, 150, 150);
+          doc.text(`Página ${i} de ${pagesCount} • ${isCommercial ? 'Lista de Precios F-1' : 'Auditoría Inventario de Caja F-1'}`, pageWidth - 70, doc.internal.pageSize.height - 10);
+        }
+
+        const reportName = isCommercial ? 'Comercial' : 'Administrativo';
+        doc.save(`F1_Inventario_${reportName}_Estandar${safeSearchSuffix}_${Date.now()}.pdf`);
       }
-
-      doc.save(`F1_Catalogo_Inventario_${Date.now()}.pdf`);
     } catch (err) {
       console.error("Error generating catalog PDF:", err);
       alert("Error al cargar el catálogo de productos.");
@@ -891,10 +1262,10 @@ const PdfReportsScreen: React.FC = () => {
       });
 
       const pagesCount = doc.internal.pages.length;
-      for (let i = 1; i < pagesCount; i++) {
+      for (let i = 1; i <= pagesCount; i++) {
         doc.setPage(i);
         doc.setFontSize(7);
-        doc.text(`Página ${i} de ${pagesCount - 1} • Auditoría Inventario de Caja F-1`, pageWidth - 65, doc.internal.pageSize.height - 10);
+        doc.text(`Página ${i} de ${pagesCount} • Auditoría Inventario de Caja F-1`, pageWidth - 65, doc.internal.pageSize.height - 10);
       }
 
       doc.save(`F1_Movimientos_Stock_${Date.now()}.pdf`);
@@ -1070,33 +1441,122 @@ const PdfReportsScreen: React.FC = () => {
               <span className="material-symbols-outlined text-2xl">inventory_2</span>
             </div>
             <div>
-              <h2 className="text-md font-black text-slate-800 dark:text-white uppercase tracking-tight">Catálogo de Inventario</h2>
-              <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">Lista de Productos del Sistema y Costos</p>
+              <h2 className="text-md font-black text-slate-800 dark:text-white uppercase tracking-tight">Catálogo e Inventario de Productos</h2>
+              <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">Listas de Precios, Costos y Utilidades en PDF</p>
             </div>
           </div>
 
-          <div className="space-y-3 pt-2">
+          <div className="space-y-4 pt-1">
+            {/* Report Type Selector: Admin vs Commercial */}
             <div className="space-y-1">
-              <label className="text-[9px] font-black uppercase tracking-wider text-slate-400 block">Filtro de Nombre / Código / Proveedor</label>
-              <input 
-                type="text" 
-                placeholder="Ej. Bimbo, Sabritas, Refresco..."
-                value={catalogSearch} 
-                onChange={e => setCatalogSearch(e.target.value)}
-                className="w-full text-xs p-3 bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/5 rounded-xl text-slate-700 dark:text-white"
-              />
+              <label className="text-[9px] font-black uppercase tracking-wider text-slate-400 block">Tipo de Inventario</label>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setCatalogType('admin')}
+                  className={`p-2.5 rounded-2xl border text-left flex items-start gap-2.5 transition-all ${
+                    catalogType === 'admin'
+                      ? 'bg-emerald-500/10 border-emerald-500/40 text-emerald-600 dark:text-emerald-400 shadow-sm'
+                      : 'bg-slate-50 dark:bg-white/5 border-slate-200 dark:border-white/5 text-slate-500 hover:border-slate-300'
+                  }`}
+                >
+                  <span className="material-symbols-outlined text-lg mt-0.5 shrink-0">admin_panel_settings</span>
+                  <div>
+                    <div className="text-[10px] font-black uppercase tracking-wider">Administrativo</div>
+                    <div className="text-[8px] text-slate-400 leading-tight mt-0.5">Incluye Compra, Venta y Utilidad ($)</div>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setCatalogType('commercial')}
+                  className={`p-2.5 rounded-2xl border text-left flex items-start gap-2.5 transition-all ${
+                    catalogType === 'commercial'
+                      ? 'bg-emerald-500/10 border-emerald-500/40 text-emerald-600 dark:text-emerald-400 shadow-sm'
+                      : 'bg-slate-50 dark:bg-white/5 border-slate-200 dark:border-white/5 text-slate-500 hover:border-slate-300'
+                  }`}
+                >
+                  <span className="material-symbols-outlined text-lg mt-0.5 shrink-0">storefront</span>
+                  <div>
+                    <div className="text-[10px] font-black uppercase tracking-wider">Comercial / Mostrador</div>
+                    <div className="text-[8px] text-slate-400 leading-tight mt-0.5">Solo Clave, Nombre y Precio Público</div>
+                  </div>
+                </button>
+              </div>
             </div>
 
+            {/* Layout Format: Compact vs Standard */}
+            <div className="space-y-1">
+              <label className="text-[9px] font-black uppercase tracking-wider text-slate-400 block">Diseño de Impresión</label>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setCatalogFormat('compact')}
+                  className={`p-2.5 rounded-2xl border text-left flex items-center gap-2 transition-all ${
+                    catalogFormat === 'compact'
+                      ? 'bg-emerald-500/10 border-emerald-500/40 text-emerald-600 dark:text-emerald-400 shadow-sm'
+                      : 'bg-slate-50 dark:bg-white/5 border-slate-200 dark:border-white/5 text-slate-500 hover:border-slate-300'
+                  }`}
+                >
+                  <span className="material-symbols-outlined text-base shrink-0">view_column</span>
+                  <div>
+                    <div className="text-[9.5px] font-black uppercase">Lista Compacta (2 Col.)</div>
+                    <div className="text-[7.5px] text-emerald-500 font-bold">Ahorro de papel (~115 productos/hoja)</div>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setCatalogFormat('standard')}
+                  className={`p-2.5 rounded-2xl border text-left flex items-center gap-2 transition-all ${
+                    catalogFormat === 'standard'
+                      ? 'bg-emerald-500/10 border-emerald-500/40 text-emerald-600 dark:text-emerald-400 shadow-sm'
+                      : 'bg-slate-50 dark:bg-white/5 border-slate-200 dark:border-white/5 text-slate-500 hover:border-slate-300'
+                  }`}
+                >
+                  <span className="material-symbols-outlined text-base shrink-0">table_rows</span>
+                  <div>
+                    <div className="text-[9.5px] font-black uppercase">Tabla Estándar</div>
+                    <div className="text-[7.5px] text-slate-400">1 columna ancha tradicional</div>
+                  </div>
+                </button>
+              </div>
+            </div>
+
+            {/* Filter Input */}
+            <div className="space-y-1">
+              <label className="text-[9px] font-black uppercase tracking-wider text-slate-400 block">Filtro de Proveedor / Nombre / Código / Categoría</label>
+              <div className="relative">
+                <input 
+                  type="text" 
+                  placeholder="Ej. Dunosusa, Bimbo, Sabritas, Botanas..."
+                  value={catalogSearch} 
+                  onChange={e => setCatalogSearch(e.target.value)}
+                  className="w-full text-xs p-3 pr-8 bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/5 rounded-xl text-slate-700 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500"
+                />
+                {catalogSearch && (
+                  <button 
+                    onClick={() => setCatalogSearch('')} 
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-white"
+                  >
+                    <span className="material-symbols-outlined text-sm">close</span>
+                  </button>
+                )}
+              </div>
+              <p className="text-[8px] text-slate-400">Escribe el nombre del proveedor para exportar únicamente sus artículos.</p>
+            </div>
+
+            {/* Limit Buttons */}
             <div className="space-y-1">
               <label className="text-[9px] font-black uppercase tracking-wider text-slate-400 block">Límite de Artículos a Exportar</label>
-              <div className="grid grid-cols-3 gap-2">
-                {[100, 250, 500].map(val => (
+              <div className="grid grid-cols-5 gap-1.5">
+                {[100, 250, 500, 1000, 5000].map(val => (
                   <button 
                     key={val}
                     onClick={() => setCatalogLimit(val)}
-                    className={`py-2 px-1 text-[9px] font-black rounded-xl border transition-all ${catalogLimit === val ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/30' : 'bg-transparent text-slate-500 border-slate-200 dark:border-white/5'}`}
+                    className={`py-2 px-1 text-[8.5px] font-black rounded-xl border transition-all ${catalogLimit === val ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/30' : 'bg-transparent text-slate-500 border-slate-200 dark:border-white/5'}`}
                   >
-                    {val} Ítems
+                    {val === 5000 ? 'Todos' : `${val}`}
                   </button>
                 ))}
               </div>
@@ -1105,7 +1565,7 @@ const PdfReportsScreen: React.FC = () => {
             <button 
               disabled={generatingType !== null}
               onClick={generateCatalogPdf}
-              className="w-full mt-3 py-3 bg-emerald-600 text-white font-black rounded-2xl flex items-center justify-center gap-2 hover:bg-emerald-700 transition-colors shadow-lg shadow-emerald-600/10 disabled:opacity-50"
+              className="w-full mt-2 py-3.5 bg-emerald-600 text-white font-black rounded-2xl flex items-center justify-center gap-2 hover:bg-emerald-700 transition-colors shadow-lg shadow-emerald-600/10 disabled:opacity-50"
             >
               {generatingType === 'catalog' ? (
                 <>
@@ -1115,7 +1575,9 @@ const PdfReportsScreen: React.FC = () => {
               ) : (
                 <>
                   <span className="material-symbols-outlined text-md">download_for_offline</span>
-                  <span className="text-[10px] font-black tracking-widest uppercase">Descargar Catálogo de Costos</span>
+                  <span className="text-[10px] font-black tracking-widest uppercase">
+                    Descargar Inventario {catalogType === 'commercial' ? 'Comercial' : 'Administrativo'} ({catalogFormat === 'compact' ? 'Compacto' : 'Estándar'})
+                  </span>
                 </>
               )}
             </button>

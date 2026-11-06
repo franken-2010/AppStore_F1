@@ -80,7 +80,8 @@ const OrdersScreen: React.FC = () => {
     setFinalText('');
 
     try {
-      const { items: extractedItems } = await GeminiService.parseOrderText(rawInput);
+      const data = await GeminiService.parseOrderText(rawInput);
+      const extractedItems = Array.isArray(data?.items) ? data.items : [];
       
       const processed: OrderItem[] = [];
       const costsRef = collection(db, "costs_catalog");
@@ -177,8 +178,13 @@ const OrdersScreen: React.FC = () => {
         type: 'system'
       });
 
-    } catch (err) {
-      handleFirestoreError(err, OperationType.WRITE, `users/${user.uid}/orders_history`);
+    } catch (err: any) {
+      console.warn("[F1 Pedidos] Aviso al procesar pedido:", err?.message || 'Error en procesamiento');
+      addNotification({
+        title: 'Error al procesar pedido',
+        message: err?.message || 'Ocurrió un error al procesar el texto del pedido.',
+        type: 'system'
+      });
     } finally {
       setIsProcessing(false);
     }

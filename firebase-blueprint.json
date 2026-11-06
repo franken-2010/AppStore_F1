@@ -1,0 +1,699 @@
+{
+  "entities": {
+    "AdminRecord": {
+      "title": "AdminRecord",
+      "description": "Explicit administrator privilege registry record keyed by Firebase Auth UID.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "description": "Firebase Auth UID of the administrator.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "email": {
+          "type": "string",
+          "format": "email",
+          "description": "Verified email address of the administrator.",
+          "maxLength": 254
+        },
+        "grantedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp when admin privilege was granted."
+        }
+      },
+      "required": ["uid", "email"]
+    },
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Private user profile and dashboard configuration isolated per Firebase Auth UID.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "description": "Immutable Firebase Auth UID of the account owner.",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "email": {
+          "type": "string",
+          "format": "email",
+          "description": "Primary email address of the user.",
+          "maxLength": 254
+        },
+        "displayName": {
+          "type": "string",
+          "description": "Display name shown in the store interface.",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "photoURL": {
+          "type": "string",
+          "description": "HTTPS URL or bounded data:image/* avatar string.",
+          "maxLength": 900000
+        },
+        "role": {
+          "type": "string",
+          "description": "RBAC role assigned to the user; admin requires verified admin status.",
+          "enum": ["admin", "operator"]
+        },
+        "dashboardConfig": {
+          "type": "object",
+          "description": "User dashboard visibility and performance account preferences."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Account registration timestamp."
+        }
+      },
+      "required": ["uid", "email", "displayName", "role"]
+    },
+    "AccountCategory": {
+      "title": "AccountCategory",
+      "description": "Accounting category grouping user financial accounts.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Category display name.",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "accountingType": {
+          "type": "string",
+          "description": "Classification of the accounting group.",
+          "enum": ["Activo", "Pasivo", "Capital", "Ahorro", "Gasto"]
+        },
+        "order": {
+          "type": "number",
+          "description": "Visual display order."
+        },
+        "color": {
+          "type": "string",
+          "description": "Optional UI accent color token.",
+          "maxLength": 40
+        },
+        "enableDirectAdminExpenses": {
+          "type": "boolean",
+          "description": "Flag enabling direct administrative expense entries."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Creation timestamp."
+        }
+      },
+      "required": ["name", "accountingType"]
+    },
+    "AccountingAccount": {
+      "title": "AccountingAccount",
+      "description": "Operational or balance-sheet ledger account owned by a user.",
+      "type": "object",
+      "properties": {
+        "accountId": {
+          "type": "string",
+          "description": "Canonical stable account identifier.",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "name": {
+          "type": "string",
+          "description": "Human-readable account name.",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "code": {
+          "type": "string",
+          "description": "Accounting short code.",
+          "maxLength": 60
+        },
+        "type": {
+          "type": "string",
+          "description": "Accounting ledger classification.",
+          "maxLength": 40
+        },
+        "categoryId": {
+          "type": "string",
+          "description": "Parent category document ID or null.",
+          "maxLength": 128
+        },
+        "balance": {
+          "type": "number",
+          "description": "Current running balance in MXN."
+        },
+        "initialBalance": {
+          "type": "number",
+          "description": "Initial opening balance in MXN."
+        },
+        "order": {
+          "type": "number",
+          "description": "Sorting order index."
+        },
+        "isVisible": {
+          "type": "boolean",
+          "description": "Whether the account is visible on dashboards."
+        },
+        "isContable": {
+          "type": "boolean",
+          "description": "Whether the account participates in net accounting totals."
+        },
+        "inventoryMin": {
+          "type": "number",
+          "description": "Minimum stock reference threshold in MXN."
+        },
+        "inventoryMax": {
+          "type": "number",
+          "description": "Maximum stock reference threshold in MXN."
+        },
+        "description": {
+          "type": "string",
+          "description": "Optional account notes.",
+          "maxLength": 500
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Creation timestamp."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Last modification timestamp."
+        }
+      },
+      "required": ["name", "type", "balance"]
+    },
+    "LedgerMovement": {
+      "title": "LedgerMovement",
+      "description": "Individual financial transaction recorded under an accounting account.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "description": "Owner Firebase Auth UID used for collectionGroup isolation.",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "accountId": {
+          "type": "string",
+          "description": "Canonical account identifier.",
+          "maxLength": 128
+        },
+        "amount": {
+          "type": "number",
+          "description": "Absolute transaction amount in MXN."
+        },
+        "type": {
+          "type": "string",
+          "description": "Movement direction type.",
+          "maxLength": 32
+        },
+        "direction": {
+          "type": "string",
+          "description": "Normalized flow direction (IN or OUT).",
+          "enum": ["IN", "OUT"]
+        },
+        "signedAmount": {
+          "type": "number",
+          "description": "Signed transaction value."
+        },
+        "rubro": {
+          "type": "string",
+          "description": "Accounting rubric key.",
+          "maxLength": 80
+        },
+        "conceptTitle": {
+          "type": "string",
+          "description": "Primary movement title.",
+          "maxLength": 240
+        },
+        "conceptSubtitle": {
+          "type": "string",
+          "description": "Secondary movement subtitle.",
+          "maxLength": 300
+        },
+        "notes": {
+          "type": "string",
+          "description": "Additional movement notes.",
+          "maxLength": 2000
+        },
+        "source": {
+          "type": "string",
+          "description": "Originating module (corte, manual, ajuste).",
+          "maxLength": 80
+        },
+        "status": {
+          "type": "string",
+          "description": "Posting status.",
+          "maxLength": 40
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Effective or creation timestamp."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Last update timestamp."
+        }
+      },
+      "required": ["uid", "amount"]
+    },
+    "AccountIndexEntry": {
+      "title": "AccountIndexEntry",
+      "description": "Canonical lookup entry mapping stable accountId keys to Firestore document IDs.",
+      "type": "object",
+      "properties": {
+        "accountId": {
+          "type": "string",
+          "description": "Canonical account key.",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "accountDocId": {
+          "type": "string",
+          "description": "Target document ID in accounts subcollection.",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "name": {
+          "type": "string",
+          "description": "Account display name.",
+          "maxLength": 120
+        },
+        "type": {
+          "type": "string",
+          "description": "Account type.",
+          "maxLength": 40
+        },
+        "isActive": {
+          "type": "boolean",
+          "description": "Whether the index mapping is active."
+        }
+      },
+      "required": ["accountId", "accountDocId", "isActive"]
+    },
+    "DailyCorte": {
+      "title": "DailyCorte",
+      "description": "Daily store cash closing and audit summary.",
+      "type": "object",
+      "properties": {
+        "fecha": {
+          "type": "string",
+          "description": "Closing date string (YYYY-MM-DD).",
+          "maxLength": 32
+        },
+        "admin": {
+          "type": "string",
+          "description": "Name of operator/admin recording the closing.",
+          "maxLength": 120
+        },
+        "status": {
+          "type": "string",
+          "description": "Closing status.",
+          "maxLength": 40
+        },
+        "audit": {
+          "type": "object",
+          "description": "Detailed income, expense, and cash variance breakdown."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Creation timestamp."
+        }
+      },
+      "required": ["fecha", "status"]
+    },
+    "UserNotification": {
+      "title": "UserNotification",
+      "description": "In-app operational notification scoped to a user.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "description": "Owner UID.",
+          "maxLength": 128
+        },
+        "type": {
+          "type": "string",
+          "description": "Notification category.",
+          "maxLength": 40
+        },
+        "title": {
+          "type": "string",
+          "description": "Short notification title.",
+          "maxLength": 160
+        },
+        "message": {
+          "type": "string",
+          "description": "Notification body text.",
+          "maxLength": 1000
+        },
+        "read": {
+          "type": "boolean",
+          "description": "Read state flag."
+        },
+        "timestamp": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Creation timestamp."
+        }
+      },
+      "required": ["title", "message"]
+    },
+    "OrderHistory": {
+      "title": "OrderHistory",
+      "description": "Generated supplier purchase order log owned by a user.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "description": "Owner UID.",
+          "maxLength": 128
+        },
+        "rawInput": {
+          "type": "string",
+          "description": "Original dictated or typed order text.",
+          "maxLength": 25000
+        },
+        "finalText": {
+          "type": "string",
+          "description": "Formatted supplier order summary.",
+          "maxLength": 30000
+        },
+        "notFoundCount": {
+          "type": "number",
+          "description": "Number of unmatched items."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Creation timestamp."
+        }
+      },
+      "required": ["uid", "rawInput", "finalText"]
+    },
+    "PriceUpdateJob": {
+      "title": "PriceUpdateJob",
+      "description": "Batch price update execution log under a user.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "description": "Owner UID.",
+          "maxLength": 128
+        },
+        "status": {
+          "type": "string",
+          "description": "Execution status.",
+          "maxLength": 40
+        },
+        "totalUpdated": {
+          "type": "number",
+          "description": "Count of updated catalog items."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Execution timestamp."
+        }
+      },
+      "required": ["uid", "status"]
+    },
+    "FinancialSetting": {
+      "title": "FinancialSetting",
+      "description": "Per-user financial engine margin configuration.",
+      "type": "object",
+      "properties": {
+        "costMargins": {
+          "type": "object",
+          "description": "Category cost-of-goods margin percentages."
+        },
+        "sobrantesComoVentas": {
+          "type": "boolean",
+          "description": "Whether cash overages count toward gross sales."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Last update timestamp."
+        }
+      }
+    },
+    "SupplierContact": {
+      "title": "SupplierContact",
+      "description": "Supplier directory contact owned by a specific user.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "description": "Owner Firebase Auth UID.",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "supplierName": {
+          "type": "string",
+          "description": "Company or supplier brand name.",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "contactName": {
+          "type": "string",
+          "description": "Sales representative name.",
+          "maxLength": 160
+        },
+        "whatsappPhone": {
+          "type": "string",
+          "description": "Normalized WhatsApp phone digits.",
+          "maxLength": 32
+        },
+        "phoneRaw": {
+          "type": "string",
+          "description": "Raw formatted phone string.",
+          "maxLength": 40
+        },
+        "searchName": {
+          "type": "string",
+          "description": "Normalized lowercase search key.",
+          "maxLength": 320
+        },
+        "isActive": {
+          "type": "boolean",
+          "description": "Soft-delete active status."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Creation timestamp."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Update timestamp."
+        }
+      },
+      "required": ["uid", "supplierName", "isActive"]
+    },
+    "CatalogProduct": {
+      "title": "CatalogProduct",
+      "description": "Global store product master record managed by verified administrators.",
+      "type": "object",
+      "properties": {
+        "ProductKey": {
+          "type": "string",
+          "description": "Canonical product key (e.g., PRD-000001).",
+          "maxLength": 128
+        },
+        "ProductoID": {
+          "type": "number",
+          "description": "Numeric product sequence ID."
+        },
+        "Nombre_Completo": {
+          "type": "string",
+          "description": "Full product name and presentation.",
+          "maxLength": 300
+        },
+        "Categoría": {
+          "type": "string",
+          "description": "Product category.",
+          "maxLength": 120
+        },
+        "Proveedor_principal": {
+          "type": "string",
+          "description": "Primary supplier name.",
+          "maxLength": 160
+        }
+      }
+    },
+    "ProviderCostRecord": {
+      "title": "ProviderCostRecord",
+      "description": "Global supplier wholesale cost record managed by verified administrators.",
+      "type": "object",
+      "properties": {
+        "ProductKey": {
+          "type": "string",
+          "description": "Canonical product key.",
+          "maxLength": 128
+        },
+        "Proveedor": {
+          "type": "string",
+          "description": "Supplier name.",
+          "maxLength": 160
+        },
+        "Nombre_Completo": {
+          "type": "string",
+          "description": "Full product description.",
+          "maxLength": 300
+        },
+        "Costo_actual": {
+          "type": "number",
+          "description": "Current case or base wholesale cost."
+        }
+      }
+    },
+    "CostCatalogEntry": {
+      "title": "CostCatalogEntry",
+      "description": "Global retail pricing, margin, and tokenized search entry managed by verified administrators.",
+      "type": "object",
+      "properties": {
+        "ProductKey": {
+          "type": "string",
+          "description": "Canonical product key.",
+          "maxLength": 128
+        },
+        "Nombre_Completo": {
+          "type": "string",
+          "description": "Full product display name.",
+          "maxLength": 300
+        },
+        "Precio_sug_red": {
+          "type": "number",
+          "description": "Rounded suggested retail price in MXN."
+        },
+        "searchName": {
+          "type": "string",
+          "description": "Normalized search string.",
+          "maxLength": 300
+        },
+        "searchTokens": {
+          "type": "array",
+          "description": "Bounded array of normalized search tokens."
+        }
+      }
+    },
+    "SequentialCounter": {
+      "title": "SequentialCounter",
+      "description": "Atomic sequential ID counter restricted to verified administrators.",
+      "type": "object",
+      "properties": {
+        "lastProductoID": {
+          "type": "number",
+          "description": "Last allocated sequential ProductoID."
+        }
+      },
+      "required": ["lastProductoID"]
+    },
+    "AdminJob": {
+      "title": "AdminJob",
+      "description": "Administrative catalog maintenance and reindexing job audit entry.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "description": "Administrator UID who executed the job.",
+          "maxLength": 128
+        },
+        "type": {
+          "type": "string",
+          "description": "Job type identifier.",
+          "maxLength": 80
+        },
+        "status": {
+          "type": "string",
+          "description": "Job status.",
+          "maxLength": 40
+        },
+        "totalRead": {
+          "type": "number",
+          "description": "Total documents scanned."
+        }
+      },
+      "required": ["type", "status"]
+    }
+  },
+  "firestore": {
+    "/admins/{adminId}": {
+      "schema": { "$ref": "#/entities/AdminRecord" },
+      "description": "Trusted administrator UID registry."
+    },
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "Private user profile and RBAC role document."
+    },
+    "/users/{userId}/categories/{categoryId}": {
+      "schema": { "$ref": "#/entities/AccountCategory" },
+      "description": "User-owned accounting categories."
+    },
+    "/users/{userId}/accounts/{accountId}": {
+      "schema": { "$ref": "#/entities/AccountingAccount" },
+      "description": "User-owned ledger accounts."
+    },
+    "/users/{userId}/accounts/{accountId}/movements/{movementId}": {
+      "schema": { "$ref": "#/entities/LedgerMovement" },
+      "description": "User-owned ledger movements under each account."
+    },
+    "/users/{userId}/accountIndex/{indexId}": {
+      "schema": { "$ref": "#/entities/AccountIndexEntry" },
+      "description": "User-owned canonical account ID lookup index."
+    },
+    "/users/{userId}/cortes/{corteId}": {
+      "schema": { "$ref": "#/entities/DailyCorte" },
+      "description": "User-owned daily cash closing records."
+    },
+    "/users/{userId}/notifications/{notificationId}": {
+      "schema": { "$ref": "#/entities/UserNotification" },
+      "description": "User-owned operational notifications."
+    },
+    "/users/{userId}/orders_history/{orderId}": {
+      "schema": { "$ref": "#/entities/OrderHistory" },
+      "description": "User-owned AI supplier order history."
+    },
+    "/users/{userId}/price_update_jobs/{jobId}": {
+      "schema": { "$ref": "#/entities/PriceUpdateJob" },
+      "description": "User-owned batch price update audit records."
+    },
+    "/users/{userId}/settings/{settingId}": {
+      "schema": { "$ref": "#/entities/FinancialSetting" },
+      "description": "User-owned financial engine configuration."
+    },
+    "/suppliers_directory/{supplierId}": {
+      "schema": { "$ref": "#/entities/SupplierContact" },
+      "description": "User-owned supplier WhatsApp contacts isolated by uid."
+    },
+    "/products/{productKey}": {
+      "schema": { "$ref": "#/entities/CatalogProduct" },
+      "description": "Store-wide product master catalog (read: signed-in, write: verified admin)."
+    },
+    "/providers/{productKey}": {
+      "schema": { "$ref": "#/entities/ProviderCostRecord" },
+      "description": "Store-wide supplier wholesale cost matrix (read: signed-in, write: verified admin)."
+    },
+    "/costs_catalog/{productKey}": {
+      "schema": { "$ref": "#/entities/CostCatalogEntry" },
+      "description": "Store-wide retail pricing and search catalog (read: signed-in, write: verified admin)."
+    },
+    "/counters/{counterId}": {
+      "schema": { "$ref": "#/entities/SequentialCounter" },
+      "description": "Sequential product ID counters (read/write: verified admin)."
+    },
+    "/admin_jobs/{jobId}": {
+      "schema": { "$ref": "#/entities/AdminJob" },
+      "description": "Catalog reindexing and maintenance logs (read/write: verified admin)."
+    }
+  }
+}

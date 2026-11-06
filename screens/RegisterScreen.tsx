@@ -73,27 +73,44 @@ const RegisterScreen: React.FC = () => {
     await batch.commit();
   };
 
+  const OWNER_ADMIN_EMAIL = 'darionaviar@gmail.com';
+
+  const resolveInitialRole = (userEmail: string | null | undefined, emailVerified: boolean): string => {
+    const normalized = (userEmail || '').trim().toLowerCase();
+    if (normalized === OWNER_ADMIN_EMAIL && emailVerified) {
+      return 'admin';
+    }
+    return 'operator';
+  };
+
   const handleRegister = async () => {
-    if (!name || !email || !password) {
+    const trimmedName = name.trim().slice(0, 80);
+    const trimmedEmail = email.trim().toLowerCase();
+
+    if (!trimmedName || !trimmedEmail || !password) {
       setError('Todos los campos son obligatorios');
       return;
     }
-    
+    if (password.length < 8) {
+      setError('Por seguridad, la contraseña debe tener al menos 8 caracteres.');
+      return;
+    }
+
     setLoading(true);
     setError('');
 
     try {
-      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+      const userCredential = await createUserWithEmailAndPassword(auth, trimmedEmail, password);
       const user = userCredential.user;
 
-      await updateProfile(user, { displayName: name });
+      await updateProfile(user, { displayName: trimmedName });
 
       await setDoc(doc(db, "users", user.uid), {
         uid: user.uid,
-        displayName: name,
-        email: email,
-        photoURL: `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=2563eb&color=fff`,
-        role: 'admin',
+        displayName: trimmedName,
+        email: trimmedEmail,
+        photoURL: `https://ui-avatars.com/api/?name=${encodeURIComponent(trimmedName)}&background=2563eb&color=fff`,
+        role: resolveInitialRole(user.email, user.emailVerified),
         createdAt: serverTimestamp()
       });
 
@@ -109,11 +126,11 @@ const RegisterScreen: React.FC = () => {
   const handleGoogleSignIn = async () => {
     setLoading(true);
     setError('');
-    
+
     try {
       const provider = new GoogleAuthProvider();
       provider.setCustomParameters({ prompt: 'select_account' });
-      
+
       const result = await signInWithPopup(auth, provider);
       const user = result.user;
 
@@ -121,18 +138,19 @@ const RegisterScreen: React.FC = () => {
       const userDoc = await getDoc(userDocRef);
 
       if (!userDoc.exists()) {
+        const safeName = (user.displayName || 'Usuario Google').trim().slice(0, 80);
         await setDoc(userDocRef, {
           uid: user.uid,
-          displayName: user.displayName || 'Usuario Google',
-          email: user.email,
-          photoURL: user.photoURL || `https://ui-avatars.com/api/?name=${encodeURIComponent(user.displayName || 'U')}&background=2563eb&color=fff`,
-          role: 'admin',
+          displayName: safeName,
+          email: (user.email || '').trim().toLowerCase(),
+          photoURL: user.photoURL || `https://ui-avatars.com/api/?name=${encodeURIComponent(safeName)}&background=2563eb&color=fff`,
+          role: resolveInitialRole(user.email, user.emailVerified),
           createdAt: serverTimestamp()
         });
 
         await initializeDefaultData(user.uid);
       }
-      
+
       navigate('/dashboard');
     } catch (err: any) {
       setError(`Error: ${err.message}`);

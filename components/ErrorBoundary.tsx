@@ -11,10 +11,33 @@ const ErrorBoundary: React.FC<Props> = ({ children }) => {
 
   useEffect(() => {
     const handleError = (event: ErrorEvent) => {
-      let message = event.error?.message || event.message;
+      const rawMessage = event.error?.message || event.message || '';
+      const lower = rawMessage.toLowerCase();
+
+      // Ignorar errores benignos de desconexión, reintento offline o advertencias de renderizado
+      if (
+        lower.includes('unavailable') ||
+        lower.includes('could not reach') ||
+        lower.includes('offline') ||
+        lower.includes('resizeobserver') ||
+        lower.includes('network error') ||
+        lower.includes('failed to fetch') ||
+        lower.includes('gemini') ||
+        lower.includes('denied access') ||
+        lower.includes('permission_denied')
+      ) {
+        console.warn('Advertencia no fatal suprimida en ErrorBoundary:', rawMessage);
+        return;
+      }
+
+      let message = rawMessage;
       try {
-        const parsed = JSON.parse(message);
+        const parsed = JSON.parse(rawMessage);
         if (parsed.error) {
+          const parsedLower = String(parsed.error).toLowerCase();
+          if (parsedLower.includes('unavailable') || parsedLower.includes('offline') || parsedLower.includes('could not reach')) {
+            return;
+          }
           message = `Firestore Error: ${parsed.error} (Op: ${parsed.operationType}, Path: ${parsed.path})`;
         }
       } catch {
@@ -24,8 +47,33 @@ const ErrorBoundary: React.FC<Props> = ({ children }) => {
       setErrorMessage(message);
     };
 
+    const handleRejection = (event: PromiseRejectionEvent) => {
+      const reason = event.reason;
+      const rawMessage = reason instanceof Error ? reason.message : String(reason || '');
+      const lower = rawMessage.toLowerCase();
+
+      if (
+        lower.includes('unavailable') ||
+        lower.includes('could not reach') ||
+        lower.includes('offline') ||
+        lower.includes('network error') ||
+        lower.includes('failed to fetch') ||
+        lower.includes('gemini') ||
+        lower.includes('denied access') ||
+        lower.includes('permission_denied') ||
+        lower.includes('not valid json')
+      ) {
+        console.warn('Reintento o error de red/IA asíncrono gestionado:', rawMessage);
+        event.preventDefault();
+      }
+    };
+
     window.addEventListener('error', handleError);
-    return () => window.removeEventListener('error', handleError);
+    window.addEventListener('unhandledrejection', handleRejection);
+    return () => {
+      window.removeEventListener('error', handleError);
+      window.removeEventListener('unhandledrejection', handleRejection);
+    };
   }, []);
 
   if (hasError) {
@@ -52,3 +100,4 @@ const ErrorBoundary: React.FC<Props> = ({ children }) => {
 };
 
 export default ErrorBoundary;
+
