@@ -1,4 +1,4 @@
-import { allocateOverheadExpenses, calculateCashClosing } from '../services/multiStoreAccounting';
+import { allocateOverheadExpenses, calculateCashClosing, makeDailyClosingId } from '../services/multiStoreAccounting';
 function eq(actual: unknown, expected: unknown, label: string) {
   if (actual !== expected) throw new Error(label + ': esperado ' + expected + ', recibido ' + actual);
 }
@@ -6,6 +6,9 @@ function fails(fn: () => unknown, label: string) {
   try { fn(); } catch { return; }
   throw new Error(label + ': falta validación');
 }
+eq(makeDailyClosingId('local_01', '2026-11-06'), 'cut_local_01_2026-11-06', 'ID Local 1');
+eq(makeDailyClosingId('local_02', '2026-11-06'), 'cut_local_02_2026-11-06', 'ID Local 2');
+fails(() => makeDailyClosingId('local_01', '2026-02-30'), 'Fecha imposible');
 const cut = calculateCashClosing({
   storeId:'local_02',dateKey:'2026-11-06',openingCash:500,
   categorySales:[
