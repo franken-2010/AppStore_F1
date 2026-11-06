@@ -10,6 +10,7 @@ import RegisterScreen from './screens/RegisterScreen';
 import DashboardScreen from './screens/DashboardScreen';
 import CortesScreen from './screens/CortesScreen';
 import ToolsScreen from './screens/ToolsScreen';
+import MultiStorePreviewScreen from './screens/MultiStorePreviewScreen';
 import PriceUpdateScreen from './screens/PriceUpdateScreen';
 import ProductAddScreen from './screens/ProductAddScreen';
 import SettingsScreen from './screens/SettingsScreen';
@@ -60,6 +61,7 @@ const App: React.FC = () => {
               <Route path="/dashboard" element={<ProtectedRoute><DashboardScreen /></ProtectedRoute>} />
               <Route path="/cortes" element={<ProtectedRoute><CortesScreen /></ProtectedRoute>} />
               <Route path="/tools" element={<ProtectedRoute><ToolsScreen /></ProtectedRoute>} />
+              <Route path="/tools/multilocal-preview" element={<ProtectedRoute><MultiStorePreviewScreen /></ProtectedRoute>} />
               <Route path="/tools/price-update" element={<ProtectedRoute><PriceUpdateScreen /></ProtectedRoute>} />
               <Route path="/tools/product-add" element={<ProtectedRoute><ProductAddScreen /></ProtectedRoute>} />
               <Route path="/tools/price-verification" element={<ProtectedRoute><PriceVerificationScreen /></ProtectedRoute>} />
