@@ -12,6 +12,19 @@ const ToolsScreen: React.FC = () => {
 
   const toolCategories = [
     {
+      name: 'Contabilidad de dos locales · PRUEBAS',
+      icon: 'storefront',
+      tools: [
+        {
+          title: 'Simulador multilocal',
+          description: 'Prueba cortes por local y distribución de gastos sin guardar datos.',
+          icon: 'calculate',
+          color: 'bg-amber-500',
+          path: '/tools/multilocal-preview'
+        }
+      ]
+    },
+    {
       name: 'Precios y Costos',
       icon: 'payments',
       tools: [
