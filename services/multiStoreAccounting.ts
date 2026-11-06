@@ -46,6 +46,20 @@ export function assertStoreCategory(storeId: StoreId, categoryId: SalesCategoryI
   }
 }
 
+/**
+ * ID determinista para un corte diario POR LOCAL.
+ * La prevención efectiva de duplicados exigirá transacción + create en Firestore.
+ */
+export function makeDailyClosingId(storeId: StoreId, dateKey: string): string {
+  if (!F1_STORES.some(store => store.id === storeId)) throw new Error('Local desconocido');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) throw new Error('Fecha de corte no válida');
+  const date = new Date(dateKey + 'T12:00:00Z');
+  if (!Number.isFinite(date.getTime()) || date.toISOString().slice(0, 10) !== dateKey) {
+    throw new Error('Fecha de corte inexistente');
+  }
+  return 'cut_' + storeId + '_' + dateKey;
+}
+
 export interface CategorySales {
   categoryId: SalesCategoryId;
   cashSales: number;
@@ -87,7 +101,7 @@ export interface CashClosingResult {
  */
 export function calculateCashClosing(input: CashClosingInput): CashClosingResult {
   if (!F1_STORES.some(s => s.id === input.storeId)) throw new Error('Local desconocido');
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(input.dateKey)) throw new Error('Fecha de corte no válida');
+  makeDailyClosingId(input.storeId, input.dateKey);
   const uniqueCategories = new Set<SalesCategoryId>();
   let cashSalesCents = 0;
   let creditSalesCents = 0;
