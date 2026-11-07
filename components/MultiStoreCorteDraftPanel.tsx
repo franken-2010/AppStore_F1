@@ -70,7 +70,7 @@ const MultiStoreCorteDraftPanel: React.FC<Props> = ({dateKey,demoMode=false,anal
   const updateOutlay = (id:string,changes:Record<string,unknown>) =>
     setDraft(previous=>previous ? {...previous,
       outlays:previous.outlays.map(item=>item.id===id?{...item,...changes}:item)} : previous);
-  const updateCash = (key:'countedCash'|'manualSurplus',value:number|null) =>
+  const updateCash = (key:'countedCash',value:number|null) =>
     setDraft(previous=>previous ? {...previous,cash:{...previous.cash,[key]:value}} : previous);
 
   const addIncome = () => {
@@ -139,7 +139,7 @@ const MultiStoreCorteDraftPanel: React.FC<Props> = ({dateKey,demoMode=false,anal
         </div>
         <textarea id="multistore-dictation" rows={9} value={report}
           onChange={e=>{setReport(e.target.value);setDraft(null);}}
-          placeholder={'Ventas 455 + 677 + 3343\nFiesta 500\nRecargas 200\nGastos Abarrotes 300 + 150\nCompra Frutas 650\nRenta 600\nSobrante 45\nDinero entregado 1200'}
+          placeholder={'Ventas 455 + 677 + 3343\nFiesta 500\nRecargas 200\nGastos Abarrotes 300 + 150\nCompra Frutas 650\nRenta 600\nDinero entregado 1200'}
           className="mt-2 w-full resize-y rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-900 outline-none focus:border-indigo-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"/>
         {interim && <p className="mt-2 text-xs text-indigo-700 dark:text-indigo-300">Escuchando: {interim}</p>}
         {error && <p role="alert" className="mt-2 text-xs text-rose-600">{error}</p>}
@@ -229,13 +229,8 @@ const MultiStoreCorteDraftPanel: React.FC<Props> = ({dateKey,demoMode=false,anal
               <span>{money(Math.abs(audit.cashDifference))}</span>
             </div>}
             {audit.countedCash===null&&<p className="mt-2 text-xs font-bold text-amber-700">Falta indicar cuánto efectivo se entregó.</p>}
-            <label className="mt-3 block text-xs text-slate-700 dark:text-slate-200">Sobrante declarado manualmente
-              <input type="number" min="0" step=".01" value={draft.cash.manualSurplus??''}
-                onChange={e=>updateCash('manualSurplus',e.target.value===''?null:validNum(e.target.value))}
-                className="mt-1 w-full rounded-lg border bg-white p-2 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-white"/>
-            </label>
-            {audit.surplusDiscrepancy!==null && audit.surplusDiscrepancy!==0 && <p className="mt-2 text-xs font-bold text-amber-700">
-              Diferencia entre sobrante manual y calculado: {money(audit.surplusDiscrepancy)}.
+            <p className="mt-2 text-xs text-slate-600 dark:text-slate-300">
+              Sobrante y faltante se calculan automáticamente al comparar el efectivo esperado con el dinero entregado.
             </p>}
           </section>
           {audit.unresolved>0 && <p className="rounded-xl bg-amber-100 p-3 text-xs font-bold text-amber-900">
