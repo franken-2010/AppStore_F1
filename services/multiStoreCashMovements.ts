@@ -31,7 +31,6 @@ export interface CashOutlay {
 export interface ClosingWithOutlaysInput extends Omit<CashClosingInput,
   'cashPurchases' | 'cashOperatingExpenses' | 'cashWithdrawals'> {
   outlays: readonly CashOutlay[];
-  manualSurplus: number;
 }
 
 export interface OutlaySummary {
@@ -44,8 +43,8 @@ export interface OutlaySummary {
 
 export interface ClosingWithOutlaysResult {
   closing: CashClosingResult;
-  manualSurplus: number;
-  surplusCheckDifference: number;
+  surplus: number;
+  shortage: number;
   outlaySummary: OutlaySummary;
   /** Si se paga desde Local 1 algo perteneciente a Local 2, se conserva el cruce. */
   crossStorePayments: CashOutlay[];
@@ -127,7 +126,7 @@ export function reclassifyOutlay(
 }
 
 export function calculateClosingWithOutlays(input: ClosingWithOutlaysInput): ClosingWithOutlaysResult {
-  const {outlays, manualSurplus, ...cashInput} = input;
+  const {outlays, ...cashInput} = input;
   const summary = summarizeCashOutlays(outlays);
   const paying = outlays.filter(row => row.payingStoreId === input.storeId);
   const sumKind = (...kinds: CashOutlayKind[]): number =>
@@ -139,14 +138,11 @@ export function calculateClosingWithOutlays(input: ClosingWithOutlaysInput): Clo
     cashOperatingExpenses: sumKind('direct_expense','general_expense'),
     cashWithdrawals: sumKind('temporary_advance','owner_withdrawal'),
   });
-  // El sobrante manual es una referencia independiente, NUNCA otro ingreso.
-  const declared = cents(manualSurplus, 'Sobrante manual');
-  const cashSurplus = cents(closing.surplusPendingIdentification, 'Sobrante calculado');
 
   return {
     closing,
-    manualSurplus: declared/100,
-    surplusCheckDifference: (cashSurplus-declared)/100,
+    surplus: closing.surplusPendingIdentification,
+    shortage: closing.shortagePendingInvestigation,
     outlaySummary: summary,
     crossStorePayments: paying.filter(row => {
       if (!row.categoryId) return false;
