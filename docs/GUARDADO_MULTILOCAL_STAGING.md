@@ -1,5 +1,9 @@
 # F1 — Guardado seguro multilocal: fase de pruebas (no productiva)
 
+## Regla definitiva de sobrante/faltante (actualizada)
+
+No existe captura manual de sobrante. F1-AI calcula la diferencia entre dinero entregado y efectivo esperado (fondo inicial + ingresos en efectivo + cobranza − egresos en efectivo). Diferencia positiva = sobrante; diferencia negativa = faltante. Nunca se dicta el sobrante ni se suma como venta.
+
 ## Estado y límites
 
 La versión V3 de dictado → auditoría rápida continúa siendo la entrada principal.
