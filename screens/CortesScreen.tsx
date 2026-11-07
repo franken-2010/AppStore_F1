@@ -691,7 +691,9 @@ const CortesScreen: React.FC = () => {
                 <MoneyInputWithCalculator label="Dinero entregado (para calcular diferencia)" field="dinero_entregado_local2"
                   value={manualValues.dinero_entregado_local2 || 0} onChange={handleInputChange} />
                 <p className="text-xs font-bold dark:text-white">Ingresos: {formatMXN(secondManualIncome)} · Egresos: {formatMXN(secondManualExpense)}</p>
-                <p className="text-sm font-black dark:text-white">{secondManualDifference >= 0 ? 'Sobrante' : 'Faltante'} automático: {formatMXN(Math.abs(secondManualDifference))}</p>
+                <p className="text-sm font-black dark:text-white">{manualValues.dinero_entregado_local2 === undefined
+                  ? 'Diferencia pendiente: captura el dinero entregado.'
+                  : `${secondManualDifference >= 0 ? 'Sobrante' : 'Faltante'} automático: ${formatMXN(Math.abs(secondManualDifference))}`}</p>
               </section>
             )}
             <button onClick={handleSave} disabled={isSaving || selectedStore === 'local_02'} className="w-full py-6 bg-primary text-white font-black rounded-3xl shadow-xl shadow-primary/20 flex items-center justify-center gap-3 active:scale-95 transition-all text-base disabled:opacity-50">
@@ -712,6 +714,7 @@ const CortesScreen: React.FC = () => {
                   value={rawText}
                   onChange={(e) => {
                     setRawText(e.target.value);
+                    setMultiDraft(null);
                     if (isCopied) setIsCopied(false);
                   }}
                   placeholder="Ventas: 4500, Luz: 1200, Entregue: 3000..."
