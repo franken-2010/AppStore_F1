@@ -9,7 +9,8 @@
     "start": "node server-build/server.cjs",
     "lint": "tsc --noEmit",
     "preview": "vite preview",
-    "test:multilocal": "tsx tests/multiStoreAccounting.test.ts && tsx tests/multiStoreCashMovements.test.ts && tsx tests/multiStoreCorteDraft.test.ts"
+    "test:multilocal": "tsx tests/multiStoreAccounting.test.ts && tsx tests/multiStoreCashMovements.test.ts && tsx tests/multiStoreCorteDraft.test.ts",
+    "build:staging": "vite build --config vite.preview.config.ts"
   },
   "dependencies": {
     "@google/genai": "^2.32.0",
