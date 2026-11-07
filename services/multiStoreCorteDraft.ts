@@ -233,7 +233,7 @@ export function parseMultiStoreDraftFallback(
       // Convención F1: "Gastos Abarrotes / Fiesta / Recargas" significa
       // compra de mercancía de ese rubro, salvo que se mencione un gasto general.
       else if (/gasto/.test(lower) && categoryId) kind = 'purchase';
-      const needsCategory = kind === 'purchase' || kind === 'direct_expense';
+      const needsCategory = kind === 'purchase';
       outlays.push({kind,categoryId:needsCategory?categoryId:null,payingStoreId:payer||storeId,
         amount,concept:line,rawText:line,needsReview:(needsCategory&&!categoryId)});
       continue;
