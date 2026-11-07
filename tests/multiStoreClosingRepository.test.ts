@@ -24,7 +24,6 @@ const local1=parseMultiStoreDraftFallback([
   'Renta 600',
   'Pago clientes 200',
   'Consumo empleados 75',
-  'Sobrante 40',
   'Dinero entregado 3800',
 ].join('\n'),'local_01','2026-11-06');
 eq(local1.warnings.length,0,'Dictado F1 sin advertencias');
@@ -35,7 +34,8 @@ eq(prepared.audit.classifiedCashSales,5625,'Ventas reales separadas');
 eq(prepared.audit.previousDebtCollections,200,'Cobranza no es venta nueva');
 eq(prepared.audit.cashOutflows,1400,'Compras y renta pagadas');
 eq(prepared.audit.employeeAndOwnerConsumption,75,'Consumo de producto sin efectivo');
-eq(prepared.audit.manualSurplus,40,'Sobrante manual, no venta');
+eq(prepared.audit.surplus,0,'Sin sobrante al existir faltante');
+eq(prepared.audit.shortage,625,'Faltante derivado de diferencia');
 eq(prepared.audit.cashDifference,-625,'Faltante reportado');
 
 const repo=new MemoryClosingRepository();
