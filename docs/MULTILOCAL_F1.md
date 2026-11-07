@@ -3,6 +3,10 @@
 **Rama:** `desarrollo-independiente` — NO fusionar todavía con `main`.
 **Producción:** no desplegada ni conectada a la base de datos real.
 
+## Actualización operativa — sobrante automático
+
+La indicación más reciente reemplaza las referencias históricas de este documento a sobrante manual: el sobrante NO es un campo de captura. Se calcula automáticamente como `dinero entregado − (fondo inicial + entradas en efectivo − salidas en efectivo)`. Un resultado negativo es faltante. El resultado se audita pero nunca se incorpora como una venta por categoría.
+
 ## Estructura
 
 - Local 1: Abarrotes, Fiesta, Recargas y Estancias.
