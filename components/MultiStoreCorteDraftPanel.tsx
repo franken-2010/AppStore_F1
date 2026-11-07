@@ -1,13 +1,16 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import VoiceInputButton from './VoiceInputButton';
-import { parseMultiStoreDraftFallback } from '../services/multiStoreCorteDraft';
 import { F1_CATEGORY_LABELS, F1_STORES, calculateCashClosing,
   type StoreId, type SalesCategoryId } from '../services/multiStoreAccounting';
 import type {
   MultiStoreCorteDraft, DraftIncomeKind, DraftOutlayKind,
 } from '../services/multiStoreCorteDraft';
 
-interface Props { dateKey: string; demoMode?: boolean; }
+interface Props {
+  dateKey: string;
+  demoMode?: boolean;
+  analyzeDraft: (text: string, dateKey: string, storeId: StoreId) => Promise<MultiStoreCorteDraft>;
+}
 type MutableItem = { amount: number; needsReview: boolean; };
 const money = (v: number) => new Intl.NumberFormat('es-MX',{style:'currency',currency:'MXN'}).format(v);
 const INCOME_TYPES: {value:DraftIncomeKind,label:string}[] = [
@@ -28,7 +31,7 @@ const validNum = (str: string) => {
   return Number.isFinite(val) && val >= 0 ? Math.round(val * 100)/100 : 0;
 };
 
-const MultiStoreCorteDraftPanel: React.FC<Props> = ({dateKey,demoMode=false}) => {
+const MultiStoreCorteDraftPanel: React.FC<Props> = ({dateKey,demoMode=false,analyzeDraft}) => {
   const [storeId,setStoreId] = useState<StoreId>('local_01');
   const [report,setReport] = useState('');
   const [interim,setInterim] = useState('');
@@ -51,9 +54,7 @@ const MultiStoreCorteDraftPanel: React.FC<Props> = ({dateKey,demoMode=false}) =>
     if (!report.trim() || busy) return;
     setBusy(true);setError('');setInterim('');
     try {
-      const result = demoMode
-        ? parseMultiStoreDraftFallback(report,storeId,dateKey)
-        : await (await import('../services/geminiService')).GeminiService.parseMultiStoreCorteDraft(report,dateKey,storeId);
+      const result = await analyzeDraft(report,dateKey,storeId);
       setDraft(result);
     } catch {
       setError('No se pudo analizar el corte. Conservamos tu texto: revisa la conexión e inténtalo otra vez.');
