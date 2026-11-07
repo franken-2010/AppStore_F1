@@ -31,7 +31,6 @@ export interface MultiStoreCorteDraft {
   outlays: DraftOutlay[];
   cash: {
     countedCash: number | null;
-    manualSurplus: number | null;
   };
   warnings: string[];
   engine: 'gemini' | 'local';
@@ -138,11 +137,9 @@ export function normalizeMultiStoreDraft(
   const cash = raw?.cash && typeof raw.cash === 'object' && !Array.isArray(raw.cash)
     ? raw.cash as Record<string, unknown> : {};
   const countedCash = cash.countedCash == null ? null : safeAmount(cash.countedCash);
-  const manualSurplus = cash.manualSurplus == null ? null : safeAmount(cash.manualSurplus);
   if (cash.countedCash != null && countedCash === null) warnings.push('Efectivo contado inválido');
-  if (cash.manualSurplus != null && manualSurplus === null) warnings.push('Sobrante manual inválido');
   return {version: 2, storeId, dateKey, incomes, outlays,
-    cash: {countedCash, manualSurplus}, warnings, engine};
+    cash: {countedCash}, warnings, engine};
 }
 
 /** Fallback local intencionalmente conservador: líneas ambiguas quedan pendientes. */
@@ -185,7 +182,7 @@ export function parseMultiStoreDraftFallback(
   const cash: Record<string, unknown> = {};
   const lines = rawText
     .split(/[\r\n;]+/)
-    .flatMap(line => line.split(/(?<=\d)\s+(?:y\s+)?(?=(?:ventas?|fiesta|recargas?|estancias?|frutas?|verduras?|pan(?:aderia)?|galletas?|comida\s+preparada|compras?|gastos?|pago\s+clientes?|sueldos?|nomina|renta|luz|agua|internet|sobrante|dinero\s+entregado)\b)/i))
+    .flatMap(line => line.split(/(?<=\d)\s+(?:y\s+)?(?=(?:ventas?|fiesta|recargas?|estancias?|frutas?|verduras?|pan(?:aderia)?|galletas?|comida\s+preparada|compras?|gastos?|pago\s+clientes?|sueldos?|nomina|renta|luz|agua|internet|dinero\s+entregado)\b)/i))
     .map(s => s.trim()).filter(Boolean).slice(0, 150);
   for (const line of lines) {
     const lower = cleanLabel(line);
@@ -204,7 +201,8 @@ export function parseMultiStoreDraftFallback(
     }
     const amount = fallbackSum(line);
     if (amount === null) { warnings.push('Sin importe: ' + line.slice(0,100)); continue; }
-    if (/sobrante/.test(lower)) { cash.manualSurplus = amount; continue; }
+    // El sobrante nunca se captura: se calcula al conciliar el efectivo.
+    if (/sobrante/.test(lower)) continue;
     if (/entregad|efectivo\s+final|caja\s+final|dinero\s+contado|dinero\s+en\s+caja/.test(lower)) {
       cash.countedCash = amount; continue;
     }
