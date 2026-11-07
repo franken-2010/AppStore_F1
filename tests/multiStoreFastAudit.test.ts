@@ -53,6 +53,14 @@ eq(audit.expectedCash,4425,'Efectivo esperado');
 eq(audit.cashDifference,-625,'Diferencia de caja');
 eq(audit.surplus,0,'No declarar sobrante cuando realmente falta efectivo');
 eq(audit.shortage,625,'Faltante calculado automáticamente');
+const positive = structuredClone(draft);
+positive.cash.countedCash = 4465;
+const surplusAudit = buildF1AuditSummary(positive);
+eq(surplusAudit.expectedCash,4425,'Efectivo esperado fijo');
+eq(surplusAudit.cashDifference,40,'Diferencia automática positiva');
+eq(surplusAudit.surplus,40,'Sobrante calculado sin captura');
+eq(surplusAudit.shortage,0,'Sin faltante cuando hay sobrante');
+
 eq(audit.employeeAndOwnerConsumption,75,'Consumo sin salida efectivo');
 eq(audit.unresolved,0,'Conceptos explícitos no necesitan etiquetarse otra vez');
 
