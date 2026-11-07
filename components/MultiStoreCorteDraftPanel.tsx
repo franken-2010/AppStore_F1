@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import VoiceInputButton from './VoiceInputButton';
+import { TrialClosingControls } from './TrialClosingControls';
 import { buildF1AuditSummary } from '../services/multiStoreCorteSummary';
 import { F1_CATEGORY_LABELS, F1_STORES,
   type StoreId, type SalesCategoryId } from '../services/multiStoreAccounting';
@@ -347,6 +348,7 @@ const MultiStoreCorteDraftPanel: React.FC<Props> = ({dateKey,demoMode=false,anal
 
           </div>}
         </div>}
+        {demoMode && <TrialClosingControls draft={draft} openingCash={openingCash} />}
         <div className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-xs font-semibold text-amber-900 dark:bg-amber-950 dark:text-amber-200">
           MODO PRUEBA. El análisis y los cambios de esta pantalla NO SE GUARDAN en Firebase. {demoMode?' Esta vista pública no utiliza Gemini.':''}
           El botón actual «Confirmar y Registrar» de las otras pestañas no utiliza este borrador.
