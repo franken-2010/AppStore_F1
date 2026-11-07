@@ -230,7 +230,9 @@ export function parseMultiStoreDraftFallback(
       if (/anticipo|prestamo/.test(lower)) kind = 'temporary_advance';
       else if (/retiro|para\s+mi\s+casa/.test(lower)) kind = 'owner_withdrawal';
       else if (/renta|nomina|sueldo|mantenimiento|luz|agua|internet|cfe\b|administrativ|limpieza/.test(lower)) kind = 'general_expense';
-      else if (/gasto/.test(lower) && categoryId) kind = 'direct_expense';
+      // Convención F1: "Gastos Abarrotes / Fiesta / Recargas" significa
+      // compra de mercancía de ese rubro, salvo que se mencione un gasto general.
+      else if (/gasto/.test(lower) && categoryId) kind = 'purchase';
       const needsCategory = kind === 'purchase' || kind === 'direct_expense';
       outlays.push({kind,categoryId:needsCategory?categoryId:null,payingStoreId:payer||storeId,
         amount,concept:line,rawText:line,needsReview:(needsCategory&&!categoryId)});
