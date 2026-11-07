@@ -55,7 +55,7 @@ eq(audit.expectedCash,4425,'Efectivo esperado');
 eq(audit.cashDifference,-625,'Diferencia de caja');
 eq(audit.manualSurplus,40,'Sobrante sin crear venta');
 eq(audit.employeeAndOwnerConsumption,75,'Consumo sin salida efectivo');
-eq(audit.unresolved,1,'Solo consumo de mercancía requiere confirmación');
+eq(audit.unresolved,0,'Conceptos explícitos no necesitan etiquetarse otra vez');
 
 const onlyTwoLines=parseMultiStoreDraftFallback('Ventas 455 + 677 + 3343\nFiesta 900','local_01','2026-11-06');
 eq(onlyTwoLines.incomes[0].amount,4475,'Dictado abreviado suma');
