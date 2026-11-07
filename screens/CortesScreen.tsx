@@ -223,6 +223,29 @@ const CortesScreen: React.FC = () => {
     setStatus({ text: "F1-AI analizando reporte...", type: 'info' });
     
     try {
+      const checked = parseMultiStoreDraftFallback(rawText, selectedStore, selectedDate);
+      // Nunca mezclar un corte de Local 1 con ventas/compras de Local 2 ni viceversa.
+      const foreign = [...checked.incomes, ...checked.outlays]
+        .filter(row => row.categoryId &&
+          !F1_STORES.find(s => s.id === selectedStore)!.categories.includes(row.categoryId));
+      if (foreign.length) {
+        const labels = [...new Set(foreign.map(row => F1_CATEGORY_LABELS[row.categoryId!]))].join(', ');
+        setParsedCut(null);
+        setMultiDraft(null);
+        setStatus({ text: `Categoría de otro local: ${labels}. Selecciona la caja correcta o separa el movimiento antes de registrar.`, type: 'error' });
+        return;
+      }
+      if (selectedStore === 'local_02') {
+        const draft = await GeminiService.parseMultiStoreCorteDraft(rawText, selectedDate, selectedStore);
+        setParsedCut(null);
+        setMultiDraft(draft);
+        const audit = buildF1AuditSummary(draft);
+        setStatus(audit.unresolved || draft.warnings.length
+          ? { text: 'Hay categorías o movimientos por revisar; no se registrará ningún asiento.', type: 'warning' }
+          : { text: 'Auditoría del Local 2 terminada. Guardado real pendiente de validación contable.', type: 'info' });
+        return;
+      }
+      setMultiDraft(null);
       const data = await GeminiService.parseCorteText(rawText, selectedDate);
       
       // Asegurar integridad de datos (Self-check)
@@ -719,6 +742,31 @@ const CortesScreen: React.FC = () => {
                     <span className="material-symbols-outlined">analytics</span> Analizar con F1-AI
                   </button>
                 </div>
+                {multiDraft && multiAudit && (
+                  <section className="space-y-4 border-t border-slate-100 dark:border-white/10 pt-5">
+                    <h3 className="text-sm font-black uppercase text-primary">Auditoría de Corte · {selectedStoreName}</h3>
+                    {F1_STORES.find(s => s.id === selectedStore)!.categories.map(category => (
+                      <div key={category} className="space-y-1 text-sm font-bold dark:text-white">
+                        <div className="flex justify-between"><span>Ventas {F1_CATEGORY_LABELS[category]}</span><span>{formatMXN(multiAudit.cashSales[category] || 0)}</span></div>
+                        <div className="flex justify-between text-slate-500"><span>Compras {F1_CATEGORY_LABELS[category]}</span><span>{formatMXN(multiAudit.purchases[category] || 0)}</span></div>
+                      </div>
+                    ))}
+                    <div className="border-t border-slate-100 dark:border-white/10 space-y-2 pt-3 text-sm font-bold dark:text-white">
+                      <div className="flex justify-between"><span>Ingresos en efectivo</span><span>{formatMXN(multiAudit.totalCashEntries)}</span></div>
+                      <div className="flex justify-between"><span>Egresos de caja</span><span>{formatMXN(multiAudit.cashOutflows)}</span></div>
+                      <div className="flex justify-between"><span>Efectivo esperado</span><span>{formatMXN(multiAudit.expectedCash)}</span></div>
+                      <div className="flex justify-between"><span>Dinero entregado</span><span>{multiAudit.countedCash == null ? 'No indicado' : formatMXN(multiAudit.countedCash)}</span></div>
+                      <div className="flex justify-between text-primary"><span>{multiAudit.cashDifference == null ? 'Diferencia pendiente' : multiAudit.cashDifference >= 0 ? 'Sobrante automático' : 'Faltante automático'}</span><span>{multiAudit.cashDifference == null ? '—' : formatMXN(Math.abs(multiAudit.cashDifference))}</span></div>
+                    </div>
+                    {(multiAudit.unresolved > 0 || multiDraft.warnings.length > 0) && (
+                      <div className="rounded-xl bg-amber-50 dark:bg-amber-950/40 p-4 text-xs text-amber-900 dark:text-amber-200 space-y-2">
+                        <strong>Movimientos por verificar: {multiAudit.unresolved}</strong>
+                        {multiDraft.warnings.map((warning, index) => <p key={index}>{warning}</p>)}
+                      </div>
+                    )}
+                    <p className="text-xs text-amber-700 dark:text-amber-300 font-bold">Modo prueba: no registra movimientos en Firestore.</p>
+                  </section>
+                )}
               </div>
             ) : (
               <div className="space-y-6 animate-in slide-in-from-bottom-4 duration-500">
