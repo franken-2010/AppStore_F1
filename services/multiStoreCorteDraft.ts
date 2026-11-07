@@ -223,7 +223,7 @@ export function parseMultiStoreDraftFallback(
     }
     if (nonCash) {
       outlays.push({kind:'non_cash_consumption',categoryId:null,payingStoreId:payer||storeId,
-        amount,rawText:line,concept:line,needsReview:true}); continue;
+        amount,rawText:line,concept:line,needsReview:false}); continue;
     }
     if (expense) {
       let kind: DraftOutlayKind = 'purchase';
