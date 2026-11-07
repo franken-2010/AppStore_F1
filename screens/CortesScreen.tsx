@@ -20,9 +20,26 @@ import { GeminiService } from '../services/geminiService';
 import { AccountResolver } from '../services/AccountResolver';
 import { AccountingService, RegisterSchema } from '../services/AccountingService';
 import MoneyInputWithCalculator from '../components/MoneyInputWithCalculator';
-import MultiStoreCorteDraftPanel from '../components/MultiStoreCorteDraftPanel';
+import { F1_STORES, F1_CATEGORY_LABELS, type StoreId } from '../services/multiStoreAccounting';
+import { parseMultiStoreDraftFallback, type MultiStoreCorteDraft } from '../services/multiStoreCorteDraft';
+import { buildF1AuditSummary } from '../services/multiStoreCorteSummary';
 
-type TabMode = 'manual' | 'raw' | 'multilocal';
+type TabMode = 'manual' | 'raw';
+// Los campos nuevos replican el formulario manual original, sin crear otra pantalla.
+const SECOND_STORE_INCOME = [
+  { id: 'in_frutas_verduras', label: 'Frutas y verduras' },
+  { id: 'in_pan_galletas', label: 'Pan y galletas' },
+  { id: 'in_comida_preparada', label: 'Comida preparada' },
+];
+const SECOND_STORE_EXPENSE = [
+  { id: 'ex_frutas_verduras', label: 'Compras Frutas y verduras' },
+  { id: 'ex_pan_galletas', label: 'Compras Pan y galletas' },
+  { id: 'ex_comida_preparada', label: 'Compras Comida preparada' },
+  { id: 'ex_empleados', label: 'Sueldos / Pago empleados' },
+  { id: 'ex_renta', label: 'Renta' },
+  { id: 'ex_mantenimiento', label: 'Mantenimiento' },
+  { id: 'ex_gastos_administrativos', label: 'Gastos administrativos' },
+];
 
 interface CutCanonical {
   income: {
@@ -61,6 +78,7 @@ const CortesScreen: React.FC = () => {
   const { user } = useAuth();
   const { addNotification } = useNotifications();
   const [activeTab, setActiveTab] = useState<TabMode>('manual');
+  const [selectedStore, setSelectedStore] = useState<StoreId>('local_01');
   const [selectedDate, setSelectedDate] = useState(() => {
     const d = new Date();
     const year = d.getFullYear();
@@ -78,6 +96,7 @@ const CortesScreen: React.FC = () => {
   // RAW Mode States
   const [rawText, setRawText] = useState('');
   const [parsedCut, setParsedCut] = useState<CutCanonical | null>(null);
+  const [multiDraft, setMultiDraft] = useState<MultiStoreCorteDraft | null>(null);
   const [isCopied, setIsCopied] = useState(false);
   const rawTextareaRef = useRef<HTMLTextAreaElement>(null);
   const copyTimeoutRef = useRef<number | null>(null);
@@ -102,6 +121,20 @@ const CortesScreen: React.FC = () => {
   }, [user]);
 
   const formatMXN = (val: number) => new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(val);
+  const selectedStoreName = F1_STORES.find(s => s.id === selectedStore)!.name;
+  const multiAudit = useMemo(() => multiDraft ? buildF1AuditSummary(multiDraft) : null, [multiDraft]);
+  const secondManualIncome = SECOND_STORE_INCOME.reduce((sum, f) => sum + (manualValues[f.id] || 0), 0);
+  const secondManualExpense = SECOND_STORE_EXPENSE.reduce((sum, f) => sum + (manualValues[f.id] || 0), 0);
+  const secondManualDifference = (manualValues.dinero_entregado_local2 || 0) - (secondManualIncome - secondManualExpense);
+  const selectStore = (next: StoreId) => {
+    if (next === selectedStore || isSaving) return;
+    setSelectedStore(next);
+    setParsedCut(null);
+    setMultiDraft(null);
+    setRawText('');
+    setManualValues({});
+    setStatus(null);
+  };
 
   const handleInputChange = (id: string, value: string) => {
     setManualValues(prev => ({ ...prev, [id]: parseFloat(value) || 0 }));
@@ -260,6 +293,10 @@ const CortesScreen: React.FC = () => {
   };
 
   const handleSave = async () => {
+    if (selectedStore === 'local_02') {
+      setStatus({ text: 'Guardado del Local 2 bloqueado hasta validar cuentas y reglas de Firebase.', type: 'warning' });
+      return;
+    }
     if (!user || !schema) return;
     setIsSaving(true);
     setStatus({ text: "Sincronizando movimientos contables...", type: 'info' });
@@ -571,13 +608,21 @@ const CortesScreen: React.FC = () => {
           <ProfileMenu />
         </div>
         <div className="flex p-1 bg-slate-200 dark:bg-surface-dark rounded-2xl">
-          {(['manual', 'raw', 'multilocal'] as TabMode[]).map(mode => (
-            <button key={mode} onClick={() => setActiveTab(mode)} className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase transition-all ${activeTab === mode ? 'bg-primary text-white shadow-lg shadow-primary/20' : 'text-slate-500'}`}>{mode === 'manual' ? 'Carga Manual' : mode === 'raw' ? 'Pegar Corte' : 'F1-AI 2 locales'}</button>
+          {(['manual', 'raw'] as TabMode[]).map(mode => (
+            <button key={mode} onClick={() => setActiveTab(mode)} className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase transition-all ${activeTab === mode ? 'bg-primary text-white shadow-lg shadow-primary/20' : 'text-slate-500'}`}>{mode === 'manual' ? 'Carga Manual' : 'Pegar Corte'}</button>
           ))}
         </div>
       </header>
 
       <main className="px-5 mt-6 space-y-8 pb-10">
+        <section className="space-y-2">
+          <label htmlFor="f1-store" className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 ml-1">Caja / Local del corte</label>
+          <select id="f1-store" value={selectedStore} onChange={e => selectStore(e.target.value as StoreId)}
+            className="w-full bg-white dark:bg-surface-dark dark:text-white rounded-2xl border border-slate-200 dark:border-white/10 p-4 font-bold">
+            {F1_STORES.map(store => <option key={store.id} value={store.id}>{store.name}</option>)}
+          </select>
+          {selectedStore === 'local_02' && <p className="text-xs font-bold text-amber-700 dark:text-amber-300">Local 2: captura y auditoría en prueba. El guardado real sigue deshabilitado para proteger tu contabilidad.</p>}
+        </section>
         {/* Fecha del Corte */}
         <div className="flex flex-col gap-2">
           <label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 ml-1">Fecha del Registro</label>
@@ -585,7 +630,7 @@ const CortesScreen: React.FC = () => {
             <input 
               type="date" 
               value={selectedDate}
-              onChange={(e) => setSelectedDate(e.target.value)}
+              onChange={(e) => { setSelectedDate(e.target.value); setParsedCut(null); setMultiDraft(null); }}
               className="w-full bg-white dark:bg-surface-dark border border-slate-200 dark:border-white/5 rounded-2xl p-4 font-bold text-slate-800 dark:text-white shadow-sm outline-none focus:ring-2 focus:ring-primary/50 transition-all"
             />
             <span className="material-symbols-outlined absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-primary transition-colors pointer-events-none">calendar_today</span>
@@ -604,7 +649,7 @@ const CortesScreen: React.FC = () => {
             <section className="space-y-4">
               <h3 className="text-xs font-black uppercase tracking-[0.2em] text-slate-400 ml-1">Entradas de Dinero</h3>
               <div className="bg-white dark:bg-surface-dark p-6 rounded-[2rem] shadow-sm space-y-6">
-                {schema?.ingresos.map(rubric => (
+                {(selectedStore === 'local_01' ? (schema?.ingresos || []) : SECOND_STORE_INCOME).map(rubric => (
                   <MoneyInputWithCalculator key={rubric.id} label={rubric.label} field={rubric.id} value={manualValues[rubric.id] || 0} onChange={handleInputChange} />
                 ))}
               </div>
@@ -612,18 +657,25 @@ const CortesScreen: React.FC = () => {
             <section className="space-y-4">
               <h3 className="text-xs font-black uppercase tracking-[0.2em] text-slate-400 ml-1">Salidas / Gastos</h3>
               <div className="bg-white dark:bg-surface-dark p-6 rounded-[2rem] shadow-sm space-y-6">
-                {schema?.egresos.map(rubric => (
+                {(selectedStore === 'local_01' ? (schema?.egresos || []) : SECOND_STORE_EXPENSE).map(rubric => (
                   <MoneyInputWithCalculator key={rubric.id} label={rubric.label} field={rubric.id} value={manualValues[rubric.id] || 0} onChange={handleInputChange} />
                 ))}
               </div>
             </section>
-            <button onClick={handleSave} disabled={isSaving} className="w-full py-6 bg-primary text-white font-black rounded-3xl shadow-xl shadow-primary/20 flex items-center justify-center gap-3 active:scale-95 transition-all text-base disabled:opacity-50">
+
+            {selectedStore === 'local_02' && (
+              <section className="bg-white dark:bg-surface-dark p-6 rounded-[2rem] space-y-3">
+                <MoneyInputWithCalculator label="Dinero entregado (para calcular diferencia)" field="dinero_entregado_local2"
+                  value={manualValues.dinero_entregado_local2 || 0} onChange={handleInputChange} />
+                <p className="text-xs font-bold dark:text-white">Ingresos: {formatMXN(secondManualIncome)} · Egresos: {formatMXN(secondManualExpense)}</p>
+                <p className="text-sm font-black dark:text-white">{secondManualDifference >= 0 ? 'Sobrante' : 'Faltante'} automático: {formatMXN(Math.abs(secondManualDifference))}</p>
+              </section>
+            )}
+            <button onClick={handleSave} disabled={isSaving || selectedStore === 'local_02'} className="w-full py-6 bg-primary text-white font-black rounded-3xl shadow-xl shadow-primary/20 flex items-center justify-center gap-3 active:scale-95 transition-all text-base disabled:opacity-50">
               {isSaving ? <span className="material-symbols-outlined animate-spin">sync</span> : <span className="material-symbols-outlined">send</span>}
               Sincronizar Operación
             </button>
           </div>
-        ) : activeTab === 'multilocal' ? (
-          <MultiStoreCorteDraftPanel dateKey={selectedDate} analyzeDraft={GeminiService.parseMultiStoreCorteDraft} />
         ) : (
           <div className="space-y-6">
             {!parsedCut ? (
