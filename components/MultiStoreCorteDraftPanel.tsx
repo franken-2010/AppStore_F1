@@ -1,13 +1,13 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import VoiceInputButton from './VoiceInputButton';
-import { GeminiService } from '../services/geminiService';
+import { parseMultiStoreDraftFallback } from '../services/multiStoreCorteDraft';
 import { F1_CATEGORY_LABELS, F1_STORES, calculateCashClosing,
   type StoreId, type SalesCategoryId } from '../services/multiStoreAccounting';
 import type {
   MultiStoreCorteDraft, DraftIncomeKind, DraftOutlayKind,
 } from '../services/multiStoreCorteDraft';
 
-interface Props { dateKey: string; }
+interface Props { dateKey: string; demoMode?: boolean; }
 type MutableItem = { amount: number; needsReview: boolean; };
 const money = (v: number) => new Intl.NumberFormat('es-MX',{style:'currency',currency:'MXN'}).format(v);
 const INCOME_TYPES: {value:DraftIncomeKind,label:string}[] = [
@@ -28,7 +28,7 @@ const validNum = (str: string) => {
   return Number.isFinite(val) && val >= 0 ? Math.round(val * 100)/100 : 0;
 };
 
-const MultiStoreCorteDraftPanel: React.FC<Props> = ({dateKey}) => {
+const MultiStoreCorteDraftPanel: React.FC<Props> = ({dateKey,demoMode=false}) => {
   const [storeId,setStoreId] = useState<StoreId>('local_01');
   const [report,setReport] = useState('');
   const [interim,setInterim] = useState('');
@@ -51,7 +51,9 @@ const MultiStoreCorteDraftPanel: React.FC<Props> = ({dateKey}) => {
     if (!report.trim() || busy) return;
     setBusy(true);setError('');setInterim('');
     try {
-      const result = await GeminiService.parseMultiStoreCorteDraft(report,dateKey,storeId);
+      const result = demoMode
+        ? parseMultiStoreDraftFallback(report,storeId,dateKey)
+        : await (await import('../services/geminiService')).GeminiService.parseMultiStoreCorteDraft(report,dateKey,storeId);
       setDraft(result);
     } catch {
       setError('No se pudo analizar el corte. Conservamos tu texto: revisa la conexión e inténtalo otra vez.');
@@ -150,7 +152,7 @@ const MultiStoreCorteDraftPanel: React.FC<Props> = ({dateKey}) => {
         <div className="flex items-center justify-between gap-2">
           <div>
             <h2 className="text-base font-black text-slate-900 dark:text-white">F1-AI · Corte por local</h2>
-            <p className="mt-1 text-xs text-slate-500">Modo experimental: solo lectura y revisión</p>
+            <p className="mt-1 text-xs text-slate-500">{demoMode?'Sitio público de demostración: reglas locales, sin Gemini ni Firebase':'Modo experimental: solo lectura y revisión'}</p>
           </div>
           <span className="rounded-full bg-amber-100 px-3 py-1 text-[10px] font-black text-amber-900">BORRADOR</span>
         </div>
@@ -179,7 +181,7 @@ const MultiStoreCorteDraftPanel: React.FC<Props> = ({dateKey}) => {
         <button type="button" disabled={!report.trim()||busy} onClick={analyze}
           className="mt-4 flex w-full items-center justify-center gap-2 rounded-2xl bg-indigo-600 px-4 py-4 text-sm font-black text-white disabled:opacity-40">
           <span className="material-symbols-outlined">{busy?'sync':'analytics'}</span>
-          {busy?'Analizando corte...':'Analizar con F1-AI · Multilocal'}
+          {busy?'Analizando corte...':demoMode?'Analizar dictado · Motor local de prueba':'Analizar con F1-AI · Multilocal'}
         </button>
       </section>
 
@@ -339,7 +341,7 @@ const MultiStoreCorteDraftPanel: React.FC<Props> = ({dateKey}) => {
           </p>}
         </section>
         <div className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-xs font-semibold text-amber-900 dark:bg-amber-950 dark:text-amber-200">
-          MODO PRUEBA. El análisis y los cambios de esta pantalla NO SE GUARDAN en Firebase.
+          MODO PRUEBA. El análisis y los cambios de esta pantalla NO SE GUARDAN en Firebase. {demoMode?' Esta vista pública no utiliza Gemini.':''}
           El botón actual «Confirmar y Registrar» de las otras pestañas no utiliza este borrador.
           Para registrar operaciones reales, sigue utilizando tu corte habitual.
         </div>
