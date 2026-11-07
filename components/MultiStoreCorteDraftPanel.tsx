@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import VoiceInputButton from './VoiceInputButton';
-import { F1_CATEGORY_LABELS, F1_STORES, calculateCashClosing,
+import { buildF1AuditSummary } from '../services/multiStoreCorteSummary';
+import { F1_CATEGORY_LABELS, F1_STORES,
   type StoreId, type SalesCategoryId } from '../services/multiStoreAccounting';
 import type {
   MultiStoreCorteDraft, DraftIncomeKind, DraftOutlayKind,
@@ -40,7 +41,8 @@ const MultiStoreCorteDraftPanel: React.FC<Props> = ({dateKey,demoMode=false,anal
   const [error,setError] = useState('');
   const [openingCash,setOpeningCash] = useState(0);
   const manualSequence = useRef(0);
-  useEffect(()=>{setDraft(null);setError('');},[storeId,dateKey]);
+  const [detailsOpen,setDetailsOpen] = useState(false);
+  useEffect(()=>{setDraft(null);setError('');setDetailsOpen(false);},[storeId,dateKey]);
   const store = F1_STORES.find(s=>s.id===storeId)!;
 
   const onVoiceResult = (text:string,isFinal:boolean) => {
@@ -56,6 +58,7 @@ const MultiStoreCorteDraftPanel: React.FC<Props> = ({dateKey,demoMode=false,anal
     try {
       const result = await analyzeDraft(report,dateKey,storeId);
       setDraft(result);
+      setDetailsOpen(buildF1AuditSummary(result,openingCash).unresolved>0);
     } catch {
       setError('No se pudo analizar el corte. Conservamos tu texto: revisa la conexión e inténtalo otra vez.');
     } finally {setBusy(false);}
@@ -105,47 +108,7 @@ const MultiStoreCorteDraftPanel: React.FC<Props> = ({dateKey,demoMode=false,anal
       outlays:previous.outlays.map(i=>i.id===id?{...i,needsReview:false}:i)} : previous);
   };
 
-  const review = useMemo(()=>{
-    if (!draft) return null;
-    const cashSales: Record<string,number> = {};
-    const unclassified = draft.incomes.some(i=>i.kind!=='collection' && (!i.categoryId ||
-      !store.categories.includes(i.categoryId))) ||
-      draft.outlays.some(o=>(o.kind==='purchase'||o.kind==='direct_expense')&&!o.categoryId);
-    const pendingCount = draft.incomes.filter(i=>i.needsReview).length +
-      draft.outlays.filter(i=>i.needsReview).length;
-    for (const row of draft.incomes) {
-      if(row.kind==='cash_sale' && row.categoryId && store.categories.includes(row.categoryId))
-        cashSales[row.categoryId]=(cashSales[row.categoryId]||0)+row.amount;
-    }
-    const collections = draft.incomes.filter(i=>i.kind==='collection')
-      .reduce((sum,i)=>sum+i.amount,0);
-    const payments = draft.outlays.filter(o=>o.payingStoreId===storeId && o.kind!=='non_cash_consumption');
-    const purchases = payments.filter(o=>o.kind==='purchase').reduce((sum,o)=>sum+o.amount,0);
-    const expense = payments.filter(o=>o.kind==='direct_expense'||o.kind==='general_expense')
-      .reduce((sum,o)=>sum+o.amount,0);
-    const withdrawals = payments.filter(o=>o.kind==='temporary_advance'||o.kind==='owner_withdrawal')
-      .reduce((sum,o)=>sum+o.amount,0);
-    const counted = draft.cash.countedCash;
-    if(counted===null)return {closing:null,pendingCount,unclassified,missingCash:true};
-    try {
-      const closing=calculateCashClosing({
-        storeId,dateKey,
-        categorySales:store.categories.map(categoryId=>({
-          categoryId,cashSales:validNum(String(cashSales[categoryId]||0)),
-          creditSales:draft.incomes.filter(i=>i.kind==='credit_sale' && i.categoryId===categoryId)
-            .reduce((a,b)=>a+b.amount,0),
-        })),
-        openingCash, cashCollections:validNum(String(collections)),
-        cashPurchases:validNum(String(purchases)),
-        cashOperatingExpenses:validNum(String(expense)),
-        cashWithdrawals:validNum(String(withdrawals)),
-        countedCash:counted,
-      });
-      return {closing,pendingCount,unclassified,missingCash:false};
-    } catch {
-      return {closing:null,pendingCount,unclassified:true,missingCash:false};
-    }
-  },[draft,openingCash,storeId,dateKey,store]);
+  const audit = useMemo(()=>draft ? buildF1AuditSummary(draft,openingCash) : null,[draft,openingCash]);
 
   return (
     <div className="space-y-5">
@@ -165,7 +128,7 @@ const MultiStoreCorteDraftPanel: React.FC<Props> = ({dateKey,demoMode=false,anal
           {F1_STORES.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}
         </select>
         <p className="mt-3 text-xs text-slate-500 dark:text-slate-300">
-          Puedes dictar varias compras de diferentes categorías. La categoría del gasto puede ser distinta de la caja que pagó.
+          Di «Ventas», «Fiesta», «Recargas» o «Gastos Abarrotes» como siempre. F1-AI asigna las categorías automáticamente; no tienes que elegirlas otra vez.
         </p>
         <div className="mt-4 flex items-center justify-between">
           <label htmlFor="multistore-dictation" className="text-xs font-black uppercase text-indigo-600 dark:text-indigo-300">
@@ -175,7 +138,7 @@ const MultiStoreCorteDraftPanel: React.FC<Props> = ({dateKey,demoMode=false,anal
         </div>
         <textarea id="multistore-dictation" rows={9} value={report}
           onChange={e=>{setReport(e.target.value);setDraft(null);}}
-          placeholder={'Ventas Abarrotes 1500 + 400\nCompra Fiesta 300 + 150 pagada caja 1\nCompra Frutas y verduras 650 pagada caja 1\nRenta 600 pagada caja 1\nSobrante 45\nDinero entregado 1200'}
+          placeholder={'Ventas 455 + 677 + 3343\nFiesta 500\nRecargas 200\nGastos Abarrotes 300 + 150\nCompra Frutas 650\nRenta 600\nSobrante 45\nDinero entregado 1200'}
           className="mt-2 w-full resize-y rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-900 outline-none focus:border-indigo-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"/>
         {interim && <p className="mt-2 text-xs text-indigo-700 dark:text-indigo-300">Escuchando: {interim}</p>}
         {error && <p role="alert" className="mt-2 text-xs text-rose-600">{error}</p>}
@@ -188,9 +151,9 @@ const MultiStoreCorteDraftPanel: React.FC<Props> = ({dateKey,demoMode=false,anal
 
       {draft && <section className="space-y-5 rounded-[2rem] border border-indigo-200 bg-white p-5 dark:border-indigo-900 dark:bg-surface-dark">
         <div>
-          <h3 className="text-base font-black text-indigo-600 dark:text-indigo-300">Auditoría y revisión por renglón</h3>
+          <h3 className="text-base font-black text-indigo-600 dark:text-indigo-300">Auditoría de Corte</h3>
           <p className="mt-1 text-xs text-slate-500 dark:text-slate-300">
-            Motor: {draft.engine==='gemini'?'Gemini (IA)':'Reglas locales (limitado)'}. Corrige tipo, importe, categoría o caja antes de registrarlos en el futuro.
+            Motor: {draft.engine==='gemini'?'Gemini (IA)':'Reglas locales (limitado)'}. Las categorías conocidas se asignan automáticamente. Solo corrige lo que resulte ambiguo.
           </p>
         </div>
 
@@ -201,6 +164,87 @@ const MultiStoreCorteDraftPanel: React.FC<Props> = ({dateKey,demoMode=false,anal
             {draft.warnings.map((w,i)=><p key={i} className="text-xs">• {w}</p>)}
           </div>
         </div>}
+
+        {audit && <div className="space-y-4">
+          <div className="space-y-2 rounded-2xl border border-slate-200 p-4 dark:border-slate-700">
+            <h4 className="text-xs font-black uppercase tracking-widest text-blue-600 dark:text-blue-300">Ingresos contables</h4>
+            {store.categories.map(category=><div key={category} className="flex justify-between gap-2 text-sm text-slate-700 dark:text-slate-200">
+              <span>{F1_CATEGORY_LABELS[category]}</span><strong>{money(audit.cashSales[category]||0)}</strong>
+            </div>)}
+            <div className="flex justify-between gap-2 border-t border-slate-200 pt-2 text-sm font-black dark:border-slate-700">
+              <span>Ventas de contado</span><span>{money(audit.classifiedCashSales)}</span>
+            </div>
+            <div className="flex justify-between gap-2 text-sm text-slate-700 dark:text-slate-200">
+              <span>Pago de clientes (no es una venta nueva)</span><span>{money(audit.previousDebtCollections)}</span>
+            </div>
+            <div className="flex justify-between gap-2 border-t border-slate-200 pt-2 text-sm font-black dark:border-slate-700">
+              <span>Total de entradas a caja</span><span>{money(audit.totalCashEntries)}</span>
+            </div>
+            {Object.values(audit.creditSales).some(v=>(v||0)>0)&&<div className="flex justify-between gap-2 text-xs text-slate-500 dark:text-slate-300">
+              <span>Ventas a crédito (no entraron a caja)</span><span>{money(Object.values(audit.creditSales).reduce((sum,v)=>sum+(v||0),0))}</span>
+            </div>}
+          </div>
+          <div className="space-y-2 rounded-2xl border border-slate-200 p-4 dark:border-slate-700">
+            <h4 className="text-xs font-black uppercase tracking-widest text-rose-600 dark:text-rose-300">Egresos contables y salidas</h4>
+            {F1_STORES.flatMap(s=>s.categories).filter(category=>
+              (audit.purchases[category]||0)+(audit.directExpenses[category]||0)>0
+            ).map(category=><div key={category} className="flex justify-between gap-2 text-sm text-slate-700 dark:text-slate-200">
+              <span>Compras / gastos {F1_CATEGORY_LABELS[category]}</span>
+              <strong>{money((audit.purchases[category]||0)+(audit.directExpenses[category]||0))}</strong>
+            </div>)}
+            <div className="flex justify-between gap-2 text-sm text-slate-700 dark:text-slate-200">
+              <span>Gastos administrativos y sueldos</span><strong>{money(audit.generalExpenses)}</strong>
+            </div>
+            {audit.temporaryAdvances>0&&<div className="flex justify-between gap-2 text-sm">
+              <span>Anticipos de caja por comprobar</span><strong>{money(audit.temporaryAdvances)}</strong>
+            </div>}
+            {audit.cashWithdrawals>0&&<div className="flex justify-between gap-2 text-sm">
+              <span>Retiros personales</span><strong>{money(audit.cashWithdrawals)}</strong>
+            </div>}
+            {audit.employeeAndOwnerConsumption>0&&<div className="flex justify-between gap-2 text-xs text-slate-500 dark:text-slate-300">
+              <span>Consumo de mercancía sin salida de caja</span><strong>{money(audit.employeeAndOwnerConsumption)}</strong>
+            </div>}
+            <div className="flex justify-between gap-2 border-t border-slate-200 pt-2 text-sm font-black dark:border-slate-700">
+              <span>Efectivo pagado desde {store.name}</span><span>{money(audit.cashOutflows)}</span>
+            </div>
+          </div>
+          <section className="rounded-xl bg-slate-100 p-4 dark:bg-slate-900">
+            <h4 className="text-sm font-black text-slate-900 dark:text-white">Conciliación de caja</h4>
+            <label className="mt-3 block text-xs text-slate-700 dark:text-slate-200">Fondo inicial (si lo hay)
+              <input type="number" min="0" step=".01" value={openingCash}
+                onChange={e=>setOpeningCash(validNum(e.target.value))}
+                className="mt-1 w-full rounded-lg border bg-white p-2 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-white"/>
+            </label>
+            <div className="mt-3 flex justify-between gap-3 text-sm font-black">
+              <span>Efectivo esperado</span><span>{money(audit.expectedCash)}</span>
+            </div>
+            <label className="mt-3 block text-xs text-slate-700 dark:text-slate-200">Dinero entregado
+              <input type="number" min="0" step=".01" value={draft.cash.countedCash??''}
+                onChange={e=>updateCash('countedCash',e.target.value===''?null:validNum(e.target.value))}
+                className="mt-1 w-full rounded-lg border bg-white p-2 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-white"/>
+            </label>
+            {audit.cashDifference!==null&&<div className={'mt-3 flex justify-between gap-3 rounded-xl p-3 text-sm font-black '+(audit.cashDifference<0?'bg-rose-500/10 text-rose-600 dark:text-rose-300':'bg-emerald-500/10 text-emerald-600 dark:text-emerald-300')}>
+              <span>{audit.cashDifference<0?'FALTANTE':audit.cashDifference>0?'SOBRANTE':'CAJA CUADRADA'}</span>
+              <span>{money(Math.abs(audit.cashDifference))}</span>
+            </div>}
+            {audit.countedCash===null&&<p className="mt-2 text-xs font-bold text-amber-700">Falta indicar cuánto efectivo se entregó.</p>}
+            <label className="mt-3 block text-xs text-slate-700 dark:text-slate-200">Sobrante declarado manualmente
+              <input type="number" min="0" step=".01" value={draft.cash.manualSurplus??''}
+                onChange={e=>updateCash('manualSurplus',e.target.value===''?null:validNum(e.target.value))}
+                className="mt-1 w-full rounded-lg border bg-white p-2 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-white"/>
+            </label>
+            {audit.surplusDiscrepancy!==null && audit.surplusDiscrepancy!==0 && <p className="mt-2 text-xs font-bold text-amber-700">
+              Diferencia entre sobrante manual y calculado: {money(audit.surplusDiscrepancy)}.
+            </p>}
+          </section>
+          {audit.unresolved>0 && <p className="rounded-xl bg-amber-100 p-3 text-xs font-bold text-amber-900">
+            {audit.unresolved} movimiento(s) necesitan aclaración. Abre los detalles únicamente para esos casos.
+          </p>}
+          <button type="button" onClick={()=>setDetailsOpen(prev=>!prev)}
+            className="w-full rounded-2xl border border-indigo-300 px-4 py-3 text-sm font-black text-indigo-700 dark:text-indigo-300">
+            {detailsOpen?'Ocultar movimientos':'Ver movimientos / Corregir clasificación (opcional)'}
+          </button>
+          {detailsOpen && <div className="space-y-5 border-t border-slate-200 pt-4 dark:border-slate-700">
         <section>
           <h4 className="mb-2 text-sm font-black text-slate-800 dark:text-white">Ingresos ({draft.incomes.length})</h4>
           {draft.incomes.length===0 && <p className="text-xs text-slate-500">No se detectaron ingresos.</p>}
@@ -300,47 +344,9 @@ const MultiStoreCorteDraftPanel: React.FC<Props> = ({dateKey,demoMode=false,anal
           </button>
         </section>
 
-        <section className="rounded-xl bg-slate-100 p-4 dark:bg-slate-900">
-          <h4 className="text-sm font-black text-slate-900 dark:text-white">Conciliación provisional de {store.name}</h4>
-          <label className="mt-3 block text-xs text-slate-700 dark:text-slate-200">Fondo inicial
-            <input type="number" min="0" step=".01" value={openingCash}
-              onChange={e=>setOpeningCash(validNum(e.target.value))}
-              className="mt-1 w-full rounded-lg border bg-white p-2 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-white"/>
-          </label>
-          <label className="mt-3 block text-xs text-slate-700 dark:text-slate-200">Dinero entregado / contado
-            <input type="number" min="0" step=".01" value={draft.cash.countedCash??''}
-              onChange={e=>updateCash('countedCash',e.target.value===''?null:validNum(e.target.value))}
-              className="mt-1 w-full rounded-lg border bg-white p-2 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-white"/>
-          </label>
-          <label className="mt-3 block text-xs text-slate-700 dark:text-slate-200">Sobrante declarado manualmente
-            <input type="number" min="0" step=".01" value={draft.cash.manualSurplus??''}
-              onChange={e=>updateCash('manualSurplus',e.target.value===''?null:validNum(e.target.value))}
-              className="mt-1 w-full rounded-lg border bg-white p-2 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-white"/>
-          </label>
-          {review?.closing && <div className="mt-4 space-y-2 border-t border-slate-300 pt-3 text-sm dark:border-slate-700">
-            <div className="flex justify-between"><span>Ventas de contado clasificadas</span><strong>{money(review.closing.classifiedCashSales)}</strong></div>
-            <div className="flex justify-between"><span>Ventas a crédito identificadas</span><strong>{money(review.closing.classifiedCreditSales)}</strong></div>
-            <div className="flex justify-between"><span>Efectivo esperado</span><strong>{money(review.closing.expectedCash)}</strong></div>
-            <div className="flex justify-between"><span>Dinero contado</span><strong>{money(review.closing.countedCash)}</strong></div>
-            <div className="flex justify-between font-black"><span>Diferencia calculada</span>
-              <strong className={review.closing.variance<0?'text-rose-600':'text-amber-700'}>{money(review.closing.variance)}</strong></div>
-            <div className="flex justify-between"><span>Sobrante manual (control, no venta)</span>
-              <strong>{draft.cash.manualSurplus===null?'No informado':money(draft.cash.manualSurplus)}</strong></div>
-            {draft.cash.manualSurplus!==null && <div className="flex justify-between">
-              <span>Desfase sobrante manual/calculado</span>
-              <strong>{money(review.closing.surplusPendingIdentification-draft.cash.manualSurplus)}</strong>
-            </div>}
+
           </div>}
-          {review?.missingCash && <p className="mt-3 text-xs font-bold text-amber-700">
-            Falta el efectivo contado: no puede calcularse diferencia de caja.
-          </p>}
-          {review?.unclassified && <p className="mt-3 text-xs font-bold text-rose-600">
-            Existen movimientos sin categoría válida. El resultado provisional podría estar incompleto.
-          </p>}
-          {review?.pendingCount!==undefined && review.pendingCount>0 && <p className="mt-3 text-xs font-bold text-amber-700">
-            {review.pendingCount} movimiento(s) requieren revisión de la interpretación.
-          </p>}
-        </section>
+        </div>}
         <div className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-xs font-semibold text-amber-900 dark:bg-amber-950 dark:text-amber-200">
           MODO PRUEBA. El análisis y los cambios de esta pantalla NO SE GUARDAN en Firebase. {demoMode?' Esta vista pública no utiliza Gemini.':''}
           El botón actual «Confirmar y Registrar» de las otras pestañas no utiliza este borrador.
