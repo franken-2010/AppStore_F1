@@ -143,7 +143,9 @@ function findCategory(line: string): SalesCategoryId | null {
   return null;
 }
 function lineAmounts(line: string): number[] {
-  const withoutDates = line.replace(/\b\d{1,4}[/-]\d{1,2}[/-]\d{2,4}\b/g,' ');
+  const withoutDates = line.replace(/\b\d{1,4}[/-]\d{1,2}[/-]\d{2,4}\b/g,' ')
+    // El número de caja/local es un identificador, NO dinero.
+    .replace(/\b(?:caja|local)\s*(?:1|2|uno|dos)\b/gi,' ');
   const matches = withoutDates.match(/(?:\$?\s*\d{1,3}(?:,\d{3})+(?:\.\d{1,2})?|\$?\s*\d+(?:\.\d{1,2})?)/g) || [];
   return matches.map(s => Number(s.replace(/[$,\s]/g,'')))
     .filter(s => Number.isFinite(s) && s >= 0);
@@ -175,6 +177,18 @@ export function parseMultiStoreDraftFallback(
   for (const line of lines) {
     const lower = cleanLabel(line);
     if (/^subtotal\b|^total\s+(de\s+)?(ingreso|venta|egreso)|^resultado\b/.test(lower)) continue;
+    // Comas decimales como "25,50" NO deben convertirse en 25 + 50.
+    if (/\b\d+,\d{1,2}\b/.test(line)) {
+      warnings.push('Importe con coma decimal: revisar manualmente «' + line.slice(0,100) + '»');
+      continue;
+    }
+    const withoutPayer = line.replace(/\b(?:caja|local)\s*(?:1|2|uno|dos)\b/gi,' ');
+    const amounts = lineAmounts(withoutPayer);
+    // Varios números sin operador explícito pueden ser unidades, referencias o importes.
+    if (amounts.length > 1 && !/\+|\b(?:mas|más)\b/i.test(withoutPayer)) {
+      warnings.push('Varios importes sin suma clara: revisar «' + line.slice(0,100) + '»');
+      continue;
+    }
     const amount = fallbackSum(line);
     if (amount === null) { warnings.push('Sin importe: ' + line.slice(0,100)); continue; }
     if (/sobrante/.test(lower)) { cash.manualSurplus = amount; continue; }
