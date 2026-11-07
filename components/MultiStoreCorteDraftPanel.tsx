@@ -231,7 +231,7 @@ const MultiStoreCorteDraftPanel: React.FC<Props> = ({dateKey,demoMode=false,anal
             {audit.countedCash===null&&<p className="mt-2 text-xs font-bold text-amber-700">Falta indicar cuánto efectivo se entregó.</p>}
             <p className="mt-2 text-xs text-slate-600 dark:text-slate-300">
               Sobrante y faltante se calculan automáticamente al comparar el efectivo esperado con el dinero entregado.
-            </p>}
+            </p>
           </section>
           {audit.unresolved>0 && <p className="rounded-xl bg-amber-100 p-3 text-xs font-bold text-amber-900">
             {audit.unresolved} movimiento(s) necesitan aclaración. Abre los detalles únicamente para esos casos.
