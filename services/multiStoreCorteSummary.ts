@@ -27,8 +27,8 @@ export interface F1AuditSummary {
   expectedCash: number;
   countedCash: number | null;
   cashDifference: number | null;
-  manualSurplus: number | null;
-  surplusDiscrepancy: number | null;
+  surplus: number | null;
+  shortage: number | null;
   unresolved: number;
   unclassifiedSources: string[];
 }
@@ -100,9 +100,8 @@ export function buildF1AuditSummary(draft: MultiStoreCorteDraft, openingCash = 0
     cashDirectExpenses:m(cashDirectExpenses),cashGeneralExpenses:m(cashGeneralExpenses),
     cashOutflows:m(cashOutflows),openingCash,expectedCash:m(expected),
     countedCash:counted===null?null:m(counted),cashDifference:diff===null?null:m(diff),
-    manualSurplus:draft.cash.manualSurplus,
-    surplusDiscrepancy:surplus===null||draft.cash.manualSurplus===null
-      ? null:m(surplus-c(draft.cash.manualSurplus)),
+    surplus:diff===null?null:m(Math.max(diff,0)),
+    shortage:diff===null?null:m(Math.max(-diff,0)),
     unresolved,unclassifiedSources,
   };
 }
