@@ -623,7 +623,7 @@ const CortesScreen: React.FC = () => {
             </button>
           </div>
         ) : activeTab === 'multilocal' ? (
-          <MultiStoreCorteDraftPanel dateKey={selectedDate} />
+          <MultiStoreCorteDraftPanel dateKey={selectedDate} analyzeDraft={GeminiService.parseMultiStoreCorteDraft} />
         ) : (
           <div className="space-y-6">
             {!parsedCut ? (
