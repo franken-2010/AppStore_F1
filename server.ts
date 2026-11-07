@@ -784,7 +784,7 @@ app.post('/api/gemini/parse-corte-v2', requireFirebaseAuth, standardAiLimiter, a
       'Local 1 categorías de ventas: abarrotes, fiesta, recargas, estancias. Local 2 categorías de ventas: frutas_verduras, pan_galletas, comida_preparada.',
       'La categoría beneficiaria de una compra NO determina qué caja pagó. payingStoreId es la caja indicada expresamente, o POR DEFECTO la caja seleccionada para el corte. No pidas aclaración solo porque no se nombró la caja.',
       'Preserva separados los importes y la descripción de cada compra, no combines proveedores o categorías distintos en un solo renglón.',
-      'Dinero entregado/contado va en cash.countedCash; sobrante reportado manual va en cash.manualSurplus. No conviertas un sobrante en venta de ninguna categoría.',
+      'Dinero entregado/contado va en cash.countedCash. NUNCA pidas ni registres sobrante manual: el sobrante o faltante se calcula matemáticamente en auditoría como contado menos efectivo esperado. Si el dictado contiene sobrante, ignora ese renglón; no es venta ni gasto.',
       'No incluyas subtotal, total calculado ni renglones sin importe como transacción.',
       'NO incluyas ventas por tarjeta o transferencia; si aparecen, regístralas únicamente como advertencia para revisión.',
       'Fecha de corte: ' + fecha + '. Caja seleccionada: ' + storeId + '.',
@@ -825,7 +825,6 @@ app.post('/api/gemini/parse-corte-v2', requireFirebaseAuth, standardAiLimiter, a
               },
               cash: { type: Type.OBJECT, properties: {
                 countedCash: { type: Type.NUMBER },
-                manualSurplus: { type: Type.NUMBER },
               } },
               warnings: { type: Type.ARRAY, items: { type: Type.STRING } },
             },
