@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import VoiceInputButton from './VoiceInputButton';
 import { GeminiService } from '../services/geminiService';
 import { F1_CATEGORY_LABELS, F1_STORES, calculateCashClosing,
@@ -36,6 +36,7 @@ const MultiStoreCorteDraftPanel: React.FC<Props> = ({dateKey}) => {
   const [busy,setBusy] = useState(false);
   const [error,setError] = useState('');
   const [openingCash,setOpeningCash] = useState(0);
+  const manualSequence = useRef(0);
   useEffect(()=>{setDraft(null);setError('');},[storeId,dateKey]);
   const store = F1_STORES.find(s=>s.id===storeId)!;
 
@@ -58,12 +59,48 @@ const MultiStoreCorteDraftPanel: React.FC<Props> = ({dateKey}) => {
   };
   const updateIncome = (id:string,changes:Record<string,unknown>) =>
     setDraft(previous=>previous ? {...previous,
-      incomes:previous.incomes.map(item=>item.id===id?{...item,...changes,needsReview:false}:item)} : previous);
+      incomes:previous.incomes.map(item=>item.id===id?{...item,...changes}:item)} : previous);
   const updateOutlay = (id:string,changes:Record<string,unknown>) =>
     setDraft(previous=>previous ? {...previous,
-      outlays:previous.outlays.map(item=>item.id===id?{...item,...changes,needsReview:false}:item)} : previous);
+      outlays:previous.outlays.map(item=>item.id===id?{...item,...changes}:item)} : previous);
   const updateCash = (key:'countedCash'|'manualSurplus',value:number|null) =>
     setDraft(previous=>previous ? {...previous,cash:{...previous.cash,[key]:value}} : previous);
+
+  const addIncome = () => {
+    const id='income-manual-'+(++manualSequence.current);
+    setDraft(previous => previous ? {...previous,incomes:[...previous.incomes,{
+      id,kind:'cash_sale' as const,categoryId:null,amount:0,rawText:'Renglón agregado manualmente',needsReview:true,
+    }]} : previous);
+  };
+  const addOutlay = () => {
+    const id='outlay-manual-'+(++manualSequence.current);
+    setDraft(previous => previous ? {...previous,outlays:[...previous.outlays,{
+      id,kind:'purchase' as const,categoryId:null,payingStoreId:storeId,amount:0,concept:'',
+      rawText:'Renglón agregado manualmente',needsReview:true,
+    }]} : previous);
+  };
+  const markIncomeReviewed = (id:string) => {
+    const item=draft?.incomes.find(i=>i.id===id);
+    if (!item || item.amount<=0 || (item.kind!=='collection' &&
+      (!item.categoryId || !store.categories.includes(item.categoryId)))) {
+      setError('Revisa el importe y la categoría de la venta antes de marcarla como verificada.');
+      return;
+    }
+    setError('');
+    setDraft(previous=>previous ? {...previous,
+      incomes:previous.incomes.map(i=>i.id===id?{...i,needsReview:false}:i)} : previous);
+  };
+  const markOutlayReviewed = (id:string) => {
+    const item=draft?.outlays.find(i=>i.id===id);
+    if (!item || item.amount<=0 || !item.concept.trim() ||
+       ((item.kind==='purchase'||item.kind==='direct_expense')&&!item.categoryId)) {
+      setError('Revisa concepto, importe y categoría de la salida antes de verificarla.');
+      return;
+    }
+    setError('');
+    setDraft(previous=>previous ? {...previous,
+      outlays:previous.outlays.map(i=>i.id===id?{...i,needsReview:false}:i)} : previous);
+  };
 
   const review = useMemo(()=>{
     if (!draft) return null;
@@ -154,6 +191,7 @@ const MultiStoreCorteDraftPanel: React.FC<Props> = ({dateKey}) => {
           </p>
         </div>
 
+        {error && <p role="alert" className="rounded-xl bg-rose-50 p-3 text-xs font-bold text-rose-700">{error}</p>}
         {draft.warnings.length>0 && <div className="rounded-xl bg-amber-50 p-3 text-amber-900 dark:bg-amber-950 dark:text-amber-100">
           <p className="text-xs font-black">Advertencias de interpretación ({draft.warnings.length})</p>
           <div className="mt-2 space-y-1">
@@ -188,7 +226,21 @@ const MultiStoreCorteDraftPanel: React.FC<Props> = ({dateKey}) => {
               </select>
             </label>}
             {item.needsReview && <p className="mt-2 text-xs font-bold text-amber-700">Revisar clasificación</p>}
+            <div className="mt-3 flex flex-wrap gap-2">
+              {item.needsReview && <button type="button" onClick={()=>markIncomeReviewed(item.id)}
+                className="rounded-lg bg-indigo-100 px-3 py-2 text-xs font-bold text-indigo-800">
+                Marcar revisado
+              </button>}
+              <button type="button" onClick={()=>setDraft(previous=>previous ? {...previous,
+                incomes:previous.incomes.filter(i=>i.id!==item.id)} : previous)}
+                className="rounded-lg border border-rose-200 px-3 py-2 text-xs font-bold text-rose-700">
+                Quitar renglón
+              </button>
+            </div>
           </div>)}
+          <button type="button" onClick={addIncome} className="mt-2 w-full rounded-xl border border-indigo-300 px-4 py-3 text-xs font-black text-indigo-700 dark:text-indigo-300">
+            + Agregar ingreso manual
+          </button>
         </section>
 
         <section>
@@ -228,7 +280,21 @@ const MultiStoreCorteDraftPanel: React.FC<Props> = ({dateKey}) => {
               </select>
             </label>}
             {item.needsReview && <p className="mt-2 text-xs font-bold text-amber-700">Verificar dato inferido por IA</p>}
+            <div className="mt-3 flex flex-wrap gap-2">
+              {item.needsReview && <button type="button" onClick={()=>markOutlayReviewed(item.id)}
+                className="rounded-lg bg-indigo-100 px-3 py-2 text-xs font-bold text-indigo-800">
+                Marcar revisado
+              </button>}
+              <button type="button" onClick={()=>setDraft(previous=>previous ? {...previous,
+                outlays:previous.outlays.filter(i=>i.id!==item.id)} : previous)}
+                className="rounded-lg border border-rose-200 px-3 py-2 text-xs font-bold text-rose-700">
+                Quitar renglón
+              </button>
+            </div>
           </div>)}
+          <button type="button" onClick={addOutlay} className="mt-2 w-full rounded-xl border border-indigo-300 px-4 py-3 text-xs font-black text-indigo-700 dark:text-indigo-300">
+            + Agregar compra o gasto manual
+          </button>
         </section>
 
         <section className="rounded-xl bg-slate-100 p-4 dark:bg-slate-900">
