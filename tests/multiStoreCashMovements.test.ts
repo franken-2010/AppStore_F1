@@ -32,13 +32,13 @@ const cut = calculateClosingWithOutlays({
   storeId: 'local_01',dateKey:'2026-11-06',categorySales:[
     {categoryId:'abarrotes',cashSales:2800},
     {categoryId:'fiesta',cashSales:650},
-  ],openingCash:500,cashCollections:100,countedCash:3070,manualSurplus:20,
+  ],openingCash:500,cashCollections:100,countedCash:3070,
   outlays:payments,
 });
 eq(cut.closing.expectedCash, 3450, 'Efectivo esperado');
-eq(cut.closing.variance,-380, 'Faltante independiente de manual');
-eq(cut.manualSurplus,20,'Sobrante manual conservado');
-eq(cut.surplusCheckDifference,-20, 'Diferencia contra sobrante calculado, sin sumarlo');
+eq(cut.closing.variance,-380, 'Diferencia automática');
+eq(cut.surplus,0,'No hay sobrante con diferencia negativa');
+eq(cut.shortage,380, 'Faltante calculado automáticamente');
 eq(cut.crossStorePayments.length,1,'Cruce entre caja pagadora y local de categoría');
 eq(cut.crossStorePayments[0].categoryId,'frutas_verduras','Categoría de cruce correcta');
 
@@ -53,4 +53,4 @@ fails(()=>summarizeCashOutlays([{id:'sin_categoria',payingStoreId:'local_01',kin
 fails(()=>summarizeCashOutlays([{id:'general',payingStoreId:'local_01',kind:'general_expense',categoryId:'abarrotes',amount:22}]),'Gasto general no se carga automáticamente a Abarrotes');
 fails(()=>reclassifyOutlay(payments,'frutas1','purchase','fiesta'),'Solo reclasificar anticipos pendientes');
 
-console.log('OK: movimientos por categoría, caja pagadora y sobrantes');
+console.log('OK: movimientos por categoría, caja pagadora y diferencia automática');
