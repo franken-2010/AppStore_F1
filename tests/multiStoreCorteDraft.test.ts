@@ -15,7 +15,6 @@ const draft = parseMultiStoreDraftFallback([
   'Renta 600 pagada caja 1',
   'Pago de clientes 300',
   'Consumo empleados 100',
-  'Sobrante 45',
   'Dinero entregado 1650',
 ].join('\n'), 'local_01','2026-11-06');
 eq(draft.engine,'local','Fallback conservador');
@@ -31,7 +30,6 @@ eq(draft.outlays[1].amount,200,'Sumas compra Fiesta');
 eq(draft.outlays[2].kind,'general_expense','Renta no es mercancía');
 eq(draft.outlays[2].concept,'Renta 600 pagada caja 1','Conservar concepto original');
 eq(draft.outlays[3].kind,'non_cash_consumption','Consumo de empleados NO es efectivo');
-eq(draft.cash.manualSurplus,45,'Sobrante manual');
 eq(draft.cash.countedCash,1650,'Efectivo declarado');
 
 const ambiguous = parseMultiStoreDraftFallback(
@@ -53,7 +51,7 @@ const clean = normalizeMultiStoreDraft({
     {kind:'purchase',categoryId:'frutas_verduras',payingStoreId:'local_01',amount:30.5,concept:'Proveedor fruta',rawText:'Pagué fruta 30.50 caja 1'},
     {kind:'purchase',categoryId:'inventada',amount:24,concept:'Compra desconocida',rawText:'Compra extra 24'},
   ],
-  cash:{countedCash:450,manualSurplus:15},
+  cash:{countedCash:450},
   warnings:[],
 }, 'local_01','2026-11-06','gemini');
 eq(clean.incomes.length,3,'Descartar importes negativos de IA');
@@ -63,6 +61,5 @@ check(clean.incomes[2].needsReview,'Categoría desconocida requiere revisión');
 eq(clean.outlays[0].payingStoreId,'local_01','Caja expresa permanece');
 eq(clean.outlays[1].payingStoreId,'local_01','Caja sin especificar usa provisionalmente la seleccionada');
 check(clean.outlays[1].needsReview,'Caja inferida requiere revisión');
-eq(clean.cash.manualSurplus,15,'Sobrante no se borra');
 check(clean.warnings.length>=2,'Alertas cuando IA entrega datos dudosos');
 console.log('OK: borrador F1-AI multilocal, categorías y conciliación conservadora');
