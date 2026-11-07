@@ -136,10 +136,13 @@ function CorteScreen() {
   });
   return (
     <div className="space-y-5 px-4 py-5">
-      <div className="grid grid-cols-3 gap-1 rounded-2xl bg-slate-800 p-1 text-center">
-        <span className="rounded-xl px-2 py-3 text-[10px] font-black text-slate-500">Carga manual <small className="block font-normal">Solo app real</small></span>
-        <span className="rounded-xl px-2 py-3 text-[10px] font-black text-slate-500">Pegar corte <small className="block font-normal">Solo app real</small></span>
-        <span className="rounded-xl bg-blue-600 px-2 py-3 text-[10px] font-black text-white">F1-AI <small className="block font-normal">2 locales</small></span>
+      <div className="rounded-2xl border border-slate-700 bg-slate-800 p-4">
+        <h2 className="text-base font-black text-white">Pegar corte · F1-AI multilocal</h2>
+        <p className="mt-1 text-xs text-slate-300">
+          Escribe o dicta exactamente como en tu app actual. «Ventas» significa Abarrotes;
+          «Fiesta», «Recargas» y los gastos claros se asignan solos.
+          Primero verás la auditoría y solo editarás cuando algo sea ambiguo.
+        </p>
       </div>
       <label className="block text-xs font-black uppercase tracking-widest text-slate-400">
         Fecha del corte
