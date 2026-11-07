@@ -65,3 +65,51 @@ Antes de modificar `CortesScreen.tsx` o Firestore:
 8. Probar cortes con sobrante/faltante, cero ingresos, compra en efectivo, cobranza, venta a crédito, periodos con un solo local y gastos compartidos.
 
 El simulador **no calcula utilidad operativa**, porque todavía no hay costos de ventas completos, mermas ni sueldos/rentas reales asignados.
+
+
+## Correcciones funcionales del negocio — revisión V2 (6 noviembre 2026)
+
+**IMPORTANTE:** El corte actual por voz y análisis Gemini NO debe reemplazarse por el formulario experimental; esta es una ampliación del sistema existente. El prototipo HTML entregado al usuario es una demostración local sin Gemini ni Firebase.
+
+### Operación y contabilidad
+- Un solo corte admite **múltiples compras/gastos** para varias categorías. Cada registro debe almacenar concepto, importe, categoría beneficiaria, caja pagadora, origen, fecha y el ID del corte.
+- `payingStoreId` identifica **de dónde salió físicamente el efectivo**; `categoryId` identifica **qué actividad recibió mercancía o generó el gasto**. Son dimensiones independientes. Una compra de Frutas y verduras (operativamente Local 2) puede salir de la caja del Local 1.
+- No crear categorías contables de gastos exclusivos por local como regla principal. Los gastos identificados se atribuyen directamente a su categoría sin importar qué caja pagó.
+- Los **gastos administrativos generales** no se cargan solo a Abarrotes: se distribuyen entre todas las categorías beneficiadas por la operación, según ingresos elegibles en el periodo; quedan pendientes si la base no se puede determinar.
+- Los **sobrantes** se podrán introducir manualmente para contrastar la auditoría. No deben sumarse por segunda vez al efectivo contado ni asumirse como venta de una categoría.
+- El **anticipo de caja por comprobar** es una sola salida de efectivo. Cuando se conoce el destino, se **reclasifica el mismo movimiento** a compra/gasto manteniendo su identificador; nunca se añade otra salida por el mismo dinero.
+- El control es por efectivo; no incorporar ventas por transferencia/tarjeta.
+
+### IA y flujo de voz — requisito prioritario pendiente de implementar
+
+Se reutilizará `components/VoiceInputButton.tsx` y la infraestructura `GeminiService.parseCorteText` del corte actual. Su esquema fijo actual NO comprende todas las categorías ni múltiples movimientos por categoría, por lo que se requerirá una nueva interpretación con arreglo de renglones:
+
+```ts
+type CorteIAPropuesto = {
+  localCorte: 'local_01' | 'local_02';
+  fecha: string;
+  ingresos: { categoryId: string; importe: number }[];
+  salidas: {
+    idTemporal: string;
+    kind: 'purchase' | 'direct_expense' | 'general_expense' |
+      'temporary_advance' | 'owner_withdrawal';
+    categoryId?: string;
+    payingStoreId: 'local_01' | 'local_02';
+    importe: number;
+    textoOriginal: string;
+    confianza?: number;
+  }[];
+  efectivoContado?: number;
+  sobranteManual?: number;
+  advertencias: string[];
+};
+```
+
+El análisis propone, **no guarda**. El usuario debe poder revisar los renglones, reasignar categoría/caja, confirmar y solo entonces guardar. Los conceptos ambiguos pasan a una bandeja de **pendientes de revisión**. No inventar importes ni categorías.
+
+### Código agregado como preparación
+- `services/multiStoreCashMovements.ts` valida varias salidas, pagos cruzados y sobrantes declarados, además de permitir reclasificar anticipos sin contar el efectivo dos veces.
+- `tests/multiStoreCashMovements.test.ts` verifica los casos anteriores.
+- El simulador React de la rama de desarrollo sigue siendo preliminar y se deberá actualizar antes de publicarlo. La demostración HTML V2 entregada al usuario es una previsualización separada, no una pantalla desplegada.
+
+**No hacer cambios a Firebase productivo o a main sin una migración y respaldo aprobados.**
