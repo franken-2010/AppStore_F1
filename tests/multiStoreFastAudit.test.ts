@@ -24,7 +24,6 @@ const raw=[
   'Renta 600',
   'Pago clientes 200',
   'Consumo empleados 75',
-  'Sobrante 40',
   'Dinero entregado 3800',
 ].join('\n');
 const draft=parseMultiStoreDraftFallback(raw,'local_01','2026-11-06');
@@ -37,7 +36,6 @@ eq(draft.outlays.find(i=>i.categoryId==='frutas_verduras')?.needsReview,false,'N
 eq(draft.outlays.find(i=>i.categoryId==='abarrotes')?.amount,450,'Compra Abarrotes');
 eq(draft.outlays.find(i=>i.kind==='general_expense')?.amount,600,'Renta');
 eq(draft.outlays.find(i=>i.kind==='non_cash_consumption')?.amount,75,'Consumo sin efectivo');
-eq(draft.cash.manualSurplus,40,'Sobrante manual conservado');
 eq(draft.cash.countedCash,3800,'Dinero contado');
 
 const audit=buildF1AuditSummary(draft);
@@ -53,7 +51,8 @@ eq(audit.cashGeneralExpenses,600,'Renta pagada en efectivo');
 eq(audit.cashOutflows,1400,'Egresos caja sin consumo mercancía');
 eq(audit.expectedCash,4425,'Efectivo esperado');
 eq(audit.cashDifference,-625,'Diferencia de caja');
-eq(audit.manualSurplus,40,'Sobrante sin crear venta');
+eq(audit.surplus,0,'No declarar sobrante cuando realmente falta efectivo');
+eq(audit.shortage,625,'Faltante calculado automáticamente');
 eq(audit.employeeAndOwnerConsumption,75,'Consumo sin salida efectivo');
 eq(audit.unresolved,0,'Conceptos explícitos no necesitan etiquetarse otra vez');
 
