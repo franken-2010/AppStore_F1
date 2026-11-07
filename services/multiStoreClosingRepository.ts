@@ -68,7 +68,6 @@ function assertDraft(draft: MultiStoreCorteDraft, openingCash: number, acknowled
     throw new Error('Demasiados movimientos para un corte');
   if (draft.cash.countedCash === null) throw new Error('Falta el efectivo contado');
   assertMoney(draft.cash.countedCash, 'Dinero contado');
-  if (draft.cash.manualSurplus !== null) assertMoney(draft.cash.manualSurplus,'Sobrante declarado');
   if (draft.warnings.length > 0 && !acknowledgeWarnings)
     throw new Error('Existen advertencias del dictado; deben revisarse y aceptarse antes de registrar');
 
