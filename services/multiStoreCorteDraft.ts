@@ -61,6 +61,22 @@ function categoryOf(value: unknown): SalesCategoryId | null {
   return typeof value === 'string' && CATEGORIES.includes(value as SalesCategoryId)
     ? value as SalesCategoryId : null;
 }
+
+/**
+ * Convenciones conocidas de F1: "Ventas" sin más calificativo = Abarrotes.
+ * Solo una etiqueta sin ambigüedad se clasifica automáticamente.
+ */
+export function inferF1Category(label: string): SalesCategoryId | null {
+  const t = label.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  if (/\b(frutas?|verduras?|vegetales?|hortalizas?)\b/.test(t)) return 'frutas_verduras';
+  if (/\b(panaderia|panes?|galletas?)\b/.test(t)) return 'pan_galletas';
+  if (/\b(comida\s+preparada|alimentos?\s+preparados?|sandwich|sanduich|licuados?|waffles?|tortas?|desayunos?)\b/.test(t)) return 'comida_preparada';
+  if (/\b(fiesta|desechables?|globos?)\b/.test(t)) return 'fiesta';
+  if (/\b(recargas?|tiempo\s+aire|tae)\b/.test(t)) return 'recargas';
+  if (/\b(estancias?|cuartos?|hospedaje)\b/.test(t)) return 'estancias';
+  if (/\b(ventas?|abarrotes?|tienda|mercancias?|surtido|refrescos?)\b/.test(t)) return 'abarrotes';
+  return null;
+}
 function isStoreId(value: unknown): value is StoreId {
   return value === 'local_01' || value === 'local_02';
 }
@@ -85,7 +101,7 @@ export function normalizeMultiStoreDraft(
       continue;
     }
     const kind = INCOME_TYPES.includes(row.kind as DraftIncomeKind) ? row.kind as DraftIncomeKind : 'cash_sale';
-    const category = categoryOf(row.categoryId);
+    const category = categoryOf(row.categoryId) ?? inferF1Category(safeText(row.rawText, 280));
     const needsReview = kind !== 'collection' && (
       category === null || !F1_STORES.find(s => s.id === storeId)?.categories.includes(category)
     );
@@ -105,17 +121,19 @@ export function normalizeMultiStoreDraft(
     }
     const validKind = OUTLAY_TYPES.includes(row.kind as DraftOutlayKind);
     const kind = validKind ? row.kind as DraftOutlayKind : 'general_expense';
-    const category = categoryOf(row.categoryId);
+    const category = categoryOf(row.categoryId) ?? inferF1Category(
+      safeText(row.rawText, 280) || safeText(row.concept, 160)
+    );
     const hasExplicitPayer = isStoreId(row.payingStoreId);
     const payingStoreId = hasExplicitPayer ? row.payingStoreId as StoreId : storeId;
     const needsCategory = kind === 'purchase' || kind === 'direct_expense';
-    const needsReview = !validKind || (needsCategory && !category) || !hasExplicitPayer || Boolean(row.needsReview);
+    const needsReview = !validKind || (needsCategory && !category) || Boolean(row.needsReview);
     outlays.push({
       id: 'outlay-' + index, kind, categoryId: needsCategory ? category : null,
       payingStoreId, amount, concept: safeText(row.concept, 160),
       rawText: safeText(row.rawText, 280), needsReview,
     });
-    if (needsReview) warnings.push('Salida ' + (index + 1) + ': verificar tipo, categoría o caja pagadora');
+    if (needsReview) warnings.push('Salida ' + (index + 1) + ': verificar tipo o categoría');
   }
   const cash = raw?.cash && typeof raw.cash === 'object' && !Array.isArray(raw.cash)
     ? raw.cash as Record<string, unknown> : {};
@@ -132,15 +150,7 @@ function cleanLabel(text: string): string {
   return text.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 }
 function findCategory(line: string): SalesCategoryId | null {
-  const s = cleanLabel(line);
-  if (/fruta|verdura|vegetal|hortaliza/.test(s)) return 'frutas_verduras';
-  if (/panader|galleta|pan\b/.test(s)) return 'pan_galletas';
-  if (/comida preparada|alimento preparado|sanduich|sandwich|licuado|waffle|torta|desayuno/.test(s)) return 'comida_preparada';
-  if (/fiesta|desechable|globos/.test(s)) return 'fiesta';
-  if (/recarga|tiempo aire|tae\b/.test(s)) return 'recargas';
-  if (/estancia|cuarto|hospedaje/.test(s)) return 'estancias';
-  if (/abarrote|tienda|mercancia|refresco|galleta sin/.test(s)) return 'abarrotes';
-  return null;
+  return inferF1Category(line);
 }
 function lineAmounts(line: string): number[] {
   const withoutDates = line.replace(/\b\d{1,4}[/-]\d{1,2}[/-]\d{2,4}\b/g,' ')
@@ -173,7 +183,10 @@ export function parseMultiStoreDraftFallback(
   const outlays: Record<string, unknown>[] = [];
   const warnings: string[] = [];
   const cash: Record<string, unknown> = {};
-  const lines = rawText.split(/[\r\n;]+/).map(s => s.trim()).filter(Boolean).slice(0, 150);
+  const lines = rawText
+    .split(/[\r\n;]+/)
+    .flatMap(line => line.split(/(?<=\d)\s+(?:y\s+)?(?=(?:ventas?|fiesta|recargas?|estancias?|frutas?|verduras?|pan(?:aderia)?|galletas?|comida\s+preparada|compras?|gastos?|pago\s+clientes?|sueldos?|nomina|renta|luz|agua|internet|sobrante|dinero\s+entregado)\b)/i))
+    .map(s => s.trim()).filter(Boolean).slice(0, 150);
   for (const line of lines) {
     const lower = cleanLabel(line);
     if (/^subtotal\b|^total\s+(de\s+)?(ingreso|venta|egreso)|^resultado\b/.test(lower)) continue;
@@ -200,7 +213,7 @@ export function parseMultiStoreDraftFallback(
     const collection = /(pago|cobro|abono|pagaron).*?(cliente|cuenta|deuda|cxc)/.test(lower);
     const credit = /credito|fiad|a\s+cuenta|cxc/.test(lower);
     const nonCash = /consumo\s+(de\s+)?(emplead|personal)|cortesia/.test(lower);
-    const expense = /compra|gasto|costo|pag(ue|amos|ado)|proveedor|renta|nomina|sueldo|mantenimiento|retiro|anticipo|prestamo|luz|agua|internet|cfe\b|egreso/.test(lower);
+    const expense = /compr[ao]|gasto|casto|costo|pago|pag(ue|amos|ado)|proveedor|renta|nomina|sueldo|mantenimiento|retiro|anticipo|prestamo|luz|agua|internet|cfe\b|egreso/.test(lower);
     const clearlySale = /venta|vendimos|ingreso|recargas|fiesta|abarrotes|estancias/.test(lower) && !expense;
     if (collection) {
       incomes.push({kind:'collection',categoryId:null,amount,rawText:line}); continue;
@@ -220,7 +233,7 @@ export function parseMultiStoreDraftFallback(
       else if (/gasto/.test(lower) && categoryId) kind = 'direct_expense';
       const needsCategory = kind === 'purchase' || kind === 'direct_expense';
       outlays.push({kind,categoryId:needsCategory?categoryId:null,payingStoreId:payer||storeId,
-        amount,concept:line,rawText:line,needsReview:!payer|| (needsCategory&&!categoryId)});
+        amount,concept:line,rawText:line,needsReview:(needsCategory&&!categoryId)});
       continue;
     }
     if (clearlySale || categoryId) {
