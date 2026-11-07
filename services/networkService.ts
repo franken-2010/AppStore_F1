@@ -1,6 +1,8 @@
 import { ChatMessage } from '../types';
 import { parseCorteFallback, parseOrderFallback } from './corteParser';
 import { auth } from './firebase';
+import { normalizeMultiStoreDraft, parseMultiStoreDraftFallback, type MultiStoreCorteDraft } from './multiStoreCorteDraft';
+import type { StoreId } from './multiStoreAccounting';
 
 export interface GeminiDiagnosticReport {
   timestamp: string;
@@ -347,6 +349,25 @@ export class NetworkService {
     } catch {
       console.warn("[F1 Chat] Servicio de chat temporalmente no disponible.");
       return `F1-AI temporalmente en modo de espera. El resto del sistema continúa operando con normalidad.`;
+    }
+  }
+
+  /**
+   * IA de cortes multilocales, SOLO borrrador para revisión humana. No guarda nada.
+   * Usa el mismo proxy autenticado de Gemini que la aplicación actual.
+   */
+  static async parseMultiStoreCorteDraft(rawText: string, fecha: string, storeId: StoreId): Promise<MultiStoreCorteDraft> {
+    try {
+      const result = await safeJsonFetch('/api/gemini/parse-corte-v2', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ rawText, fecha, storeId }),
+      }, 0);
+      return normalizeMultiStoreDraft(result,storeId,fecha,result.engine === 'local' ? 'local' : 'gemini');
+    } catch {
+      const draft = parseMultiStoreDraftFallback(rawText,storeId,fecha);
+      draft.warnings.push('Servidor IA inaccesible: interpretación local limitada; verificar todo antes de continuar.');
+      return draft;
     }
   }
 

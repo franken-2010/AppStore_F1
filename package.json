@@ -8,7 +8,9 @@
     "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --outfile=server-build/server.cjs",
     "start": "node server-build/server.cjs",
     "lint": "tsc --noEmit",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test:multilocal": "tsx tests/multiStoreAccounting.test.ts && tsx tests/multiStoreCashMovements.test.ts && tsx tests/multiStoreCorteDraft.test.ts && tsx tests/multiStoreFastAudit.test.ts && tsx tests/multiStoreClosingRepository.test.ts",
+    "build:staging": "vite build --config vite.preview.config.ts"
   },
   "dependencies": {
     "@google/genai": "^2.32.0",

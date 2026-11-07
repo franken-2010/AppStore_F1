@@ -1,4 +1,6 @@
 import { ChatMessage } from "../types";
+import type { StoreId } from './multiStoreAccounting';
+import type { MultiStoreCorteDraft } from './multiStoreCorteDraft';
 import {
   NetworkService,
   GeminiDiagnosticReport,
@@ -39,6 +41,10 @@ export class GeminiService {
 
   static async chatWithContext(messages: ChatMessage[], userName: string): Promise<string> {
     return NetworkService.chatWithContext(messages, userName);
+  }
+
+  static async parseMultiStoreCorteDraft(rawText: string, fecha: string, storeId: StoreId): Promise<MultiStoreCorteDraft> {
+    return NetworkService.parseMultiStoreCorteDraft(rawText,fecha,storeId);
   }
 
   static async parseCorteText(rawText: string, fecha: string): Promise<any> {

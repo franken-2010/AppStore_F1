@@ -1,0 +1,61 @@
+name: Publicar vista de prueba F1 (sin Firebase)
+
+on:
+  push:
+    branches:
+      - desarrollo-independiente
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: f1-staging-pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Obtener rama de pruebas
+        uses: actions/checkout@v4
+      - name: Preparar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Instalar dependencias
+        run: npm ci
+      - name: Verificar TypeScript y reglas contables
+        run: |
+          npm run lint
+          npm run test:multilocal
+      - name: Compilar solo vista pública de prueba
+        run: npm run build:staging
+      - name: Comprobar aislamiento de Firebase y credenciales
+        run: |
+          test -f dist-preview/index.html
+          if grep -rE 'adminf1-2213b|firebaseapp\.com|firestore\.googleapis\.com|/api/gemini/parse-corte-v2|AIzaSy' dist-preview/assets; then
+            echo 'ERROR: el sitio de prueba incluye código de acceso a producción'
+            exit 1
+          fi
+          echo 'Prueba pública aislada de backend y Firestore'
+      - name: Subir sitio estático
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist-preview
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Publicar en GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

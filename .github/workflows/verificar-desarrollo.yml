@@ -1,0 +1,34 @@
+name: Pruebas de desarrollo F1
+
+on:
+  push:
+    branches:
+      - desarrollo-independiente
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verificacion:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Obtener código
+        uses: actions/checkout@v4
+      - name: Preparar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Instalar dependencias
+        run: npm ci
+      - name: Revisar tipos TypeScript
+        run: npm run lint
+      - name: Ejecutar pruebas del motor multilocal
+        run: npm run test:multilocal
+      - name: Compilar aplicación y servidor (sin despliegue)
+        run: npm run build

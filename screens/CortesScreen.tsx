@@ -20,8 +20,9 @@ import { GeminiService } from '../services/geminiService';
 import { AccountResolver } from '../services/AccountResolver';
 import { AccountingService, RegisterSchema } from '../services/AccountingService';
 import MoneyInputWithCalculator from '../components/MoneyInputWithCalculator';
+import MultiStoreCorteDraftPanel from '../components/MultiStoreCorteDraftPanel';
 
-type TabMode = 'manual' | 'raw';
+type TabMode = 'manual' | 'raw' | 'multilocal';
 
 interface CutCanonical {
   income: {
@@ -570,8 +571,8 @@ const CortesScreen: React.FC = () => {
           <ProfileMenu />
         </div>
         <div className="flex p-1 bg-slate-200 dark:bg-surface-dark rounded-2xl">
-          {['manual', 'raw'].map(mode => (
-            <button key={mode} onClick={() => setActiveTab(mode as any)} className={`flex-1 py-3 rounded-xl text-xs font-black uppercase transition-all ${activeTab === mode ? 'bg-primary text-white shadow-lg shadow-primary/20' : 'text-slate-500'}`}>{mode === 'manual' ? 'Carga Manual' : 'Pegar Corte'}</button>
+          {(['manual', 'raw', 'multilocal'] as TabMode[]).map(mode => (
+            <button key={mode} onClick={() => setActiveTab(mode)} className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase transition-all ${activeTab === mode ? 'bg-primary text-white shadow-lg shadow-primary/20' : 'text-slate-500'}`}>{mode === 'manual' ? 'Carga Manual' : mode === 'raw' ? 'Pegar Corte' : 'F1-AI 2 locales'}</button>
           ))}
         </div>
       </header>
@@ -621,6 +622,8 @@ const CortesScreen: React.FC = () => {
               Sincronizar Operación
             </button>
           </div>
+        ) : activeTab === 'multilocal' ? (
+          <MultiStoreCorteDraftPanel dateKey={selectedDate} analyzeDraft={GeminiService.parseMultiStoreCorteDraft} />
         ) : (
           <div className="space-y-6">
             {!parsedCut ? (
