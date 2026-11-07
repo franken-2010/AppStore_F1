@@ -137,7 +137,7 @@ export function calculateClosingWithOutlays(input: ClosingWithOutlaysInput): Clo
     ...cashInput,
     cashPurchases: sumKind('purchase'),
     cashOperatingExpenses: sumKind('direct_expense','general_expense'),
-    cashWithdrawals: (cashInput.cashWithdrawals ?? 0) + sumKind('temporary_advance','owner_withdrawal'),
+    cashWithdrawals: sumKind('temporary_advance','owner_withdrawal'),
   });
   // El sobrante manual es una referencia independiente, NUNCA otro ingreso.
   const declared = cents(manualSurplus, 'Sobrante manual');
