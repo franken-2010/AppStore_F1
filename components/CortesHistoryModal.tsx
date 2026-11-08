@@ -43,6 +43,8 @@ interface CortesHistoryModalProps {
   onSelectDate?: (dateStr: string) => void;
   onEditCorte?: (corte: CorteRecord) => void;
   currentDate?: string;
+  /** Bloquear modificaciones hasta migrar el historial a cortes identificados por local. */
+  readOnly?: boolean;
 }
 
 export const CortesHistoryModal: React.FC<CortesHistoryModalProps> = ({
@@ -50,7 +52,8 @@ export const CortesHistoryModal: React.FC<CortesHistoryModalProps> = ({
   onClose,
   onSelectDate,
   onEditCorte,
-  currentDate
+  currentDate,
+  readOnly = true
 }) => {
   const { user } = useAuth();
   const { addNotification } = useNotifications();
@@ -352,6 +355,7 @@ export const CortesHistoryModal: React.FC<CortesHistoryModalProps> = ({
    * 4. Elimina el documento del corte en /users/{uid}/cortes/{corteId}.
    */
   const handleExecuteDelete = async () => {
+    if (readOnly) {setDeleteStatus('Eliminación deshabilitada hasta validar el ámbito de cada caja.');return;}
     if (!user || !corteToDelete) return;
     const target = corteToDelete;
     setIsDeleting(true);
@@ -495,6 +499,7 @@ export const CortesHistoryModal: React.FC<CortesHistoryModalProps> = ({
   };
 
   const handleEditClick = (corte: CorteRecord) => {
+    if (readOnly) return;
     if (onEditCorte) {
       onEditCorte(corte);
     } else if (onSelectDate) {
@@ -642,6 +647,9 @@ export const CortesHistoryModal: React.FC<CortesHistoryModalProps> = ({
               </div>
             </div>
 
+            {readOnly && <div className="mx-4 mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs font-bold text-amber-900 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200">
+              Consulta de historial únicamente. Editar y borrar permanecen deshabilitados durante la integración de dos locales.
+            </div>}
             {/* Lista de Cortes Filtrados */}
             <div className="flex-1 overflow-y-auto p-4 space-y-3 no-scrollbar">
               {loading ? (
@@ -702,6 +710,8 @@ export const CortesHistoryModal: React.FC<CortesHistoryModalProps> = ({
                               <button
                                 type="button"
                                 onClick={() => handleEditClick(rec)}
+                                disabled={readOnly}
+                                title={readOnly ? 'Edición bloqueada en pruebas multilocal' : 'Editar corte'}
                                 className="px-2.5 py-1.5 rounded-lg bg-primary/10 text-primary dark:text-blue-400 text-[10px] font-black uppercase tracking-wider hover:bg-primary/20 transition-all"
                               >
                                 Editar
@@ -709,6 +719,8 @@ export const CortesHistoryModal: React.FC<CortesHistoryModalProps> = ({
                               <button
                                 type="button"
                                 onClick={() => setCorteToDelete(rec)}
+                                 disabled={readOnly}
+                                 title={readOnly ? 'Eliminación bloqueada en pruebas multilocal' : 'Eliminar corte'}
                                 className="px-2.5 py-1.5 rounded-lg bg-rose-50 dark:bg-rose-500/10 text-rose-600 dark:text-rose-400 text-[10px] font-black uppercase tracking-wider hover:bg-rose-100 transition-all"
                               >
                                 Eliminar
@@ -770,6 +782,7 @@ export const CortesHistoryModal: React.FC<CortesHistoryModalProps> = ({
                         <button
                           type="button"
                           onClick={() => setCorteToDelete(corte)}
+                           disabled={readOnly}
                           className="px-3 py-1.5 rounded-xl bg-rose-50 dark:bg-rose-500/10 text-rose-600 dark:text-rose-400 hover:bg-rose-100 dark:hover:bg-rose-500/20 text-xs font-black uppercase tracking-wider flex items-center gap-1 transition-all active:scale-95 shrink-0"
                           title="Eliminar corte completo y revertir saldos"
                         >
@@ -868,7 +881,7 @@ export const CortesHistoryModal: React.FC<CortesHistoryModalProps> = ({
                   <button
                     type="button"
                     onClick={handleExecuteDelete}
-                    disabled={isDeleting}
+                    disabled={isDeleting || readOnly}
                     className="w-full py-3.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-black text-xs uppercase tracking-wider shadow-lg shadow-rose-600/30 flex items-center justify-center gap-1.5 transition-all active:scale-95 disabled:opacity-50"
                   >
                     {isDeleting ? (
