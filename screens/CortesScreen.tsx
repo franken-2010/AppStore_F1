@@ -131,7 +131,7 @@ const CortesScreen: React.FC = () => {
     setSelectedStore(next);
     setParsedCut(null);
     setMultiDraft(null);
-    setRawText('');
+    // Conservar el dictado: corregir la caja no obliga a pegar todo otra vez.
     setManualValues({});
     setStatus(null);
   };
