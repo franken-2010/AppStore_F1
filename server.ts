@@ -13,7 +13,11 @@ const portFlagIndex = args.indexOf('--port');
 const cliPort = portFlagIndex !== -1 && args[portFlagIndex + 1] ? parseInt(args[portFlagIndex + 1], 10) : null;
 const PORT = cliPort || Number(process.env.DEFAULT_APP_PORT) || 3000;
 
-const FIREBASE_PROJECT_ID = (process.env.FIREBASE_PROJECT_ID || 'adminf1-2213b').trim();
+// En esta rama el servidor también se niega a autenticar tokens de producción.
+const FIREBASE_PROJECT_ID = (process.env.FIREBASE_PROJECT_ID || '').trim();
+if (!FIREBASE_PROJECT_ID || FIREBASE_PROJECT_ID === 'adminf1-2213b') {
+  throw new Error('F1 PRUEBAS: configura FIREBASE_PROJECT_ID con un proyecto independiente de producción.');
+}
 const FIREBASE_ISSUER = `https://securetoken.google.com/${FIREBASE_PROJECT_ID}`;
 const GOOGLE_CERTS_URL = 'https://www.googleapis.com/robot/v1/metadata/x509/securetoken@system.gserviceaccount.com';
 
