@@ -5,6 +5,7 @@ on:
     branches:
       - desarrollo-independiente
       - feature/cortes-integrados-2-locales
+      - ai-studio-pruebas-2-locales
   pull_request:
     branches:
       - main
