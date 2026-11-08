@@ -782,6 +782,8 @@ app.post('/api/gemini/parse-corte-v2', requireFirebaseAuth, standardAiLimiter, a
       '"Compra Fiesta" es compra de Fiesta; "Gasto Abarrotes" es salida de Abarrotes; "Compra Frutas y verduras" es compra de Frutas, aunque se pague con caja del Local 1. "Renta" y "Sueldos" son gastos administrativos generales, no compras de abarrotes.',
       'Si el dictado ya menciona claramente la categoría o el concepto, ASÍGNALO directamente; NO marques needsReview y NUNCA obligues a volver a elegirlo.',
       'Local 1 categorías de ventas: abarrotes, fiesta, recargas, estancias. Local 2 categorías de ventas: frutas_verduras, pan_galletas, comida_preparada.',
+       'SEGURIDAD: si una VENTA es de otro local, conserva su categoría real, marca needsReview=true y añade una advertencia que mencione el local correcto. NUNCA la reclasifiques para acomodarla a la caja elegida.',
+       'Si una COMPRA es para otra categoría o local, conserva su categoría beneficiaria y la caja pagadora; añade advertencia para conciliación. No la registres como compra del local incorrecto ni descuentes el efectivo dos veces.',
       'La categoría beneficiaria de una compra NO determina qué caja pagó. payingStoreId es la caja indicada expresamente, o POR DEFECTO la caja seleccionada para el corte. No pidas aclaración solo porque no se nombró la caja.',
       'Preserva separados los importes y la descripción de cada compra, no combines proveedores o categorías distintos en un solo renglón.',
       'Dinero entregado/contado va en cash.countedCash. NUNCA pidas ni registres sobrante manual: el sobrante o faltante se calcula matemáticamente en auditoría como contado menos efectivo esperado. Si el dictado contiene sobrante, ignora ese renglón; no es venta ni gasto.',

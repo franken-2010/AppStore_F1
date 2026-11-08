@@ -85,4 +85,29 @@ const needsHelp=normalizeMultiStoreDraft({
 },'local_01','2026-11-06','gemini');
 check(needsHelp.outlays[0].needsReview,'Proveedor ambiguo requiere intervención');
 eq(buildF1AuditSummary(needsHelp).unresolved,1,'Marcar solo movimientos ambiguos');
+
+const wrongStore=parseMultiStoreDraftFallback(
+  'Frutas y verduras 230\nPan y galletas 120\nDinero entregado 350',
+  'local_01','2026-11-06');
+eq(wrongStore.incomes.length,2,'Se reconocen nuevas categorías aunque caja sea incorrecta');
+check(wrongStore.incomes.every(item => item.needsReview),'No aceptar ventas de Local 2 en el corte Local 1');
+check(wrongStore.warnings.some(w => w.includes('Local 2') && w.includes('Frutas y verduras')),
+  'Advertencia con local correcto para Frutas y verduras');
+eq(buildF1AuditSummary(wrongStore).unresolved,2,'El auditor bloquea categorías de otro local');
+
+const rightStore=parseMultiStoreDraftFallback(
+  'Frutas y verduras 230\nPan y galletas 120\nComida preparada 300\nDinero entregado 650',
+  'local_02','2026-11-06');
+eq(buildF1AuditSummary(rightStore).unresolved,0,'Las tres categorías nuevas corresponden al Local 2');
+eq(buildF1AuditSummary(rightStore).cashDifference,0,'Cuadre automático Local 2');
+
+const inverse=parseMultiStoreDraftFallback('Ventas 300','local_02','2026-11-06');
+check(inverse.incomes[0].needsReview,'Ventas sin calificador solo pueden ser Abarrotes Local 1');
+
+const correctedMisclassification=normalizeMultiStoreDraft({
+  incomes:[{kind:'cash_sale',categoryId:'frutas_verduras',amount:100,rawText:'Ventas 100'}]
+},'local_01','2026-11-06','gemini');
+eq(correctedMisclassification.incomes[0].categoryId,'abarrotes','Texto explícito prevalece sobre alucinación IA');
+check(correctedMisclassification.incomes[0].needsReview,'Discrepancia IA se revisa antes de guardar');
+
 console.log('OK: captura rápida F1, etiquetas automáticas y auditoría clásica');

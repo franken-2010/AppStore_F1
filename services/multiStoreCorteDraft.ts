@@ -100,16 +100,22 @@ export function normalizeMultiStoreDraft(
       continue;
     }
     const kind = INCOME_TYPES.includes(row.kind as DraftIncomeKind) ? row.kind as DraftIncomeKind : 'cash_sale';
-    const category = categoryOf(row.categoryId) ?? inferF1Category(safeText(row.rawText, 280));
-    const needsReview = kind !== 'collection' && (
-      category === null || !F1_STORES.find(s => s.id === storeId)?.categories.includes(category)
-    );
+    // El texto explícito prevalece sobre una categoría distinta inferida por Gemini.
+    const explicitCategory = inferF1Category(safeText(row.rawText, 280));
+    const aiCategory = categoryOf(row.categoryId);
+    const category = explicitCategory ?? aiCategory;
+    const conflict = !!explicitCategory && !!aiCategory && explicitCategory !== aiCategory;
+    const owner = category ? F1_STORES.find(s => s.categories.includes(category)) : undefined;
+    const wrongStore = kind !== 'collection' && !!category && owner?.id !== storeId;
+    const needsReview = kind !== 'collection' && (category === null || wrongStore || conflict);
     incomes.push({
       id: 'income-' + index, kind, categoryId: kind === 'collection' ? null : category,
       amount, rawText: safeText(row.rawText, 280),
       needsReview: needsReview || Boolean(row.needsReview) || !INCOME_TYPES.includes(row.kind as DraftIncomeKind),
     });
-    if (needsReview) warnings.push('Ingreso ' + (index + 1) + ': revisar categoría/local antes de guardar');
+    if (conflict) warnings.push('Ingreso ' + (index + 1) + ': la IA asignó otra categoría; se respetó «' + F1_CATEGORY_LABELS[explicitCategory!] + '» del dictado. Revisar.');
+    if (wrongStore) warnings.push('Ingreso ' + (index + 1) + ': «' + F1_CATEGORY_LABELS[category!] + '» pertenece a ' + owner!.name + ', no a la caja seleccionada. Cambia al local correcto antes de registrar.');
+    else if (needsReview && !conflict) warnings.push('Ingreso ' + (index + 1) + ': revisar categoría antes de guardar');
   }
   const outlays: DraftOutlay[] = [];
   for (const [index, row] of plainArray(raw?.outlays).entries()) {
@@ -120,9 +126,12 @@ export function normalizeMultiStoreDraft(
     }
     const validKind = OUTLAY_TYPES.includes(row.kind as DraftOutlayKind);
     const kind = validKind ? row.kind as DraftOutlayKind : 'general_expense';
-    const category = categoryOf(row.categoryId) ?? inferF1Category(
-      safeText(row.rawText, 280) || safeText(row.concept, 160)
-    );
+    const explicitCategory = inferF1Category(safeText(row.rawText, 280) || safeText(row.concept, 160));
+    const aiCategory = categoryOf(row.categoryId);
+    const category = explicitCategory ?? aiCategory;
+    if (explicitCategory && aiCategory && explicitCategory !== aiCategory) {
+      warnings.push('Salida ' + (index + 1) + ': la categoría detectada en el texto difiere de la IA. Revisar antes de guardar.');
+    }
     const hasExplicitPayer = isStoreId(row.payingStoreId);
     const payingStoreId = hasExplicitPayer ? row.payingStoreId as StoreId : storeId;
     const needsCategory = kind === 'purchase' || kind === 'direct_expense';
@@ -133,6 +142,12 @@ export function normalizeMultiStoreDraft(
       rawText: safeText(row.rawText, 280), needsReview,
     });
     if (needsReview) warnings.push('Salida ' + (index + 1) + ': verificar tipo o categoría');
+    const beneficiary = category ? F1_STORES.find(s => s.categories.includes(category)) : undefined;
+    if (needsCategory && beneficiary && beneficiary.id !== storeId) {
+      warnings.push('Salida ' + (index + 1) + ': «' + F1_CATEGORY_LABELS[category!] + '» beneficia a ' +
+        beneficiary.name + '. Pagada desde ' + F1_STORES.find(s => s.id === payingStoreId)!.name +
+        ': identificar y conciliar el pago cruzado, sin cargar la compra al local equivocado.');
+    }
   }
   const cash = raw?.cash && typeof raw.cash === 'object' && !Array.isArray(raw.cash)
     ? raw.cash as Record<string, unknown> : {};

@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - desarrollo-independiente
+      - feature/cortes-integrados-2-locales
   pull_request:
     branches:
       - main

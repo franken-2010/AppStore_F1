@@ -26,8 +26,11 @@ const local1=parseMultiStoreDraftFallback([
   'Consumo empleados 75',
   'Dinero entregado 3800',
 ].join('\n'),'local_01','2026-11-06');
-eq(local1.warnings.length,0,'Dictado F1 sin advertencias');
-const input: RegisterClosingInput={uid:'usuario_demo',draft:local1,openingCash:0,now:'2026-11-07T02:00:00.000Z'};
+eq(local1.warnings.length,1,'Compra cruzada necesita aviso de conciliación');
+check(local1.warnings[0].includes('Local 2') && local1.warnings[0].includes('Frutas'),
+  'Advertir compra para otro local, aunque la pague caja 1');
+const input: RegisterClosingInput={uid:'usuario_demo',draft:local1,openingCash:0,
+  acknowledgeWarnings:true,now:'2026-11-07T02:00:00.000Z'};
 const prepared=prepareRegisteredClosing(input);
 eq(prepared.id,'cut_local_01_2026-11-06','ID fijo local y fecha');
 eq(prepared.audit.classifiedCashSales,5625,'Ventas reales separadas');
@@ -64,7 +67,7 @@ corrected.outlays[0].amount=500; // modificar importe compra Abarrotes
 corrected.cash.countedCash=3850;
 const update1=await correctClosing(repo,{
   uid:'usuario_demo',draft:corrected,openingCash:0,
-  expectedRevision:1,reason:'Corrección comprobante del proveedor',
+  expectedRevision:1,acknowledgeWarnings:true,reason:'Corrección comprobante del proveedor',
   now:'2026-11-07T03:00:00.000Z',
 });
 eq(update1.status,'corrected','Guardar corrección');
@@ -121,7 +124,7 @@ await fails(()=>registerClosing(repo,{...input,draft:doubleRow}),'Dos gastos no 
 const zeroRow=clone(local1);zeroRow.incomes[0].amount=0;
 await fails(()=>registerClosing(repo,{...input,draft:zeroRow}),'Movimiento importe cero');
 const dirty=clone(local1);dirty.warnings.push('Concepto sin clasificar');
-await fails(()=>registerClosing(repo,{...input,draft:dirty}),'Rechazar advertencias no revisadas');
+await fails(()=>registerClosing(repo,{...input,draft:dirty,acknowledgeWarnings:false}),'Rechazar advertencias no revisadas');
 const acknowledged=prepareRegisteredClosing({...input,draft:dirty,acknowledgeWarnings:true});
 eq(acknowledged.id,prepared.id,'Permitir advertencias tras reconocerlas explícitamente');
 await fails(()=>correctClosing(repo,{

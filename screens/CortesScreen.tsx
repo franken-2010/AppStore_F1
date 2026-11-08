@@ -13,16 +13,38 @@ import {
   doc,
   writeBatch,
   increment,
-  Timestamp
+  Timestamp,
+  setDoc,
+  getDocs,
+  query,
+  where
 } from "firebase/firestore";
 import { handleFirestoreError, OperationType } from '../services/errorHandling';
 import { GeminiService } from '../services/geminiService';
 import { AccountResolver } from '../services/AccountResolver';
 import { AccountingService, RegisterSchema } from '../services/AccountingService';
 import MoneyInputWithCalculator from '../components/MoneyInputWithCalculator';
-import MultiStoreCorteDraftPanel from '../components/MultiStoreCorteDraftPanel';
+import CortesHistoryModal, { CorteRecord } from '../components/CortesHistoryModal';
+import { F1_STORES, F1_CATEGORY_LABELS, type StoreId } from '../services/multiStoreAccounting';
+import { parseMultiStoreDraftFallback, type MultiStoreCorteDraft } from '../services/multiStoreCorteDraft';
+import { buildF1AuditSummary } from '../services/multiStoreCorteSummary';
 
-type TabMode = 'manual' | 'raw' | 'multilocal';
+type TabMode = 'manual' | 'raw';
+// Los campos nuevos replican el formulario manual original, sin crear otra pantalla.
+const SECOND_STORE_INCOME = [
+  { id: 'in_frutas_verduras', label: 'Frutas y verduras' },
+  { id: 'in_pan_galletas', label: 'Pan y galletas' },
+  { id: 'in_comida_preparada', label: 'Comida preparada' },
+];
+const SECOND_STORE_EXPENSE = [
+  { id: 'ex_frutas_verduras', label: 'Compras Frutas y verduras' },
+  { id: 'ex_pan_galletas', label: 'Compras Pan y galletas' },
+  { id: 'ex_comida_preparada', label: 'Compras Comida preparada' },
+  { id: 'ex_empleados', label: 'Sueldos / Pago empleados' },
+  { id: 'ex_renta', label: 'Renta' },
+  { id: 'ex_mantenimiento', label: 'Mantenimiento' },
+  { id: 'ex_gastos_administrativos', label: 'Gastos administrativos' },
+];
 
 interface CutCanonical {
   income: {
@@ -61,6 +83,7 @@ const CortesScreen: React.FC = () => {
   const { user } = useAuth();
   const { addNotification } = useNotifications();
   const [activeTab, setActiveTab] = useState<TabMode>('manual');
+  const [selectedStore, setSelectedStore] = useState<StoreId>('local_01');
   const [selectedDate, setSelectedDate] = useState(() => {
     const d = new Date();
     const year = d.getFullYear();
@@ -78,7 +101,9 @@ const CortesScreen: React.FC = () => {
   // RAW Mode States
   const [rawText, setRawText] = useState('');
   const [parsedCut, setParsedCut] = useState<CutCanonical | null>(null);
+  const [multiDraft, setMultiDraft] = useState<MultiStoreCorteDraft | null>(null);
   const [isCopied, setIsCopied] = useState(false);
+  const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
   const rawTextareaRef = useRef<HTMLTextAreaElement>(null);
   const copyTimeoutRef = useRef<number | null>(null);
 
@@ -102,9 +127,81 @@ const CortesScreen: React.FC = () => {
   }, [user]);
 
   const formatMXN = (val: number) => new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(val);
+  const selectedStoreName = F1_STORES.find(s => s.id === selectedStore)!.name;
+  const multiAudit = useMemo(() => multiDraft ? buildF1AuditSummary(multiDraft) : null, [multiDraft]);
+  const secondManualIncome = SECOND_STORE_INCOME.reduce((sum, f) => sum + (manualValues[f.id] || 0), 0);
+  const secondManualExpense = SECOND_STORE_EXPENSE.reduce((sum, f) => sum + (manualValues[f.id] || 0), 0);
+  const secondManualDifference = (manualValues.dinero_entregado_local2 || 0) - (secondManualIncome - secondManualExpense);
+  const selectStore = (next: StoreId) => {
+    if (next === selectedStore || isSaving) return;
+    setSelectedStore(next);
+    setParsedCut(null);
+    setMultiDraft(null);
+    // Conservar el dictado: corregir la caja no obliga a pegar todo otra vez.
+    setManualValues({});
+    setStatus(null);
+  };
 
   const handleInputChange = (id: string, value: string) => {
     setManualValues(prev => ({ ...prev, [id]: parseFloat(value) || 0 }));
+  };
+
+  /**
+   * Cargar y editar un corte seleccionado del historial:
+   * 1. Actualiza selectedDate a la fecha del corte.
+   * 2. Cambia a pestaña manual.
+   * 3. Busca los movimientos de ese corte para precargar los importes en cada rubro.
+   */
+  const handleEditCorte = async (corte: CorteRecord) => {
+    setSelectedDate(corte.fecha);
+    setActiveTab('manual');
+    setStatus({ text: `Cargando datos del corte del ${corte.fecha}...`, type: 'info' });
+
+    if (!user || !schema) return;
+
+    try {
+      const accountsSnap = await getDocs(collection(db, 'users', user.uid, 'accounts'));
+      const newValues: Record<string, number> = {};
+      [...schema.ingresos, ...schema.egresos].forEach(r => (newValues[r.id] = 0));
+
+      for (const accDoc of accountsSnap.docs) {
+        const movsColRef = collection(db, 'users', user.uid, 'accounts', accDoc.id, 'movements');
+
+        let snapMovs;
+        if (corte.groupId) {
+          const qGroup = query(movsColRef, where('groupId', '==', corte.groupId));
+          snapMovs = await getDocs(qGroup);
+        } else {
+          const qDate = query(movsColRef, where('dateKey', '==', corte.fecha));
+          snapMovs = await getDocs(qDate);
+        }
+
+        snapMovs.docs.forEach((mDoc) => {
+          const data = mDoc.data();
+          const rubricId = data.rubro;
+          const isControl = data.es_control === true || data.esControl === true;
+          const source = data.source;
+
+          // Ignorar movimientos espejo de inventario o control al rellenar inputs
+          if (source === 'auto_inventory' || source === 'auto_debit' || isControl) {
+            return;
+          }
+
+          if (rubricId && typeof newValues[rubricId] === 'number') {
+            newValues[rubricId] = Number(data.amount || 0);
+          }
+        });
+      }
+
+      setManualValues(newValues);
+      setStatus({ 
+        text: `Datos del corte del ${corte.fecha} cargados en el formulario para revisión o edición.`, 
+        type: 'success' 
+      });
+    } catch (err: any) {
+      console.error('Error al precargar corte:', err);
+      setStatus({ text: `Fecha cambiada al ${corte.fecha}.`, type: 'info' });
+    }
   };
 
   const auditMetrics = useMemo((): AuditMetrics | null => {
@@ -186,10 +283,44 @@ const CortesScreen: React.FC = () => {
 
   const handleAnalyzeIA = async () => {
     if (!rawText.trim() || !schema) return;
+    // Respaldo automático al portapapeles: copiar el texto completo antes de analizar
+    // para que el usuario no lo pierda si ocurre algún error o reinicio del formulario
+    try {
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(rawText);
+        setIsCopied(true);
+      }
+    } catch {
+      // ignore
+    }
+
     setIsSaving(true);
     setStatus({ text: "F1-AI analizando reporte...", type: 'info' });
     
     try {
+      const checked = parseMultiStoreDraftFallback(rawText, selectedStore, selectedDate);
+      // Nunca mezclar un corte de Local 1 con ventas/compras de Local 2 ni viceversa.
+      const foreign = [...checked.incomes, ...checked.outlays]
+        .filter(row => row.categoryId &&
+          !F1_STORES.find(s => s.id === selectedStore)!.categories.includes(row.categoryId));
+      if (foreign.length) {
+        const labels = [...new Set(foreign.map(row => F1_CATEGORY_LABELS[row.categoryId!]))].join(', ');
+        setParsedCut(null);
+        setMultiDraft(null);
+        setStatus({ text: `Categoría de otro local: ${labels}. Selecciona la caja correcta o separa el movimiento antes de registrar.`, type: 'error' });
+        return;
+      }
+      if (selectedStore === 'local_02') {
+        const draft = await GeminiService.parseMultiStoreCorteDraft(rawText, selectedDate, selectedStore);
+        setParsedCut(null);
+        setMultiDraft(draft);
+        const audit = buildF1AuditSummary(draft);
+        setStatus(audit.unresolved || draft.warnings.length
+          ? { text: 'Hay categorías o movimientos por revisar; no se registrará ningún asiento.', type: 'warning' }
+          : { text: 'Auditoría del Local 2 terminada. Guardado real pendiente de validación contable.', type: 'info' });
+        return;
+      }
+      setMultiDraft(null);
       const data = await GeminiService.parseCorteText(rawText, selectedDate);
       
       // Asegurar integridad de datos (Self-check)
@@ -260,6 +391,10 @@ const CortesScreen: React.FC = () => {
   };
 
   const handleSave = async () => {
+    if (selectedStore === 'local_02') {
+      setStatus({ text: 'Guardado del Local 2 bloqueado hasta validar cuentas y reglas de Firebase.', type: 'warning' });
+      return;
+    }
     if (!user || !schema) return;
     setIsSaving(true);
     setStatus({ text: "Sincronizando movimientos contables...", type: 'info' });
@@ -543,6 +678,39 @@ const CortesScreen: React.FC = () => {
         }
       }
 
+      // 2. Registrar el corte en la colección canónica /users/{uid}/cortes
+      // para permitir su visualización en el historial y su eliminación completa con un clic
+      const corteDocId = `corte_${selectedDate}_${Date.now()}`;
+      const corteRef = doc(db, "users", user.uid, "cortes", corteDocId);
+
+      const calculatedAudit = auditMetrics ? {
+        totalIngresos: auditMetrics.totalIngresos,
+        subtotalEgresos: auditMetrics.subtotalEgresos,
+        totalEsperado: auditMetrics.totalEsperado,
+        dineroEntregado: Number(parsedCut?.cash.dineroEntregado || 0),
+        resultadoCaja: auditMetrics.resultadoCaja,
+        tipoResultado: auditMetrics.tipoResultado,
+        diferencia: auditMetrics.resultadoCaja,
+        movementsCount: seqIndex
+      } : {
+        totalIngresos: Number(
+          ((manualValues['in_ventas'] || 0) + (manualValues['in_fiesta'] || 0) + (manualValues['in_recargas'] || 0) + (manualValues['in_estancias'] || 0) + (manualValues['in_cxc_pago'] || 0)).toFixed(2)
+        ),
+        subtotalEgresos: Number(
+          ((manualValues['ex_mercancias'] || 0) + (manualValues['ex_fiesta'] || 0) + (manualValues['ex_gastos_administrativos'] || 0) + (manualValues['ex_empleados'] || 0) + (manualValues['ex_consumo_empleados'] || 0) + (manualValues['ex_personal'] || 0)).toFixed(2)
+        ),
+        movementsCount: seqIndex
+      };
+
+      batch.set(corteRef, {
+        fecha: selectedDate,
+        admin: username,
+        status: 'ACTIVE',
+        groupId,
+        audit: calculatedAudit,
+        createdAt: accountingTimestamp
+      });
+
       await batch.commit();
 
       addNotification({ 
@@ -566,18 +734,40 @@ const CortesScreen: React.FC = () => {
       
       <header className="sticky top-0 z-30 bg-background-light/95 dark:bg-background-dark/95 backdrop-blur-md pt-12 px-5 pb-4 border-b dark:border-white/5">
         <div className="flex items-center justify-between mb-4">
-          <button onClick={() => setIsSidebarOpen(true)} className="p-2 -ml-2 text-slate-700 dark:text-white"><span className="material-symbols-outlined text-3xl">menu</span></button>
-          <h1 className="text-xl font-extrabold tracking-tight text-slate-900 dark:text-white">Corte de Caja</h1>
-          <ProfileMenu />
+          <div className="flex items-center gap-2">
+            <button onClick={() => setIsSidebarOpen(true)} className="p-2 -ml-2 text-slate-700 dark:text-white"><span className="material-symbols-outlined text-3xl">menu</span></button>
+            <h1 className="text-xl font-extrabold tracking-tight text-slate-900 dark:text-white">Corte de Caja</h1>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => {if(selectedStore==='local_01')setIsHistoryModalOpen(true);}}
+              disabled={selectedStore==='local_02'}
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-2xl bg-slate-200/80 dark:bg-white/10 hover:bg-slate-300 dark:hover:bg-white/15 text-slate-800 dark:text-white text-xs font-black uppercase tracking-wider transition-all active:scale-95 shadow-sm"
+              title={selectedStore==='local_01' ? "Consultar historial histórico (solo lectura durante pruebas)" : "Historial del Local 2 aún en preparación"}
+            >
+              <span className="material-symbols-outlined text-base text-primary dark:text-blue-400">history</span>
+              <span>Historial</span>
+            </button>
+            <ProfileMenu />
+          </div>
         </div>
         <div className="flex p-1 bg-slate-200 dark:bg-surface-dark rounded-2xl">
-          {(['manual', 'raw', 'multilocal'] as TabMode[]).map(mode => (
-            <button key={mode} onClick={() => setActiveTab(mode)} className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase transition-all ${activeTab === mode ? 'bg-primary text-white shadow-lg shadow-primary/20' : 'text-slate-500'}`}>{mode === 'manual' ? 'Carga Manual' : mode === 'raw' ? 'Pegar Corte' : 'F1-AI 2 locales'}</button>
+          {(['manual', 'raw'] as TabMode[]).map(mode => (
+            <button key={mode} onClick={() => setActiveTab(mode)} className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase transition-all ${activeTab === mode ? 'bg-primary text-white shadow-lg shadow-primary/20' : 'text-slate-500'}`}>{mode === 'manual' ? 'Carga Manual' : 'Pegar Corte'}</button>
           ))}
         </div>
       </header>
 
       <main className="px-5 mt-6 space-y-8 pb-10">
+        <section className="space-y-2">
+          <label htmlFor="f1-store" className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 ml-1">Caja / Local del corte</label>
+          <select id="f1-store" value={selectedStore} onChange={e => selectStore(e.target.value as StoreId)}
+            className="w-full bg-white dark:bg-surface-dark dark:text-white rounded-2xl border border-slate-200 dark:border-white/10 p-4 font-bold">
+            {F1_STORES.map(store => <option key={store.id} value={store.id}>{store.name}</option>)}
+          </select>
+          {selectedStore === 'local_02' && <p className="text-xs font-bold text-amber-700 dark:text-amber-300">Local 2: captura y auditoría en prueba. El guardado real sigue deshabilitado para proteger tu contabilidad.</p>}
+        </section>
         {/* Fecha del Corte */}
         <div className="flex flex-col gap-2">
           <label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 ml-1">Fecha del Registro</label>
@@ -585,7 +775,7 @@ const CortesScreen: React.FC = () => {
             <input 
               type="date" 
               value={selectedDate}
-              onChange={(e) => setSelectedDate(e.target.value)}
+              onChange={(e) => { setSelectedDate(e.target.value); setParsedCut(null); setMultiDraft(null); }}
               className="w-full bg-white dark:bg-surface-dark border border-slate-200 dark:border-white/5 rounded-2xl p-4 font-bold text-slate-800 dark:text-white shadow-sm outline-none focus:ring-2 focus:ring-primary/50 transition-all"
             />
             <span className="material-symbols-outlined absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-primary transition-colors pointer-events-none">calendar_today</span>
@@ -604,7 +794,7 @@ const CortesScreen: React.FC = () => {
             <section className="space-y-4">
               <h3 className="text-xs font-black uppercase tracking-[0.2em] text-slate-400 ml-1">Entradas de Dinero</h3>
               <div className="bg-white dark:bg-surface-dark p-6 rounded-[2rem] shadow-sm space-y-6">
-                {schema?.ingresos.map(rubric => (
+                {(selectedStore === 'local_01' ? (schema?.ingresos || []) : SECOND_STORE_INCOME).map(rubric => (
                   <MoneyInputWithCalculator key={rubric.id} label={rubric.label} field={rubric.id} value={manualValues[rubric.id] || 0} onChange={handleInputChange} />
                 ))}
               </div>
@@ -612,18 +802,27 @@ const CortesScreen: React.FC = () => {
             <section className="space-y-4">
               <h3 className="text-xs font-black uppercase tracking-[0.2em] text-slate-400 ml-1">Salidas / Gastos</h3>
               <div className="bg-white dark:bg-surface-dark p-6 rounded-[2rem] shadow-sm space-y-6">
-                {schema?.egresos.map(rubric => (
+                {(selectedStore === 'local_01' ? (schema?.egresos || []) : SECOND_STORE_EXPENSE).map(rubric => (
                   <MoneyInputWithCalculator key={rubric.id} label={rubric.label} field={rubric.id} value={manualValues[rubric.id] || 0} onChange={handleInputChange} />
                 ))}
               </div>
             </section>
-            <button onClick={handleSave} disabled={isSaving} className="w-full py-6 bg-primary text-white font-black rounded-3xl shadow-xl shadow-primary/20 flex items-center justify-center gap-3 active:scale-95 transition-all text-base disabled:opacity-50">
+
+            {selectedStore === 'local_02' && (
+              <section className="bg-white dark:bg-surface-dark p-6 rounded-[2rem] space-y-3">
+                <MoneyInputWithCalculator label="Dinero entregado (para calcular diferencia)" field="dinero_entregado_local2"
+                  value={manualValues.dinero_entregado_local2 || 0} onChange={handleInputChange} />
+                <p className="text-xs font-bold dark:text-white">Ingresos: {formatMXN(secondManualIncome)} · Egresos: {formatMXN(secondManualExpense)}</p>
+                <p className="text-sm font-black dark:text-white">{manualValues.dinero_entregado_local2 === undefined
+                  ? 'Diferencia pendiente: captura el dinero entregado.'
+                  : `${secondManualDifference >= 0 ? 'Sobrante' : 'Faltante'} automático: ${formatMXN(Math.abs(secondManualDifference))}`}</p>
+              </section>
+            )}
+            <button onClick={handleSave} disabled={isSaving || selectedStore === 'local_02'} className="w-full py-6 bg-primary text-white font-black rounded-3xl shadow-xl shadow-primary/20 flex items-center justify-center gap-3 active:scale-95 transition-all text-base disabled:opacity-50">
               {isSaving ? <span className="material-symbols-outlined animate-spin">sync</span> : <span className="material-symbols-outlined">send</span>}
               Sincronizar Operación
             </button>
           </div>
-        ) : activeTab === 'multilocal' ? (
-          <MultiStoreCorteDraftPanel dateKey={selectedDate} analyzeDraft={GeminiService.parseMultiStoreCorteDraft} />
         ) : (
           <div className="space-y-6">
             {!parsedCut ? (
@@ -637,6 +836,7 @@ const CortesScreen: React.FC = () => {
                   value={rawText}
                   onChange={(e) => {
                     setRawText(e.target.value);
+                    setMultiDraft(null);
                     if (isCopied) setIsCopied(false);
                   }}
                   placeholder="Ventas: 4500, Luz: 1200, Entregue: 3000..."
@@ -667,6 +867,31 @@ const CortesScreen: React.FC = () => {
                     <span className="material-symbols-outlined">analytics</span> Analizar con F1-AI
                   </button>
                 </div>
+                {multiDraft && multiAudit && (
+                  <section className="space-y-4 border-t border-slate-100 dark:border-white/10 pt-5">
+                    <h3 className="text-sm font-black uppercase text-primary">Auditoría de Corte · {selectedStoreName}</h3>
+                    {F1_STORES.find(s => s.id === selectedStore)!.categories.map(category => (
+                      <div key={category} className="space-y-1 text-sm font-bold dark:text-white">
+                        <div className="flex justify-between"><span>Ventas {F1_CATEGORY_LABELS[category]}</span><span>{formatMXN(multiAudit.cashSales[category] || 0)}</span></div>
+                        <div className="flex justify-between text-slate-500"><span>Compras {F1_CATEGORY_LABELS[category]}</span><span>{formatMXN(multiAudit.purchases[category] || 0)}</span></div>
+                      </div>
+                    ))}
+                    <div className="border-t border-slate-100 dark:border-white/10 space-y-2 pt-3 text-sm font-bold dark:text-white">
+                      <div className="flex justify-between"><span>Ingresos en efectivo</span><span>{formatMXN(multiAudit.totalCashEntries)}</span></div>
+                      <div className="flex justify-between"><span>Egresos de caja</span><span>{formatMXN(multiAudit.cashOutflows)}</span></div>
+                      <div className="flex justify-between"><span>Efectivo esperado</span><span>{formatMXN(multiAudit.expectedCash)}</span></div>
+                      <div className="flex justify-between"><span>Dinero entregado</span><span>{multiAudit.countedCash == null ? 'No indicado' : formatMXN(multiAudit.countedCash)}</span></div>
+                      <div className="flex justify-between text-primary"><span>{multiAudit.cashDifference == null ? 'Diferencia pendiente' : multiAudit.cashDifference >= 0 ? 'Sobrante automático' : 'Faltante automático'}</span><span>{multiAudit.cashDifference == null ? '—' : formatMXN(Math.abs(multiAudit.cashDifference))}</span></div>
+                    </div>
+                    {(multiAudit.unresolved > 0 || multiDraft.warnings.length > 0) && (
+                      <div className="rounded-xl bg-amber-50 dark:bg-amber-950/40 p-4 text-xs text-amber-900 dark:text-amber-200 space-y-2">
+                        <strong>Movimientos por verificar: {multiAudit.unresolved}</strong>
+                        {multiDraft.warnings.map((warning, index) => <p key={index}>{warning}</p>)}
+                      </div>
+                    )}
+                    <p className="text-xs text-amber-700 dark:text-amber-300 font-bold">Modo prueba: no registra movimientos en Firestore.</p>
+                  </section>
+                )}
               </div>
             ) : (
               <div className="space-y-6 animate-in slide-in-from-bottom-4 duration-500">
@@ -742,6 +967,14 @@ const CortesScreen: React.FC = () => {
           </div>
         )}
       </main>
+      <CortesHistoryModal
+        isOpen={isHistoryModalOpen && selectedStore==='local_01'}
+        readOnly={true}
+        onClose={() => setIsHistoryModalOpen(false)}
+        onSelectDate={(dateStr) => setSelectedDate(dateStr)}
+        onEditCorte={handleEditCorte}
+        currentDate={selectedDate}
+      />
       <BottomNav />
     </div>
   );
