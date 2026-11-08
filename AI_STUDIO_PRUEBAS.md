@@ -23,9 +23,11 @@ Copiar los valores de configuración WEB (no service accounts) a las variables i
 ## Paso 2. Importar SIN alterar tu proyecto original
 La app operativa de AI Studio está sincronizada con la rama `main` de `franken-2010/AppStore_F1`; no modificar esa vinculación.
 
-Preferido: usar **una NUEVA aplicación** en Google AI Studio Build, seleccionar `+` -> `Import from GitHub` e importar **la rama** `ai-studio-pruebas-2-locales` *solo si la interfaz ofrece selector de ramas*.
+**Método seguro:** utilizar una NUEVA aplicación en Google AI Studio Build, mediante `+` -> `Import from GitHub`, con un **repositorio de pruebas separado**, p. ej. `AppStore_F1_Pruebas` (preferentemente privado). Su rama principal `main` debe contener el código de `ai-studio-pruebas-2-locales`; la app original permanece vinculada a `AppStore_F1/main`.
 
-Si AI Studio ofrece solo `main` (como en la captura del proyecto original), **NO importar `main` para esta prueba** y **NO fusionar la rama de pruebas a `main`**. Crear un repositorio nuevo e independiente (sugerencia: `AppStore_F1_Pruebas`, privado) cuya rama por defecto `main` contenga esta rama; luego importarlo como una NUEVA app. Solicita ayuda para copiar el contenido una vez creado el repositorio.
+AI Studio se vincula normalmente con la rama predeterminada del repositorio; **no asumir que puede importar directamente otra rama**. Si su diálogo ofrece selector de rama, se puede evaluar; si no, crear primero el repositorio independiente en GitHub y copiar a él el código de pruebas. Después importa ese repositorio como una nueva app.
+
+No unir `ai-studio-pruebas-2-locales` al `main` original ni cambiar la rama predeterminada del repositorio operativo.
 
 No pulsar `Push changes to GitHub` ni `Merge` sobre la app original para realizar esta prueba.
 
