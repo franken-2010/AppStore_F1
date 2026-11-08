@@ -163,6 +163,7 @@ service cloud.firestore {
         && data.fecha is string && data.fecha.size() >= 1 && data.fecha.size() <= 32
         && (!('admin' in data) || (data.admin is string && data.admin.size() <= 120))
         && (!('status' in data) || (data.status is string && data.status.size() <= 40))
+        && (!('groupId' in data) || (data.groupId is string && data.groupId.size() <= 80))
         && (!('audit' in data) || (data.audit is map && data.audit.keys().size() <= 30))
         && (!('createdAt' in data) || data.createdAt is timestamp);
     }

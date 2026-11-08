@@ -13,13 +13,18 @@ import {
   doc,
   writeBatch,
   increment,
-  Timestamp
+  Timestamp,
+  setDoc,
+  getDocs,
+  query,
+  where
 } from "firebase/firestore";
 import { handleFirestoreError, OperationType } from '../services/errorHandling';
 import { GeminiService } from '../services/geminiService';
 import { AccountResolver } from '../services/AccountResolver';
 import { AccountingService, RegisterSchema } from '../services/AccountingService';
 import MoneyInputWithCalculator from '../components/MoneyInputWithCalculator';
+import CortesHistoryModal, { CorteRecord } from '../components/CortesHistoryModal';
 
 type TabMode = 'manual' | 'raw';
 
@@ -78,6 +83,7 @@ const CortesScreen: React.FC = () => {
   const [rawText, setRawText] = useState('');
   const [parsedCut, setParsedCut] = useState<CutCanonical | null>(null);
   const [isCopied, setIsCopied] = useState(false);
+  const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
   const rawTextareaRef = useRef<HTMLTextAreaElement>(null);
   const copyTimeoutRef = useRef<number | null>(null);
 
@@ -104,6 +110,64 @@ const CortesScreen: React.FC = () => {
 
   const handleInputChange = (id: string, value: string) => {
     setManualValues(prev => ({ ...prev, [id]: parseFloat(value) || 0 }));
+  };
+
+  /**
+   * Cargar y editar un corte seleccionado del historial:
+   * 1. Actualiza selectedDate a la fecha del corte.
+   * 2. Cambia a pestaña manual.
+   * 3. Busca los movimientos de ese corte para precargar los importes en cada rubro.
+   */
+  const handleEditCorte = async (corte: CorteRecord) => {
+    setSelectedDate(corte.fecha);
+    setActiveTab('manual');
+    setStatus({ text: `Cargando datos del corte del ${corte.fecha}...`, type: 'info' });
+
+    if (!user || !schema) return;
+
+    try {
+      const accountsSnap = await getDocs(collection(db, 'users', user.uid, 'accounts'));
+      const newValues: Record<string, number> = {};
+      [...schema.ingresos, ...schema.egresos].forEach(r => (newValues[r.id] = 0));
+
+      for (const accDoc of accountsSnap.docs) {
+        const movsColRef = collection(db, 'users', user.uid, 'accounts', accDoc.id, 'movements');
+
+        let snapMovs;
+        if (corte.groupId) {
+          const qGroup = query(movsColRef, where('groupId', '==', corte.groupId));
+          snapMovs = await getDocs(qGroup);
+        } else {
+          const qDate = query(movsColRef, where('dateKey', '==', corte.fecha));
+          snapMovs = await getDocs(qDate);
+        }
+
+        snapMovs.docs.forEach((mDoc) => {
+          const data = mDoc.data();
+          const rubricId = data.rubro;
+          const isControl = data.es_control === true || data.esControl === true;
+          const source = data.source;
+
+          // Ignorar movimientos espejo de inventario o control al rellenar inputs
+          if (source === 'auto_inventory' || source === 'auto_debit' || isControl) {
+            return;
+          }
+
+          if (rubricId && typeof newValues[rubricId] === 'number') {
+            newValues[rubricId] = Number(data.amount || 0);
+          }
+        });
+      }
+
+      setManualValues(newValues);
+      setStatus({ 
+        text: `Datos del corte del ${corte.fecha} cargados en el formulario para revisión o edición.`, 
+        type: 'success' 
+      });
+    } catch (err: any) {
+      console.error('Error al precargar corte:', err);
+      setStatus({ text: `Fecha cambiada al ${corte.fecha}.`, type: 'info' });
+    }
   };
 
   const auditMetrics = useMemo((): AuditMetrics | null => {
@@ -185,6 +249,18 @@ const CortesScreen: React.FC = () => {
 
   const handleAnalyzeIA = async () => {
     if (!rawText.trim() || !schema) return;
+
+    // Respaldo automático al portapapeles: copiar el texto completo antes de analizar
+    // para que el usuario no lo pierda si ocurre algún error o reinicio del formulario
+    try {
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(rawText);
+        setIsCopied(true);
+      }
+    } catch {
+      // ignore
+    }
+
     setIsSaving(true);
     setStatus({ text: "F1-AI analizando reporte...", type: 'info' });
     
@@ -542,6 +618,39 @@ const CortesScreen: React.FC = () => {
         }
       }
 
+      // 2. Registrar el corte en la colección canónica /users/{uid}/cortes
+      // para permitir su visualización en el historial y su eliminación completa con un clic
+      const corteDocId = `corte_${selectedDate}_${Date.now()}`;
+      const corteRef = doc(db, "users", user.uid, "cortes", corteDocId);
+
+      const calculatedAudit = auditMetrics ? {
+        totalIngresos: auditMetrics.totalIngresos,
+        subtotalEgresos: auditMetrics.subtotalEgresos,
+        totalEsperado: auditMetrics.totalEsperado,
+        dineroEntregado: Number(parsedCut?.cash.dineroEntregado || 0),
+        resultadoCaja: auditMetrics.resultadoCaja,
+        tipoResultado: auditMetrics.tipoResultado,
+        diferencia: auditMetrics.resultadoCaja,
+        movementsCount: seqIndex
+      } : {
+        totalIngresos: Number(
+          ((manualValues['in_ventas'] || 0) + (manualValues['in_fiesta'] || 0) + (manualValues['in_recargas'] || 0) + (manualValues['in_estancias'] || 0) + (manualValues['in_cxc_pago'] || 0)).toFixed(2)
+        ),
+        subtotalEgresos: Number(
+          ((manualValues['ex_mercancias'] || 0) + (manualValues['ex_fiesta'] || 0) + (manualValues['ex_gastos_administrativos'] || 0) + (manualValues['ex_empleados'] || 0) + (manualValues['ex_consumo_empleados'] || 0) + (manualValues['ex_personal'] || 0)).toFixed(2)
+        ),
+        movementsCount: seqIndex
+      };
+
+      batch.set(corteRef, {
+        fecha: selectedDate,
+        admin: username,
+        status: 'ACTIVE',
+        groupId,
+        audit: calculatedAudit,
+        createdAt: accountingTimestamp
+      });
+
       await batch.commit();
 
       addNotification({ 
@@ -565,9 +674,22 @@ const CortesScreen: React.FC = () => {
       
       <header className="sticky top-0 z-30 bg-background-light/95 dark:bg-background-dark/95 backdrop-blur-md pt-12 px-5 pb-4 border-b dark:border-white/5">
         <div className="flex items-center justify-between mb-4">
-          <button onClick={() => setIsSidebarOpen(true)} className="p-2 -ml-2 text-slate-700 dark:text-white"><span className="material-symbols-outlined text-3xl">menu</span></button>
-          <h1 className="text-xl font-extrabold tracking-tight text-slate-900 dark:text-white">Corte de Caja</h1>
-          <ProfileMenu />
+          <div className="flex items-center gap-2">
+            <button onClick={() => setIsSidebarOpen(true)} className="p-2 -ml-2 text-slate-700 dark:text-white"><span className="material-symbols-outlined text-3xl">menu</span></button>
+            <h1 className="text-xl font-extrabold tracking-tight text-slate-900 dark:text-white">Corte de Caja</h1>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setIsHistoryModalOpen(true)}
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-2xl bg-slate-200/80 dark:bg-white/10 hover:bg-slate-300 dark:hover:bg-white/15 text-slate-800 dark:text-white text-xs font-black uppercase tracking-wider transition-all active:scale-95 shadow-sm"
+              title="Ver historial de cortes y eliminar"
+            >
+              <span className="material-symbols-outlined text-base text-primary dark:text-blue-400">history</span>
+              <span>Historial</span>
+            </button>
+            <ProfileMenu />
+          </div>
         </div>
         <div className="flex p-1 bg-slate-200 dark:bg-surface-dark rounded-2xl">
           {['manual', 'raw'].map(mode => (
@@ -739,6 +861,13 @@ const CortesScreen: React.FC = () => {
           </div>
         )}
       </main>
+      <CortesHistoryModal
+        isOpen={isHistoryModalOpen}
+        onClose={() => setIsHistoryModalOpen(false)}
+        onSelectDate={(dateStr) => setSelectedDate(dateStr)}
+        onEditCorte={handleEditCorte}
+        currentDate={selectedDate}
+      />
       <BottomNav />
     </div>
   );

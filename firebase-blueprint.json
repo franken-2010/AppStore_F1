@@ -317,6 +317,11 @@
           "description": "Closing status.",
           "maxLength": 40
         },
+        "groupId": {
+          "type": "string",
+          "description": "Unique transaction group ID linking all movements in this corte.",
+          "maxLength": 80
+        },
         "audit": {
           "type": "object",
           "description": "Detailed income, expense, and cash variance breakdown."
