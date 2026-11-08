@@ -741,9 +741,10 @@ const CortesScreen: React.FC = () => {
           <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={() => setIsHistoryModalOpen(true)}
+              onClick={() => {if(selectedStore==='local_01')setIsHistoryModalOpen(true);}}
+              disabled={selectedStore==='local_02'}
               className="flex items-center gap-1.5 px-3.5 py-2 rounded-2xl bg-slate-200/80 dark:bg-white/10 hover:bg-slate-300 dark:hover:bg-white/15 text-slate-800 dark:text-white text-xs font-black uppercase tracking-wider transition-all active:scale-95 shadow-sm"
-              title="Ver historial de cortes y eliminar"
+              title={selectedStore==='local_01' ? "Consultar historial histórico (solo lectura durante pruebas)" : "Historial del Local 2 aún en preparación"}
             >
               <span className="material-symbols-outlined text-base text-primary dark:text-blue-400">history</span>
               <span>Historial</span>
@@ -967,7 +968,8 @@ const CortesScreen: React.FC = () => {
         )}
       </main>
       <CortesHistoryModal
-        isOpen={isHistoryModalOpen}
+        isOpen={isHistoryModalOpen && selectedStore==='local_01'}
+        readOnly={true}
         onClose={() => setIsHistoryModalOpen(false)}
         onSelectDate={(dateStr) => setSelectedDate(dateStr)}
         onEditCorte={handleEditCorte}
